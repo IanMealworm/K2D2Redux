@@ -14,7 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.Addressables.Editor::UnityEditor.AddressableAssets.Settings.AddressableAssetGroup
   m_GroupName: addressables_K2D2_all
   m_GUID: 9afb0fadf3d6795439ea32f39e70e741
-  m_SerializeEntries: []
+  m_SerializeEntries:
+  - m_GUID: 8f86a98a35fea6949a9ac5af3fd14436
+    m_Address: Assets/UI/K2D2_UI/K2D2_Window.uxml
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: 92e98ca16270a6a468657ea82c466890, type: 2}
   m_SchemaSet:
