@@ -1,5 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
+    <Style src="project://database/Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss?fileID=7433441132597879392&amp;guid=48c501354e05fdc41b817de07ca2a1b8&amp;type=3#KerbalUI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
@@ -16,7 +17,7 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="buttons_bar" class="separator" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; padding-top: 6px;">
-                <ui:Button text="Reset All Settings" display-tooltip-when-elided="true" name="reset_all" class="big" style="flex-grow: 1;" />
+                <UitkForKsp2.Controls.OabButton text="Reset All Settings" name="reset_all" style="flex-grow: 1; height: 30px; margin-right: 4px;" />
                 <K2UI.ToggleButton name="debug" label="Debug Mode" class="big" />
             </ui:VisualElement>
         </ui:VisualElement>

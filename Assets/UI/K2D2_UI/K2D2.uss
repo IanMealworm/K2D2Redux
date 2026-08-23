@@ -17,3 +17,44 @@
     font-size: 14px;
 }
 
+/* Restyles the About tab's "debug" K2UI.ToggleButton to match the stock KerbalUI
+   .oab-button-toggle palette (see Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss).
+   Kept as K2UI.ToggleButton rather than swapping to a native Toggle + .oab-button-toggle,
+   since AboutUI.cs binds it via K2UI.ToggleButton's own .Bind(SettingsField) extension -
+   this only ports the stock colors/font onto K2UI.ToggleButton's own class structure
+   (.toggle-button / .checked / > Label, from ToggleButton.uss). #debug is used instead of
+   a shared class so these rules win regardless of stylesheet load order. */
+#debug {
+    background-color: rgb(189, 196, 209);
+    background-image: none;
+    border-width: 1px;
+    border-color: rgb(87, 95, 111);
+    border-radius: 8px;
+}
+
+#debug:hover {
+    background-color: rgb(214, 224, 255);
+}
+
+#debug:active {
+    background-color: rgb(191, 202, 235);
+}
+
+#debug.checked {
+    background-image: none;
+    background-color: rgb(188, 161, 255);
+}
+
+#debug.checked:hover {
+    background-color: rgb(206, 190, 255);
+}
+
+#debug > Label {
+    color: rgb(34, 38, 46);
+    -unity-font-style: bold;
+}
+
+#debug.checked > Label {
+    color: rgb(34, 38, 46) !important;
+}
+
