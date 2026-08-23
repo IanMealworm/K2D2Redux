@@ -31,7 +31,7 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 
 ## Installation
 
-1. Install [Redux](https://github.com/KSP2Community) for Kerbal Space Program 2.
+1. Install [Redux](https://ksp2redux.org) for Kerbal Space Program 2.
 2. Download the latest K2-D2 release and drop the contents into your KSP2 `mods` folder (merge folders if prompted).
 
 ## Building from source
@@ -41,7 +41,7 @@ This is a Unity project using [ThunderKit](https://github.com/PassivePicasso/Thu
 ## Credits
 
 - **[Christophe Floutier](https://github.com/cfloutier)** - original K2-D2 mod for SpaceWarp1
-- **[IanMealworm]** - Redux port
+- **IanMealworm** - Redux port
 - **[Mole](https://github.com/Mole1803)** - original Circularize work
 - **[schlosrat](https://forum.kerbalspaceprogram.com/index.php?/profile/141963-schlosrat/)** - original testing and code help, especially node creation
 - **Opus** - named the mod
