@@ -17,17 +17,14 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 **Confirmed working (tested in-game):**
 - Full UI - all tabs, styling, custom controls
 - Node autopilot
-- Lift/ascent autopilot
+- Lift/ascent autopilot - flies the configured profile to orbit; ends by asking for a manual circularization node (see Known limitations below)
+- Landing autopilot - descent, braking, and touchdown, including collision detection
+- Docking autopilot - final approach and main-thrust kill-speed/brake
 - Attitude hold
+- Auto-staging, with a player-facing on/off toggle in the window's title bar
 
-**Working with known issues:**
-- Landing autopilot flies and lands correctly, but the "Collision Detected" info readout on the Landing tab doesn't reliably reflect what's actually happening - still being investigated (see `NOTICE.md`'s later follow-ups). The autopilot itself is not blocked by this.
-
-**Not yet functional:**
-- The Lift tab's "Final" stage circularization buttons (`create_ap`/`create_now`) are currently stubs. Wiring them to K2-D2's native maneuver-node creation (rather than Flight Plan, which this port intentionally does not integrate) turned out to need more than a quick fix - see `NOTICE.md` for what was found.
-
-**Not yet tested:**
-- Docking autopilot
+**Known limitations:**
+- The Lift/ascent autopilot asks for a manual circularization node rather than creating one itself. Wiring this up to K2-D2's native maneuver-node creation (rather than Flight Plan, which this port intentionally does not integrate) turned out to need more than a quick fix - see `NOTICE.md` for what was found.
 
 ## Installation
 
