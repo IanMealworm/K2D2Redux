@@ -3,7 +3,8 @@
   "rootNamespace": "K2D2",
   "references": [
     "Unity.Entities",
-    "Unity.Collections"
+    "Unity.Collections",
+    "Unity.ResourceManager"
   ],
   "allowUnsafeCode": true,
   "overrideReferences": true,

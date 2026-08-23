@@ -17,6 +17,7 @@ using K2D2.Lift;
 using K2D2.Landing;
 using K2D2.Node;
 using Redux.ExtraModTypes;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2
@@ -78,7 +79,13 @@ namespace K2D2
             // SWMetadata.Folder is a System.IO.DirectoryInfo, not a string (confirmed via the current
             // SpaceWarpPluginDescriptor's real field type) - string-concatenating it works today via
             // DirectoryInfo's implicit ToString(), but .FullName is the correct, intended accessor.
-            AssetsLoader.Bundle = AssetBundle.LoadFromFile(SWMetadata.Folder.FullName + "/assets/bundles/k2d2_ui.bundle");
+            //
+            // AssetsLoader.Bundle = AssetBundle.LoadFromFile(SWMetadata.Folder.FullName + "/assets/bundles/k2d2_ui.bundle");
+            //
+            // Switched UI loading from the old prebuilt AssetBundle above to Redux's Addressables system -
+            // see AssetsLoader.LoadUxml() for the new loading call and the reasoning. The line above is
+            // commented out (not deleted) so reverting is a one-line job if Addressables doesn't pan out
+            // in testing; k2d2_ui.bundle itself is left untouched on disk either way.
 
             // Manually register K2UI's custom controls' UxmlFactory instances with Unity's internal
             // VisualElementFactoryRegistry - see KTools/K2UIFactoryRegistration.cs for the full story
@@ -170,6 +177,17 @@ namespace K2D2
 
         public override void OnPostInitialized()
         {
+        }
+
+        // AssetsLoader.LoadUxml() (a separate static class, not a KerbalMod subclass) needs to call
+        // Assets.LoadAssetAsync<T>() to load UI Toolkit assets via Addressables, but the base
+        // KerbalMonoBehaviour.Assets property is `protected` - confirmed via CS0122 build error - so it's
+        // not reachable from outside a KerbalMod subclass's own code, even through an instance reference
+        // like K2D2_Plugin.Instance.Assets. This thin public wrapper exposes just the one call
+        // AssetsLoader needs without loosening protection on anything else.
+        public AsyncOperationHandle<T> LoadAddressableAsset<T>(string address)
+        {
+            return Assets.LoadAssetAsync<T>(address);
         }
 
 
