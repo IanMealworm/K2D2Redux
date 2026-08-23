@@ -182,10 +182,13 @@ namespace K2D2.UI
             // save the current_tab to settings
             tab_page.Bind("main_page", "node");
 
-            var title_bar = _rootElement.Q("title-bar");
+            // Renamed from "title-bar" when the window chrome switched from a hand-built header to
+            // UitkForKsp2.Controls.AppShell (which owns its own header - icon/title/close - and has no
+            // slot for extra buttons). The settings and staging toggles moved into this new row instead.
+            var title_bar = _rootElement.Q("toolbar");
             if (title_bar == null)
             {
-                L.Log("K2D2Window.OnUiReload: Q(\"title-bar\") returned null - stopping here, the settings/" +
+                L.Log("K2D2Window.OnUiReload: Q(\"toolbar\") returned null - stopping here, the settings/" +
                       "staging toggle buttons will not be wired up.");
                 return;
             }
