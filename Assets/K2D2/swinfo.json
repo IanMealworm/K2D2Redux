@@ -1,0 +1,25 @@
+{
+  "spec": "2.0",
+  "mod_id": "K2D2",
+  "name": "K2-D2",
+  "author": "IanMealworm",
+  "description": "K2-D2 is an astromech-style autopilot suite for KSP2: maneuver node execution with orbit circularization, ascent guidance, automated landing, docking, and attitude hold, all from one panel (Alt-O or AppBar). Port of Christophe Floutier's original K2-D2 (built for SpaceWarp1) to the Redux modding framework.",
+  "source": "https://github.com/IanMealworm/K2D2Redux",
+  "version": "1.0.0",
+  "version_check": "",
+  "ksp2_version": {
+    "min": "*",
+    "max": "*"
+  },
+  "dependencies": [
+    {
+      "id": "SpaceWarp2",
+      "version": {
+        "min": "2.0.0",
+        "max": "*"
+      }
+    }
+  ],
+  "conflicts": [],
+  "main_assembly": "K2D2.dll"
+}

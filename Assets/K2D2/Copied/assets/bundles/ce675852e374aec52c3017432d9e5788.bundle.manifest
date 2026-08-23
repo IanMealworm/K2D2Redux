@@ -1,0 +1,21 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.5.8f1
+CRC: 1267095530
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: e31d6e309f557d74b529b6a7253e99f7
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 1cfddeea06ce0ec573e0d0ec81ebe20e
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: bacc803e72e3098151ef1604fe128dbf
+HashAppended: 0
+ClassTypes:
+- Class: 28
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Packages/ksp2community.ksp2unitytools/Assets/Plumes/Textures/plume_vacuum_smoke_diffuse.png
+Dependencies: []

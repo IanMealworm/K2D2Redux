@@ -1,0 +1,22 @@
+{
+    "CompilerVersion": 1,
+    "GeneratedFiles": [
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/DecalMaps/SmoothingPad.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/I2Languages.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Plumes/PlumeSetup.unity",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Plumes/Prefabs/Methalox Plume Side Exhaust.prefab",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Plumes/Prefabs/Methalox Plume Simple.prefab",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Plumes/Prefabs/Monoprop Plume.prefab",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Plumes/Prefabs/Solid Plume.prefab",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Resources/I2Languages.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Resources/LogFilterSettings.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/Airlock_Climb.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/Airlock_Interact.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/FlagRemoval_Interact.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/LadderLetGo_Interact.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/LadderTopClamber_Interact.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/Ladder_Climb.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/Ladder_Interact.asset",
+        "Assets/KSP2UnityTools/GeneratedSDKAssets/Scriptable Objects/Interactions/StepClamber_Interact.asset"
+    ]
+}
