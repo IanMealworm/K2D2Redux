@@ -202,10 +202,13 @@ namespace K2D2.UI
             }
 
             settings_button?.Bind(GlobalSetting.settings_visible);
-            if (staging_toggle != null)
-            {
-                staging_toggle.RegisterCallback<ChangeEvent<bool>>(evt => StagingPilot.Instance.Enabled = evt.newValue);
-            }
+            // This used to write to StagingPilot.Instance.Enabled, which only gates BaseController.isActive
+            // (tab visibility/availability) - nothing in StagingPilot.Update()/CheckStaging() ever reads it,
+            // so toggling it had no effect on whether auto-staging actually ran. The setting that
+            // CheckStaging() actually checks is StagingSettings.auto_staging, which had no UI control at
+            // all - binding this already-existing title-bar toggle to it directly is both the fix and the
+            // toggle's original apparent intent.
+            staging_toggle?.Bind(StagingSettings.auto_staging);
 
             _rootElement.Query<IntegerField>().ForEach(field => field.DisableGameInputOnFocus());
             _rootElement.Query<FloatField>().ForEach(field => field.DisableGameInputOnFocus());

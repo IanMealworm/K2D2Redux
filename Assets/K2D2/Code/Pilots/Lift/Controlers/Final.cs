@@ -42,7 +42,17 @@ namespace K2D2.Lift
             if (lift_settings.pause_on_final.V)
                 TimeWarpTools.SetIsPaused(true);
 
-            /* TODO: Other mods interfacing
+            // Circularizing at apoapsis needs FlightPlan hooked up via K2D2OtherModsInterface, which
+            // isn't wired up yet - the create_ap/create_now/run buttons in updateUI() below just call
+            // stubbed-out no-ops until that's done. Previously this meant the ascent pilot just sat
+            // here "running" forever showing those dead buttons (Update() below never sets finished,
+            // so nothing ever advanced past this step on its own). Instead, end the run cleanly here -
+            // ascent has already done everything it can do without FlightPlan. Commented out below
+            // instead of removed so this is a one-line uncomment once FlightPlan integration is hooked
+            // back up.
+            lift.EndLiftPilot(true, "Manual circularization node creation needed");
+
+            /* TODO: Other mods interfacing - re-enable once K2D2OtherModsInterface is hooked up
             if (!K2D2OtherModsInterface.fpLoaded)
             {
                 lift.EndLiftPilot(true, "Please install FlightPlan for the final Step...");
@@ -111,6 +121,11 @@ namespace K2D2.Lift
 
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
+            // Start() above now ends the lift pilot immediately instead of ever reaching this screen,
+            // so none of this runs today. Commented out (not removed) so the create_ap/create_now/run
+            // buttons - which need FlightPlan hooked up via K2D2OtherModsInterface to do anything - are
+            // a one-line uncomment away once that integration exists.
+            /*
 // if (UI_Tools.BigButton("Pause"))
 // {
 //     TimeWarpTools.SetIsPaused(true);
@@ -145,6 +160,7 @@ namespace K2D2.Lift
             {
                 st.Warning(status_msg);
             }
+            */
         }
 
         void removeAllNodes()

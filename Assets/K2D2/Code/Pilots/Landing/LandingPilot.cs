@@ -218,28 +218,40 @@ namespace K2D2.Landing
             double start_time = GeneralTools.Game.UniverseModel.UniverseTime + 2 * 60;
             bool collide = false;
 
-            // Used to need a concrete PatchedConicsOrbit here to call GetStateVectorsFromUT() and
-            // manually rebuild a Position from the raw pos/vel output. IOrbit.GetTruePositionAtUT(double)
-            // returns a fully-resolved Position directly and is on IOrbit (which IKeplerPatch extends,
-            // and both PatchedConicsOrbit and Redux's CurrentPatchedConicsOrbit implement) - so no
-            // concrete cast or manual coordinate-frame work is needed, just call it off the interface.
+            // IOrbit.GetTruePositionAtUT() has two overloads: GetTruePositionAtUT(UT), which
+            // returns a full Position resolved against the universe's root star frame, and
+            // GetTruePositionAtUT(UT, coordinateSystem), which returns just a Vector3d local
+            // position within the given frame (the single-arg version wraps that same call with
+            // the star's frame internally). Passing body.coordinateSystem explicitly and wrapping
+            // it into a Position ourselves anchors the result to the same body
+            // GetAltitudeFromTerrain below is being asked about, instead of the star. This is
+            // closer to what the original SpaceWarp1 version did too (it built its Position from
+            // GetStateVectorsFromUT's output using a body-relative frame, not the universal one).
+            // No concrete cast needed either way - both overloads are on IOrbit, which IKeplerPatch
+            // extends.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             var body = orbit.referenceBody;
             double current_time_ut = GeneralTools.Game.UniverseModel.UniverseTime;
             double deltaTime = 60; // seconds in the future
             int max_occurrences = 100;
             double time = start_time;
-            double terrainAltitude;
+            double terrainAltitude = 0;
 
             float radius = current_vessel.VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere.radius;
 
             for (int i = 0; i < max_occurrences; i++)
             {
-                Position ps = orbit.GetTruePositionAtUT(time);
+                Vector3d ps_local = orbit.GetTruePositionAtUT(time, body.coordinateSystem);
+                Position ps = new Position(body.coordinateSystem, ps_local);
                 double sceneryOffset;
 
                 body.GetAltitudeFromTerrain(ps, out terrainAltitude, out sceneryOffset);
                 // terrainAltitude -= radius;
+
+                if (i == 0)
+                {
+                    logger.LogInfo($"compute_real_collision: first sample terrainAltitude={terrainAltitude:n1} at UT+{start_time - current_time_ut:n0}s");
+                }
 
                 if (terrainAltitude < 0)
                 {
@@ -266,6 +278,8 @@ namespace K2D2.Landing
                     break;
                 }
             }
+
+            logger.LogInfo($"compute_real_collision: collide={collide} final terrainAltitude={terrainAltitude:n1} adjusted_collision_UT+{time - current_time_ut:n0}s");
 
             adjusted_collision_UT = time;
             return collide;
