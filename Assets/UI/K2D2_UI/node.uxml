@@ -1,6 +1,7 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <ui:Template name="StatusGroup" src="project://database/Assets/UI/K2D2_UI/StatusGroup.uxml?fileID=9197481963319205126&amp;guid=6d8db5aba9b53334ca8e1489f83a4ba3&amp;type=3#StatusGroup" />
     <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
+    <Style src="project://database/Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss?fileID=7433441132597879392&amp;guid=48c501354e05fdc41b817de07ca2a1b8&amp;type=3#KerbalUI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
@@ -20,9 +21,9 @@
                 <ui:Label tabindex="-1" text="&lt;b&gt;Flight Plan&lt;/b&gt; not detected, install the great Mod to create Nodes." display-tooltip-when-elided="true" name="please_install_fp" style="white-space: normal; display: flex;" />
                 <ui:VisualElement name="add_node_buttons_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
                     <ui:Label tabindex="-1" text="Circle " display-tooltip-when-elided="true" style="-unity-text-align: middle-left; display: flex;" />
-                    <ui:Button text="at Ap" display-tooltip-when-elided="true" name="circle_at_ap" style="flex-grow: 1;" />
-                    <ui:Button text="at Pe" display-tooltip-when-elided="true" name="circle_at_pe" style="flex-grow: 1;" />
-                    <ui:Button text="in 30s" display-tooltip-when-elided="true" name="circle_now" style="flex-grow: 1;" />
+                    <UitkForKsp2.Controls.OabButton text="at Ap" name="circle_at_ap" style="flex-grow: 1; height: 30px;" />
+                    <UitkForKsp2.Controls.OabButton text="at Pe" name="circle_at_pe" style="flex-grow: 1; height: 30px;" />
+                    <UitkForKsp2.Controls.OabButton text="in 30s" name="circle_now" style="flex-grow: 1; height: 30px;" />
                 </ui:VisualElement>
             </K2UI.Group>
         </ui:VisualElement>

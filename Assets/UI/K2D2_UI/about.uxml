@@ -18,7 +18,7 @@
             </ui:VisualElement>
             <ui:VisualElement name="buttons_bar" class="separator" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; padding-top: 6px;">
                 <UitkForKsp2.Controls.OabButton text="Reset All Settings" name="reset_all" style="flex-grow: 1; height: 30px; margin-right: 4px;" />
-                <K2UI.ToggleButton name="debug" label="Debug Mode" class="big" />
+                <K2UI.ToggleButton name="debug" label="Debug Mode" class="big" style="flex-grow: 1; height: 30px;" />
             </ui:VisualElement>
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
