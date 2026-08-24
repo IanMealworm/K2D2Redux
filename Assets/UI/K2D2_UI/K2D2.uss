@@ -17,6 +17,37 @@
     font-size: 14px;
 }
 
+/* K2UI.StatusLine (run-status messages like "No Maneuver node.", shown via the shared
+   StatusGroup.uxml template - reaches every tab): K2UI.uss's own .k2-status-line rule points
+   it at NotoSansMonoCJK instead of the stock JetBrains Mono body font used everywhere else.
+   Same tie-specificity/load-order issue as the progress bar (K2UI.uss loads after K2D2.uss),
+   so !important - this is scoped to just this one class, not a blanket override, so it won't
+   touch .console/.oab-button__label's own intentional fonts. */
+.k2-status-line {
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF') !important;
+}
+
+/* K2UI.Console ("Node Infos" / dV / duration readouts, and every other tab's console-style
+   text panel) - K2UI.uss's own .console rule hardcodes a completely different font (Sax Mono,
+   a K2D2-specific asset, not part of the stock theme at all) plus its own color. Same class-
+   beats-type override problem as .k2-status-line above, so it never picked up the generic
+   Label rule below - fixed the same way. */
+.console {
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF') !important;
+    color: rgb(192, 199, 213) !important;
+}
+
+/* Ports the stock KerbalUI body font (JetBrains Mono) + text color onto plain Labels site-wide.
+   KerbalUI.uss sets these same values on :root, which should inherit down to every Label - but
+   in testing that inheritance wasn't reliably reaching labels loaded from separate tab
+   templates (node.uxml, about.uxml, etc.), the same lesson learned from the Debug Mode CSS
+   diagnosis - so it's set explicitly here instead. More specific rules below (.console,
+   #run > Label, etc.) still win over this via their own higher-specificity selectors. */
+Label {
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF');
+    color: rgb(192, 199, 213);
+}
+
 /* Restyles the About tab's "debug" K2UI.ToggleButton to match the stock KerbalUI
    .oab-button-toggle palette (see Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss).
    Kept as K2UI.ToggleButton rather than swapping to a native Toggle + .oab-button-toggle,
@@ -52,9 +83,175 @@
 #debug > Label {
     color: rgb(34, 38, 46);
     -unity-font-style: bold;
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/SFPixelate/SFPixelate%20SDF.asset?fileID=11400000&guid=b74cecddccdf00b47a63d040e8e3821a&type=2#SFPixelate SDF') !important;
 }
 
 #debug.checked > Label {
     color: rgb(34, 38, 46) !important;
+}
+
+/* Node tab: Start/Pause toggle buttons - restyled to the stock KerbalUI oab-button-toggle
+   palette. Both stay K2UI.ToggleButton (NodeExUI.cs binds them via .Value/.listeners/.Bind()),
+   so - same as Debug Mode above - this only ports the stock colors onto the existing class
+   structure rather than swapping control types. Label color uses !important from the start
+   this time, since we already found .toggle-button > Label's color needs it to lose to an
+   ID selector here (see the #debug case above for the diagnosis). */
+#run, #pause {
+    background-color: rgb(189, 196, 209);
+    background-image: none;
+    border-width: 1px;
+    border-color: rgb(87, 95, 111);
+    border-radius: 8px;
+}
+
+#run:hover, #pause:hover {
+    background-color: rgb(214, 224, 255);
+}
+
+#run:active, #pause:active {
+    background-color: rgb(191, 202, 235);
+}
+
+/* Checked (running) state uses the stock "confirm" green (#00cc53, also used by KerbalUI's own
+   radio button checkmark) rather than the purple used for Debug Mode - Start/Pause are an
+   active-process indicator, not a settings toggle, so it gets its own semantic color. */
+#run.checked, #pause.checked {
+    background-image: none;
+    background-color: rgb(0, 204, 83);
+}
+
+#run.checked:hover, #pause.checked:hover {
+    background-color: rgb(51, 219, 118);
+}
+
+#run > Label {
+    color: rgb(34, 38, 46) !important;
+    -unity-font-style: bold;
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/SFPixelate/SFPixelate%20SDF.asset?fileID=11400000&guid=b74cecddccdf00b47a63d040e8e3821a&type=2#SFPixelate SDF') !important;
+}
+
+#run.checked > Label {
+    color: rgb(34, 38, 46) !important;
+}
+
+/* pause's icon (pause.png) is a plain white glyph - legible on the old near-black button
+   background, but not on the new light-gray/purple fills - so tint it dark in both states. */
+#pause #icon {
+    -unity-background-image-tint-color: rgb(34, 38, 46);
+}
+
+/* Tab bar (Node/Lift/Land/Dock/Att.) - redesigned to match the flat "underline" tab style from
+   Reese's other-mod reference screenshot (plain text row, dim/gray for unselected, bright/bold
+   + a colored underline for the selected tab, no boxes or fills at all) rather than the boxed/
+   filled pill-tab look from the first pass. K2Tabs.uss's base rule gives every tab a full
+   rounded-box border (top-left/right radius, border on all 4 sides) - this flattens that out to
+   just a bottom border, repurposed as the underline indicator. Green matches the same "confirm/
+   active" green used for Start and the progress bar elsewhere in this theme.
+
+   DIAGNOSIS of why the first pass at this block (plain .k2-tabsbar/.k2-tab-button/
+   .k2-tab-button--active class selectors, all !important) never visually applied in-game:
+   every OTHER override in this file that reliably wins a tie-specificity fight against a
+   later-loaded stylesheet does so via an ID selector anchored on the actual target element
+   (#debug, #run, #pause, #Main_Icon, and - closest precedent - ".k2-progress-bar #frame" /
+   "#progress", which pairs a class-selector ancestor with an ID on the element actually being
+   styled). This tab-bar block was the only override in K2D2.uss using bare class selectors with
+   no ID anchor anywhere in the chain, and empirically it's the only one that silently failed to
+   apply. TabPage.setButton() (K2UI/Tabs/TabButton.cs) copies each TabPage's UXML "name" onto its
+   TabButton, so every tab button already has a unique, stable id matching its tab page's name
+   (node/lift/landing/dock/attitude/about) - reusing that id, scoped under "#TabsBar" (the id
+   TabbedPage.Setup() gives the tab bar itself) to avoid colliding with the identically-named
+   TabPage content elements living elsewhere in the tree, gives every rule below the same
+   ID-anchored shape as the overrides that are confirmed working. */
+#TabsBar {
+    border-color: rgba(60, 62, 146, 0.35) !important;
+    border-bottom-width: 1px !important;
+}
+
+#TabsBar #node, #TabsBar #lift, #TabsBar #landing, #TabsBar #dock, #TabsBar #attitude, #TabsBar #about {
+    background-color: rgba(0, 0, 0, 0) !important;
+    border-left-width: 0 !important;
+    border-right-width: 0 !important;
+    border-top-width: 0 !important;
+    border-bottom-width: 1px !important;
+    border-bottom-color: rgba(0, 0, 0, 0) !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    margin-bottom: 0 !important;
+    margin-left: 0 !important;
+    /* K2Tabs.uss's base rule gives every button flex-grow: 0 (size-to-content, packed left by
+       .k2-tabsbar's justify-content: flex-start) - grow: 1 makes all 5 buttons split the bar's
+       width evenly instead, so the row reads as one evenly-spaced strip rather than a
+       left-anchored cluster. Label centering (-unity-text-align: middle-center) already comes
+       from K2Tabs.uss's own ".k2-tab-button > Label" rule, so text stays centered in each slot. */
+    flex-grow: 1 !important;
+}
+
+#TabsBar #node > Label, #TabsBar #lift > Label, #TabsBar #landing > Label, #TabsBar #dock > Label, #TabsBar #attitude > Label, #TabsBar #about > Label {
+    color: rgb(120, 128, 145) !important;
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF') !important;
+    -unity-font-style: normal !important;
+    letter-spacing: 1px;
+}
+
+#TabsBar #node:hover, #TabsBar #lift:hover, #TabsBar #landing:hover, #TabsBar #dock:hover, #TabsBar #attitude:hover, #TabsBar #about:hover {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+#TabsBar #node:active, #TabsBar #lift:active, #TabsBar #landing:active, #TabsBar #dock:active, #TabsBar #attitude:active, #TabsBar #about:active {
+    background-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* A full-width border-bottom can't be narrowed below the button's own width - USS borders always
+   span the full box - so the selection indicator is a small tinted image (tab_underline.png, a
+   plain 8x8 white square, same "white asset + CSS tint" pattern as #pause #icon below) instead,
+   sized down to a short strip and centered at the bottom of the button. Border-bottom-color goes
+   back to transparent so it doesn't double up with the image. */
+#TabsBar #node.k2-tab-button--active, #TabsBar #lift.k2-tab-button--active, #TabsBar #landing.k2-tab-button--active, #TabsBar #dock.k2-tab-button--active, #TabsBar #attitude.k2-tab-button--active, #TabsBar #about.k2-tab-button--active {
+    background-color: rgba(0, 0, 0, 0) !important;
+    border-bottom-color: rgba(0, 0, 0, 0) !important;
+    background-image: url('project://database/Assets/Images/tab_underline.png?fileID=2800000&guid=8fe0d00951b4482e921b0a7d1cd22b4a&type=3#tab_underline') !important;
+    -unity-background-image-tint-color: rgb(0, 204, 83) !important;
+    background-repeat: no-repeat !important;
+    background-position: center bottom !important;
+    background-size: 22px 2px !important;
+}
+
+#TabsBar #node.k2-tab-button--active > Label, #TabsBar #lift.k2-tab-button--active > Label, #TabsBar #landing.k2-tab-button--active > Label, #TabsBar #dock.k2-tab-button--active > Label, #TabsBar #attitude.k2-tab-button--active > Label, #TabsBar #about.k2-tab-button--active > Label {
+    color: rgb(230, 233, 238) !important;
+    -unity-font-style: bold !important;
+    /* K2Tabs.uss's own ".k2-tab-button--active > Label" rule bumps font-size to 16px (vs. the
+       14px every other tab label gets from its ".k2-tab-button > Label" rule) - that's what was
+       making the active tab visibly grow when pressed. Selection is already communicated by the
+       underline + bold + brighter text, so pin it back to the same 14px as the unselected tabs
+       and let only those three cues carry the "active" state, not a size jump. */
+    font-size: 14px !important;
+}
+
+/* K2ProgressBar (K2UI.K2ProgressBar, used inside the shared StatusGroup.uxml template - so
+   this reaches every tab, not just Node): dark stock-style panel with a beveled "3D" frame
+   (lighter top/left border, darker bottom/right border - same bevel technique used elsewhere
+   in this theme to fake a raised look without needing an image asset) and a fill that matches
+   the Start button's checked-state green, so the two read as the same "running" indicator.
+   The fill also gets a tileable diagonal-stripe texture (Assets/Images/progress_stripes.png -
+   translucent white stripes over transparency, so the green shows through) via
+   background-repeat, the same tiling technique KerbalUI.uss itself uses for its dashed
+   separator line. Same selectors as the base rules in K2UI.uss - using !important since, per
+   the Debug Mode diagnosis, load order isn't reliable for tie-specificity selectors like these. */
+.k2-progress-bar #frame {
+    background-color: rgb(41, 47, 57) !important;
+    border-top-color: rgb(110, 118, 135) !important;
+    border-left-color: rgb(110, 118, 135) !important;
+    border-bottom-color: rgb(20, 22, 28) !important;
+    border-right-color: rgb(20, 22, 28) !important;
+    border-width: 2px !important;
+}
+
+.k2-progress-bar #progress {
+    background-color: rgb(0, 204, 83) !important;
+    background-image: url('project://database/Assets/Images/progress_stripes.png?fileID=2800000&guid=1c50209de9094733b71cf44a7f1f5b18&type=3#progress_stripes') !important;
+    background-repeat: repeat !important;
+    background-size: 16px 16px !important;
 }
 
