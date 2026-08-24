@@ -31,10 +31,6 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 1. Install [Redux](https://ksp2redux.org) for Kerbal Space Program 2.
 2. Download the latest K2-D2 release and drop the contents into your KSP2 `mods` folder (merge folders if prompted).
 
-## Building from source
-
-This is a Unity project using [ThunderKit](https://github.com/PassivePicasso/ThunderKit) and the [KSP2Community Redux.Template](https://github.com/KSP2Community/Redux.Template). Open the project in Unity, then run the `Rebuild and Launch` pipeline (Assets root) to build and deploy for local testing.
-
 ## Credits
 
 - **[Christophe Floutier](https://github.com/cfloutier)** - original K2-D2 mod for SpaceWarp1
