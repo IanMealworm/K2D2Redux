@@ -93,14 +93,18 @@ unless a section says otherwise.
 
 K2D2's UI uses a library of custom UI Toolkit controls (`K2UI.*` -
 `TabbedPage`, `ToggleButton`, `K2Slider`, etc.), all using the legacy
-`UxmlFactory`/`UxmlTraits` registration pattern. Two real, non-obvious Redux/
-BepInEx-specific problems had to be worked out to get them rendering at all:
+`UxmlFactory`/`UxmlTraits` registration pattern. K2D2 itself extends
+`Redux.ExtraModTypes.KerbalMod` and uses no BepInEx APIs at all - Redux
+loads it as a precompiled mod DLL at runtime, not compiled into the Player
+build. Two real, non-obvious problems specific to that loading model had to
+be worked out to get the custom controls rendering at all (last confirmed
+on Redux build 26w33a):
 
-- **Custom control types loaded from a BepInEx-injected mod assembly never
-  get their `UxmlFactory` auto-registered.** Unity's automatic factory scan
+- **Custom control types declared in a precompiled mod DLL never get their
+  `UxmlFactory` auto-registered.** Unity's automatic factory scan
   (`VisualElementFactoryRegistry.RegisterUserFactories()`) only looks at
   assemblies Unity considers "known project assemblies"
-  (`GetAllUserAssemblies()`), and a mod DLL injected by BepInEx never
+  (`GetAllUserAssemblies()`), and a mod DLL loaded this way by Redux never
   appears in that list - regardless of whether the control uses the legacy
   `UxmlFactory` pattern or the modern `[UxmlElement]` attribute. Symptom:
   the UI renders everything else correctly, but drops literal placeholder
@@ -111,10 +115,10 @@ BepInEx-specific problems had to be worked out to get them rendering at all:
   called from `K2D2_Plugin.cs`'s `OnInitialized()` before any UXML loads.
   **Note:** the modern `[UxmlElement]`/`UxmlSerializedData` pattern was
   tried twice as an alternative fix and confirmed broken both times for
-  this AssetBundle + BepInEx combination (Unity's native managed-type
-  resolution can't find the type at runtime even though it's correctly
-  built into the DLL) - don't spend time on that path again for a
-  precompiled-plugin + AssetBundle UI.
+  this AssetBundle + precompiled-mod-DLL combination (Unity's native
+  managed-type resolution can't find the type at runtime even though it's
+  correctly built into the DLL) - don't spend time on that path again for a
+  precompiled-plugin + AssetBundle UI, at least as of 26w33a.
 - **This Unity version's base `VisualElement.UxmlTraits.Init()` has been
   gutted to a deprecation-warning stub - it no longer applies built-in
   attributes like `name`.** Every custom control that calls
