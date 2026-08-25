@@ -86,36 +86,61 @@
     border-bottom-color: var(--k2-color-border-bottom);
 }
 
+/* Retro/astromech pass: this was the source of the "very big and clunky" dropdown look across
+   every tab - a 17px header on every single Foldout (top-level AND nested) plus a full,
+   saturated 1px border box on all four sides made each one read as its own oversized modern
+   card instead of a compact retro readout. Font size comes down to 13px and the border is
+   dimmed to a faint outline instead of a bright purple box; padding/margins are tightened to
+   match. This is global (K2UI.uss, not K2D2.uss) since every Foldout in the mod - Node's Turn/
+   Warp/Burn/Experimental and Node Info/Advanced today, other tabs' foldouts later - shares this
+   base class. */
+/* Dropped the bordered box around each Foldout entirely (was rgba(76, 80, 188, 0.35) on all four
+   sides) - it read as an "ugly dark blue" frame wrapping every dropdown. The stock Parts Manager
+   reference doesn't box its collapsible groups either (FL-T800/COUPLING/UTILITY/ENGINE are just
+   header bars sitting flush in the list, no border around each one) - the header bar's own
+   background + the margin between Foldouts is enough separation without it. */
 .unity-foldout {
     margin-left: 4px;
     margin-right: 4px;
     margin-top: 0;
-    margin-bottom: 8px;
-    border-left-color: var(--k2-color-border);
-    border-right-color: var(--k2-color-border);
-    border-top-color: var(--k2-color-border);
-    border-bottom-color: var(--k2-color-border);
-    border-left-width: 1px;
-    border-right-width: 1px;
-    border-top-width: 1px;
-    border-bottom-width: 1px;
+    margin-bottom: 6px;
+    border-width: 0;
     background-color: rgb(0, 0, 0);
 }
 
+/* "Category header" bar treatment, matching how the stock RCS Thruster reference panel labels
+   its "// RCS THRUSTER" section: a header bar a shade lighter than the panel background (instead
+   of the near-black button background it inherited before), bold lavender/purple caps-style text
+   with wider letter-spacing. Unity UI Toolkit has no CSS text-transform, so the actual ALL CAPS
+   text (and the "// " prefix) has to be typed into each Foldout's UXML text - done for Node's
+   Turn/Warp/Burn/Experimental and Node Info/Advanced for now; other tabs' foldouts will pick up
+   this same header-bar styling automatically once their text gets the same treatment later. */
 .unity-foldout__toggle {
-    background-color: var(--k2-color-button-background);
+    background-color: rgb(35, 40, 52);
     margin-left: 0;
     margin-right: 0;
     margin-top: 0;
     margin-bottom: 0;
-    padding-top: 2px;
-    padding-bottom: 2px;
-    padding-left: 0;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    padding-left: 2px;
     padding-right: 0;
 }
 
 .unity-foldout__toggle:hover {
-    background-color: var(--k2-color-button-background-hover);
+    background-color: rgb(45, 51, 66);
+}
+
+/* Fixes the header bar reading wider/rounder than the content box beneath it. USS specificity is
+   compared like CSS: KerbalUI.uss's own ".unity-foldout > .unity-foldout__toggle" rule (two class
+   selectors) beats the single-class ".unity-foldout__toggle" rule above (one class selector)
+   regardless of which stylesheet loads later, so the margin:0 already set above was losing to
+   KerbalUI's stock "margin: 4px 0 2px 0; border-radius: 8px;" for this same element. Matching
+   KerbalUI's compound selector exactly gives this rule equal specificity, so load order (K2UI.uss
+   loads after KerbalUI.uss in every UXML) decides the tie in our favor instead. */
+.unity-foldout > .unity-foldout__toggle {
+    margin: 0;
+    border-radius: 0;
 }
 
 .unity-foldout > Toggle:hover {
@@ -123,7 +148,42 @@
 }
 
 .unity-foldout > Toggle Label {
-    font-size: 17px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: rgb(180, 176, 232);
+    -unity-font-style: bold;
+}
+
+/* Static "category divider" header, for grouping controls inside a single dropdown without
+   nesting a collapsible Foldout per group (matching the stock Parts Manager reference's
+   "// REACTION WHEEL" bars, which separate sections within one scrollable panel rather than
+   being their own accordion items). Same header-bar look as .unity-foldout's own header above
+   (same background/color/letter-spacing) but on a plain Label with no chevron, and the "// "
+   prefix is kept in the text for these since - unlike an actual dropdown title - that's what
+   distinguishes "this is a non-collapsible section" from "this is a collapsible dropdown" at a
+   glance. */
+.k2-section-header {
+    background-color: rgb(35, 40, 52);
+    color: rgb(180, 176, 232);
+    font-size: 12px;
+    letter-spacing: 1px;
+    -unity-font-style: bold;
+    padding: 3px 6px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+/* Wraps content revealed/hidden under a toggle (e.g. Node's "Before" radio row showing
+   start_before only while selected), Parts-Manager-style. A thin left border + indent marks it as
+   nested under whatever toggle controls its visibility, instead of just appearing/disappearing
+   as an unrelated-looking sibling row. */
+.k2-nested-content {
+    margin-left: 12px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+    padding-left: 8px;
+    border-left-width: 1px;
+    border-left-color: rgba(87, 95, 111, 0.4);
 }
 
 .console {

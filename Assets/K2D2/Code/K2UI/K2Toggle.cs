@@ -15,10 +15,20 @@ namespace K2UI
         {
             private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
 
+            // Same fix as ToggleButton.cs's UxmlTraits: base.Init() on BaseFieldTraits doesn't apply
+            // a UXML "label" attribute to K2Toggle's own `label` property (BaseField<T> exposes it,
+            // but nothing here was ever reading the bag for it) - every K2Toggle in the project was
+            // silently falling back to the constructor's hardcoded "Toggle" default regardless of what
+            // label="..." said in UXML (auto_warp, rotate_during_burn, start_mode_precise/constant/
+            // half_duration all affected). Declaring and applying it here, mirroring ToggleButton.cs's
+            // m_String/Init() pattern exactly, is the fix.
+            private UxmlStringAttributeDescription m_Label = new() { name = "label", defaultValue = "Toggle" };
+
             public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
             {
                 base.Init(ve, bag, cc);
                 ve.name = m_Name.GetValueFromBag(bag, cc);
+                ((K2Toggle)ve).label = m_Label.GetValueFromBag(bag, cc);
             }
         }
 

@@ -36,6 +36,10 @@ namespace K2D2.UI
         // (e.g. a live UI reload during development) - re-binding would stack duplicate event handlers.
         private bool _bound;
 
+        // Kept so Update() can call its watchdog Tick() every frame - see ResizeManipulator.cs and
+        // the comment where this is created below for why that's necessary.
+        private ResizeManipulator _resizeManipulator;
+
         // The backing field for the IsWindowOpen property
         private bool _isWindowOpen;
 
@@ -219,6 +223,22 @@ namespace K2D2.UI
 
             _rootElement.AddManipulator(new DragManipulator(false, "main_window_pos"));
 
+            // Drag-to-resize via the handle added to K2D2_Window.uxml's AppShell (bottom-right
+            // corner, stock resize-handle.png). ResizeManipulator resizes _rootElement itself
+            // (the AppShell) by attaching its pointer callbacks to the small handle element
+            // instead of the whole window - see ResizeManipulator.cs.
+            var resize_handle = _rootElement.Q<VisualElement>("resize-handle");
+            if (resize_handle == null)
+            {
+                L.Log("K2D2Window.OnUiReload: Q<VisualElement>(\"resize-handle\") returned null - " +
+                      "the window will still open and drag normally, it just won't be resizable.");
+            }
+            else
+            {
+                _resizeManipulator = new ResizeManipulator(_rootElement, "main_window_size");
+                resize_handle.AddManipulator(_resizeManipulator);
+            }
+
             L.Log("K2D2Window.OnUiReload finished wiring successfully");
         }
 
@@ -226,6 +246,20 @@ namespace K2D2.UI
         {
             // tab_page isn't wired up until OnUiReload has run - guard rather than NRE on an early frame.
             tab_page?.Update();
+
+            // Confirmed via Ksp2-2.log from Reese's stuck-resize repro: PointerUpEvent and
+            // PointerCaptureOutEvent both simply never reached the resize handle for that gesture
+            // (hasCapture had already gone False, yet neither event's log line ever printed) - so
+            // ResizeManipulator was left with no event that could ever tell it the drag had ended,
+            // and kept treating every later mouse move as more resizing. Rather than chase why this
+            // game's UI Toolkit embedding drops those specific events, Tick() sidesteps the event
+            // pipeline entirely: it reads the real OS mouse button state every frame and force-ends
+            // the gesture the moment it's no longer actually held, regardless of what UI Toolkit
+            // did or didn't deliver. This is the same reason DragManipulator hasn't been reported
+            // stuck - dragging the whole window is a much easier target to keep the cursor over, so
+            // it's presumably hit this same dropped-event failure far less often, not because it's
+            // immune to it.
+            _resizeManipulator?.Tick();
         }
     }
 }

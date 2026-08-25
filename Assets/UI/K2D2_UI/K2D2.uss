@@ -255,3 +255,152 @@ Label {
     background-size: 16px 16px !important;
 }
 
+/* K2Tabs.uss's #tab_light is a separate "pilot is running" indicator (unrelated to tab
+   selection) that by default absolutely-positions itself as a full-width bar above/around the
+   tab button. Now that tab selection has its own green underline, that read as a second,
+   competing green line sitting above the whole tab row whenever a pilot runs. A first attempt to
+   just hide it with ".k2-tab-button #tab_light { display: none !important; }" did NOT apply
+   in-game, for the same reason the original tab-bar pass didn't: the leftmost anchor
+   (".k2-tab-button") is a bare class selector, and - per the DIAGNOSIS comment above - overrides
+   for these runtime-built TabButton elements only reliably win when every element in the chain
+   is ID-anchored, same as "#TabsBar #node" etc. below. Restyled (not hidden) as a small
+   pixelated dot in the tab's top-right corner instead of a full-width bar, using the same
+   tab_underline.png "white square + CSS tint" asset as the selection underline - transparent/
+   colorless while idle, tinted green only while ".tab_light--lighted" is applied. */
+#TabsBar #node #tab_light, #TabsBar #lift #tab_light, #TabsBar #landing #tab_light, #TabsBar #dock #tab_light, #TabsBar #attitude #tab_light, #TabsBar #about #tab_light {
+    top: 3px !important;
+    left: auto !important;
+    right: 3px !important;
+    bottom: auto !important;
+    width: 5px !important;
+    height: 5px !important;
+    flex-grow: 0 !important;
+    border-radius: 0 !important;
+    background-image: none !important;
+    opacity: 1 !important;
+}
+
+#TabsBar #node #tab_light.tab_light--lighted, #TabsBar #lift #tab_light.tab_light--lighted, #TabsBar #landing #tab_light.tab_light--lighted, #TabsBar #dock #tab_light.tab_light--lighted, #TabsBar #attitude #tab_light.tab_light--lighted, #TabsBar #about #tab_light.tab_light--lighted {
+    background-image: url('project://database/Assets/Images/tab_underline.png?fileID=2800000&guid=8fe0d00951b4482e921b0a7d1cd22b4a&type=3#tab_underline') !important;
+    -unity-background-image-tint-color: rgb(0, 204, 83) !important;
+    background-repeat: no-repeat !important;
+    background-size: 5px 5px !important;
+}
+
+/* Node tab's "Advanced Info" dropdown (formerly an always-visible console block near the top,
+   now a collapsed-by-default Foldout at the bottom of the page) - dark theme-matching header,
+   dashed-feeling top border to separate it from whatever's above it. .unity-toggle__text is a
+   stable built-in UI Toolkit class name for a Toggle's own label (Foldout's header is a Toggle
+   under the hood), not something specific to this project, so this should hold up across Unity
+   versions better than guessing at Foldout's internal element structure. */
+/* Node Info (live readout) and Advanced (Turn/Warp/Burn/Experimental settings) are Node tab's
+   two top-level dropdowns. Header look (font-size/color/letter-spacing/header-bar background) now
+   comes entirely from K2UI.uss's shared .unity-foldout rules - the "// LABEL" category-header
+   treatment matching the RCS Thruster reference - so these two no longer need their own
+   bold/color override; top-level and nested (Turn/Warp/Burn/Experimental) headers intentionally
+   share the same look now, same as the reference's category headers. Just a small top margin
+   left for breathing room from whatever's above. */
+#node_info_foldout, #advanced_info_foldout {
+    margin-top: 6px;
+}
+
+/* Advanced Info's table rows (node_infos, built in NodeExUI.cs's AddInfoRow) - dim label on the
+   left, bold value on the right, thin separator between rows, loosely matching the stock Parts
+   Manager reference panel's "row read" look. */
+.advanced-info-table {
+    margin-top: 4px;
+}
+
+.advanced-info-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(87, 95, 111, 0.25);
+}
+
+.advanced-info-row-label {
+    color: rgb(140, 148, 163);
+    font-size: 12px;
+}
+
+.advanced-info-row-value {
+    color: rgb(230, 233, 238);
+    -unity-font-style: bold;
+    font-size: 12px;
+}
+
+/* Auto-staging toggle (window footer toolbar) - restyled from an icon-only mini button into a
+   labeled checkbox: a small square LED (tab_underline.png, the same white-square + CSS-tint
+   asset the tab selection indicator uses) that tints green when checked, to the left of an
+   "Auto-staging" label. See K2D2_Window.uxml's comment for why row-reverse is needed to get the
+   icon on the left of the label. */
+#staging-toggle {
+    flex-direction: row-reverse;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0) !important;
+    background-image: none !important;
+    border-width: 0 !important;
+    width: auto;
+    height: 22px;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin: 0;
+}
+
+#staging-toggle > Label {
+    color: rgb(192, 199, 213) !important;
+    -unity-text-align: middle-left;
+    margin-left: 6px;
+}
+
+/* Reworked from a plain tinted-square LED into an actual checkbox: a bordered box in both
+   states, with a small pixelated checkmark (check_mark.png, generated the same way as
+   tab_underline.png - a transparent PNG tinted via CSS) appearing only once checked, alongside
+   the border itself turning green. */
+#staging-toggle #icon {
+    width: 12px;
+    height: 12px;
+    background-color: rgba(0, 0, 0, 0.25);
+    background-image: none;
+    border-width: 1px;
+    border-color: rgb(87, 95, 111);
+    border-radius: 2px;
+}
+
+#staging-toggle.checked #icon {
+    border-color: rgb(0, 204, 83);
+    background-image: url('project://database/Assets/Images/check_mark.png?fileID=2800000&guid=e3c3e3c326f7490489afafc91d2db028&type=3#check_mark');
+    -unity-background-image-tint-color: rgb(0, 204, 83);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 8px 8px;
+}
+
+/* Settings gear (window footer toolbar) - swapped from the old default ToggleButton.uss gear.png
+   art to a new pixelated 8-tooth gear (gear_pixel.png) hand-modeled off the stock gear icon
+   Reese referenced, using the same "white silhouette + CSS tint" pattern as tab_underline.png/
+   check_mark.png so it can be recolored without a new asset per theme. Kept white/light-gray
+   (not the reference's blue-purple accent color) per Reese's call. */
+#settings-toggle #icon {
+    background-image: url('project://database/Assets/Images/gear_pixel.png?fileID=2800000&guid=a7da2bdb4d5542489a33c4f7ae22fcb8&type=3#gear_pixel') !important;
+    -unity-background-image-tint-color: rgb(192, 199, 213) !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: 18px 18px !important;
+}
+
+/* Clears room for the new bottom-right resize handle (see ResizeManipulator.cs/K2D2_Window.uxml)
+   so it doesn't sit directly on top of the settings gear button. Both are absolutely positioned
+   at right:0/bottom:0 of the same containing box (the AppShell content area - the toolbar row is
+   its last in-flow child, so its bottom-right corner IS that box's bottom-right corner), so
+   without this the two controls occupied the exact same ~24x24px square: clicking the gear was
+   actually landing on the resize handle underneath it, which is also why a plain click nudged the
+   window size ("does stuff even when you just touch it"). Shifting the whole toolbar row left by
+   the handle's width moves the gear button clear of that corner instead. */
+#toolbar {
+    padding-right: 28px;
+}
+
