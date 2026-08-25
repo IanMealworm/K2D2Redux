@@ -1,5 +1,10 @@
+/* flex-grow: 1 added here, on .k2-slider-main below, and on the drag-container's own parent -
+   without an explicit stretch rule the slider was sizing to some Unity-default width instead of
+   filling its row, leaving a visible gap on the right before the "// SECTION" header bars above
+   it (which DO span full width), so header and slider read as two different widths. */
 .k2-slider {
     flex-direction: row;
+    flex-grow: 1;
 }
 
 .k2-slider > VisualElement {
@@ -11,6 +16,7 @@
     align-self: auto;
     justify-content: flex-start;
     flex-direction: column;
+    flex-grow: 1;
 }
 
 .k2-slider #unity-drag-container {
@@ -18,53 +24,59 @@
     margin-left: 0;
 }
 
+/* Retro/astromech pass, matching the stock RCS Thruster reference panel's sliders: a dashed
+   line track instead of a solid black bar, and a small rectangular handle instead of a circular
+   knob. The dash texture reuses the same dash.png the base Redux/KerbalUI theme already ships
+   and uses for its own default slider tracker (Packages/uitkforksp2.controls/Assets/Theme/
+   Sprites/dash.png) - no new asset needed, and it keeps this control visually consistent with
+   any stock-styled sliders elsewhere. The green fill_bar is hidden: the reference has no filled
+   progress segment on its sliders at all (only toggles get the green "on" fill), just the dash
+   line + handle position, so this drops it to match rather than leaving a mismatched accent. */
 .k2-slider #unity-tracker {
-    background-color: rgb(0, 0, 0);
+    background-color: rgba(0, 0, 0, 0);
+    background-image: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Sprites/dash.png?fileID=21300000&guid=8bcad968150482849aed7025ed71c162&type=3#dash');
+    -unity-background-image-tint-color: rgb(110, 120, 140);
+    background-repeat: repeat-x;
+    background-size: 16px;
     visibility: visible;
-    height: 6px;
-    margin-top: -3px;
-    border-color: rgb(60, 60, 60);
-    border-width: 1px;
-    border-radius: 3px;
-    overflow: hidden;
+    height: 1px;
+    margin-top: -1px;
+    border-width: 0;
+    border-radius: 0;
+    overflow: visible;
 }
 
 .k2-slider #unity-dragger-border {
-    padding-right: 16px;
-    padding-left: 15px;
+    padding-right: 8px;
+    padding-left: 8px;
 }
 
 .k2-slider #unity-dragger {
-    height: 16px;
-    color: rgb(255, 0, 0);
-    background-color: rgb(0, 0, 0);
-    border-color: rgb(255, 255, 255);
-    width: 16px;
-    margin-top: -8px;
-    border-radius: 8px;
-    border-width: 2px;
+    height: 20px;
+    background-color: rgb(140, 148, 163);
+    border-color: rgb(20, 22, 28);
+    width: 7px;
+    margin-top: -10px;
+    border-radius: 2px;
+    border-width: 1px;
 }
 
 .k2-slider #unity-dragger:hover {
+    background-color: rgb(170, 178, 195);
 }
 
 .k2-slider #unity-dragger:active {
-    background-color: rgb(200, 0, 0);
+    background-color: rgb(0, 204, 83);
 }
 
 .k2-slider #fill_bar {
-    width: 2000px;
-    background-color: rgb(59, 195, 0);
-    height: 10px;
-    align-self: flex-end;
-    position: absolute;
-    margin-top: 7px;
-    right: 100%;
+    display: none;
 }
 
 .k2-slider-main {
     border-color: rgb(63, 66, 154);
     flex-direction: column;
+    flex-grow: 1;
 }
 
 .k2-slider-main > Label {
@@ -76,8 +88,12 @@
     justify-content: space-between;
 }
 
+/* margin-top was -10px, tuned for the old 16px circular dragger. The new dragger is 20px tall
+   (see #unity-dragger above) and sits 2px lower around the same center point, so that same -10px
+   pull-up was crowding these labels right up against the track - eased off to -2px for more
+   clearance. */
 .k2-slider-main #min_max_bar Label {
-    margin-top: -10px;
+    margin-top: -2px;
     font-size: 11px;
     min-width: 0;
 }

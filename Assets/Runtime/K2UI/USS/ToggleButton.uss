@@ -19,9 +19,13 @@
     background-color: var(--k2-active_frame);
 }
 
+/* Swapped from a bright neon lime (rgb(106, 255, 6)) to this mod's established accent green
+   (rgb(0, 204, 83) - same green as the progress bar fill, tab-running dot, auto-staging
+   checkmark, and the K2Toggle "on" state) so every "active/on" indicator across the mod reads as
+   the same color instead of two competing greens sitting next to each other. */
 .toggle-button.checked {
     background-image: url('project://database/Assets/Images/Light_Button.png?fileID=2800000&guid=778643882f96ecd47990fd5c8764fd03&type=3#Light_Button');
-    -unity-background-image-tint-color: rgb(106, 255, 6);
+    -unity-background-image-tint-color: rgb(0, 204, 83);
     color: rgb(0, 0, 0);
 }
 
@@ -80,8 +84,8 @@
 
 .toggle-button.mini-toggle.checked {
     background-image: none;
-    -unity-background-image-tint-color: rgb(106, 255, 6);
-    background-color: rgb(106, 255, 6);
+    -unity-background-image-tint-color: rgb(0, 204, 83);
+    background-color: rgb(0, 204, 83);
 }
 
 .toggle-button.mini-toggle.checked #icon {

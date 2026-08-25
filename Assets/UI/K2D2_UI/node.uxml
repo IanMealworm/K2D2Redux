@@ -1,5 +1,4 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <ui:Template name="StatusGroup" src="project://database/Assets/UI/K2D2_UI/StatusGroup.uxml?fileID=9197481963319205126&amp;guid=6d8db5aba9b53334ca8e1489f83a4ba3&amp;type=3#StatusGroup" />
     <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
     <Style src="project://database/Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss?fileID=7433441132597879392&amp;guid=48c501354e05fdc41b817de07ca2a1b8&amp;type=3#KerbalUI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
@@ -8,50 +7,96 @@
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="node" label="Node" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
+            <!-- Section A: page title -->
             <ui:Label tabindex="-1" text="Node Auto-Executor" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
-            <K2UI.Console tabindex="-1" name="node_infos" text="Node Infos ..." />
+
+            <!-- Section C: Start/Pause buttons + status line + progress bar. StatusGroup.uxml's
+                 shared template isn't used here anymore so status_pilot/progress can sit directly
+                 under the buttons instead of pilot_console (see FullStatus.cs - it only tracks
+                 status_pilot's own parent as the group it shows/hides, so splitting these two out
+                 doesn't change that behavior). Other tabs still use the shared template for now. -->
             <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
                 <K2UI.ToggleButton name="run" label="Start" class="big" style="flex-grow: 1;" />
                 <K2UI.ToggleButton name="pause" class="big icon yellow" style="flex-shrink: 0; margin-left: 3px; margin-right: 0;">
                     <ui:VisualElement name="icon" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); background-image: url(&apos;project://database/Assets/Images/pause.png?fileID=2800000&amp;guid=02fa898692f9898449b2e0582c422977&amp;type=3#pause&apos;); -unity-background-scale-mode: scale-to-fit;" />
                 </K2UI.ToggleButton>
             </ui:VisualElement>
-            <ui:Instance template="StatusGroup" name="StatusGroup" />
-            <K2UI.Group text="Flight Plan" name="flight_plan_bar">
-                <ui:Label tabindex="-1" text="&lt;b&gt;Flight Plan&lt;/b&gt; not detected, install the great Mod to create Nodes." display-tooltip-when-elided="true" name="please_install_fp" style="white-space: normal; display: flex;" />
-                <ui:VisualElement name="add_node_buttons_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
-                    <ui:Label tabindex="-1" text="Circle " display-tooltip-when-elided="true" style="-unity-text-align: middle-left; display: flex;" />
-                    <UitkForKsp2.Controls.OabButton text="at Ap" name="circle_at_ap" style="flex-grow: 1; height: 30px;" />
-                    <UitkForKsp2.Controls.OabButton text="at Pe" name="circle_at_pe" style="flex-grow: 1; height: 30px;" />
-                    <UitkForKsp2.Controls.OabButton text="in 30s" name="circle_now" style="flex-grow: 1; height: 30px;" />
-                </ui:VisualElement>
-            </K2UI.Group>
-        </ui:VisualElement>
-        <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
-            <ui:Label tabindex="-1" text="Node Auto-Executor Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
-            <K2UI.K2Toggle label="Show Nodes Infos " name="show_node_infos" />
-            <K2UI.ExFoldoutGroup opened-index="3" style="margin-top: 6px;">
-                <ui:Foldout text="Turn" value="true" name="Turn">
-                    <K2UI.K2Slider name="max_angle_maneuver" label="Max Angle" max="10" print-value="true" label-on-top="true" value="0" min="0.01" />
+            <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                <K2UI.StatusLine tabindex="-1" text="Status Pilot" name="status_pilot" />
+                <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
+            </ui:VisualElement>
+
+            <!-- Section D: remaining console readout (dV/duration merged onto one line in
+                 BurnManeuvre.cs so they read side by side instead of stacked). -->
+            <K2UI.Console tabindex="-1" name="pilot_console" text="Console Pilot" />
+
+            <!-- Flight Plan integration removed for now (not currently in use, per project
+                 direction - schlosrat is separately porting Flight Plan itself for Redux). The
+                 UI block is deleted here, but FlightPlanCall.cs is left fully intact so this can
+                 be reimplemented later without rewriting it - see NodeExUI.cs, where the two
+                 call_fp call sites are commented out rather than removed. -->
+
+            <!-- Section B: two collapsible dropdowns at the bottom instead of one always-on
+                 block near the top, both collapsed by default. "Node Info" is the live node
+                 readout - node_infos is a plain VisualElement built into label/value table rows
+                 from C# (NodeExUI.cs's UpdateNodeInfos/AddInfoRow), loosely matching the stock
+                 Parts Manager panel look - split out into its own dropdown so it doesn't get
+                 buried under the settings foldouts below it. "Advanced" (renamed from "Advanced
+                 Info" now that Node Info is separate) holds the old Settings page's Turn/Warp/
+                 Burn/Experimental foldouts, moved down from the separate "settings" VisualElement
+                 below, which was redundant with this dropdown - the old "Show Nodes Infos" toggle
+                 is gone too, since the Node Info Foldout itself is now the only show/hide
+                 control. -->
+            <ui:Foldout text="NODE INFO" value="false" name="node_info_foldout">
+                <ui:VisualElement name="node_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
+            </ui:Foldout>
+            <!-- Advanced is now one dropdown with static "// SECTION" header bars separating
+                 Turn/Warp/Burn/Experimental (matching the stock Parts Manager reference's
+                 "// REACTION WHEEL" style - a divider inside one scrollable panel, not its own
+                 collapsible accordion item) instead of a Foldout-in-a-Foldout per group. The "//"
+                 prefix is kept on these section headers specifically to visually distinguish a
+                 non-collapsible divider from an actual dropdown title (which dropped its "//"
+                 above) - same convention the reference itself uses. -->
+            <ui:Foldout text="ADVANCED" value="false" name="advanced_info_foldout">
+                <ui:VisualElement name="Turn">
+                    <ui:Label text="// TURN" class="k2-section-header" />
+                    <K2UI.K2Slider name="max_angle_maneuver" label="Max Angle" max="10" print-value="true" label-on-top="true" value="0.01" min="0.01" />
                     <K2UI.K2Slider name="max_angular_speed" label="Max Angular Speed" max="10" print-value="true" label-on-top="true" value="0.98" min="0.01" />
-                </ui:Foldout>
-                <ui:Foldout text="Warp" value="true" name="Warp">
+                </ui:VisualElement>
+                <ui:VisualElement name="Warp">
+                    <ui:Label text="// WARP" class="k2-section-header" />
                     <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" />
                     <ui:VisualElement name="warp_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
                         <K2UI.K2Slider label-on-top="true" min-max-label="Safe-Quick" print-value="true" min="0" value="1" max="7" name="warp_speed" label="Warp Speed" />
                         <ui:IntegerField label="Before Burn (s)" value="42" is-delayed="true" name="warp_safe_duration" tooltip="Nb seconds in x1 before next phase (min:5)" />
                     </ui:VisualElement>
-                </ui:Foldout>
-                <ui:Foldout text="Burn" value="true" name="Burn">
+                </ui:VisualElement>
+                <ui:VisualElement name="Burn">
+                    <ui:Label text="// BURN" class="k2-section-header" />
                     <K2UI.K2Slider label-on-top="true" min-max-label="Precise-Quick" print-value="true" min="0.5" value="0.5" max="2" name="burn_adjust" label="Adjusting rate (m/s)" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.001" value="0.08" max="0.1" name="max_dv_error" label="Precision (m/s)" />
-                </ui:Foldout>
-                <ui:Foldout text="Experimental" value="false" name="Experimental">
-                    <K2UI.InlineEnum labels="T0;before;Mid-duration" name="start_mode" class="inline_enum" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="1" max="10" name="start_before" label="Start Before T0 (s)" />
+                </ui:VisualElement>
+                <ui:VisualElement name="Experimental">
+                    <ui:Label text="// EXPERIMENTAL" class="k2-section-header" />
+                    <!-- Radio-style rows instead of InlineEnum's 3-button row: each option is a
+                         label + K2Toggle switch (reusing K2Toggle's own built-in label - same
+                         layout auto_warp/rotate_during_burn already use), mutually exclusive -
+                         wired in NodeExSettings.cs since InlineEnum itself is left untouched
+                         (Dock tab still uses it as-is). start_before nests directly under the
+                         "Before" row and only shows while that mode is selected, matching how
+                         Parts Manager reveals extra controls under "Advanced Controls". -->
+                    <K2UI.K2Toggle label="T0" name="start_mode_precise" />
+                    <K2UI.K2Toggle label="Before" name="start_mode_constant" />
+                    <ui:VisualElement name="start_mode_constant_content" class="k2-nested-content" style="display: none;">
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="1" max="10" name="start_before" label="Start Before T0 (s)" />
+                    </ui:VisualElement>
+                    <K2UI.K2Toggle label="Mid-duration" name="start_mode_half_duration" />
                     <K2UI.K2Toggle label="Rotate During burn" tooltip="Keep SAS during burn phase." name="rotate_during_burn" />
-                </ui:Foldout>
-            </K2UI.ExFoldoutGroup>
+                </ui:VisualElement>
+            </ui:Foldout>
+        </ui:VisualElement>
+        <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
+            <ui:Label tabindex="-1" text="Node Auto-Executor Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
 </ui:UXML>
