@@ -89,7 +89,7 @@ namespace K2D2.Node
                     if (!checkAngularRotation())
                         return;
 
-                    status_line = "Ready !";
+                    status_line = "Locked on!";
                     finished = true;
                 }
                     break;
@@ -105,7 +105,7 @@ namespace K2D2.Node
                     if (!checkAngularRotation())
                         return;
 
-                    status_line = "Ready !";
+                    status_line = "Locked on!";
                     finished = true;
                 }
                     break;
@@ -121,7 +121,7 @@ namespace K2D2.Node
                     if (!checkAngularRotation())
                         return;
 
-                    status_line = "Ready !";
+                    status_line = "Locked on!";
                     finished = true;
                 }
                     break;
@@ -152,7 +152,7 @@ namespace K2D2.Node
             Vector3d forward_direction = (vessel_rotation.localRotation * Vector3.up).normalized;
 
             angle = (float)Vector3d.Angle(prograde_dir.vector, forward_direction);
-            status_line = $"Waiting for good sas direction\nAngle = {angle:n2}°";
+            status_line = $"Lining up... {angle:n2}° to go";
 
             return angle < max_angle;
         }
@@ -174,7 +174,7 @@ namespace K2D2.Node
             Vector3d forward_direction = (vessel_rotation.localRotation * Vector3.up).normalized;
 
             angle = (float)Vector3d.Angle(retro_dir.vector, forward_direction);
-            status_line = $"Waiting for good sas direction\nAngle = {angle:n2}°";
+            status_line = $"Lining up... {angle:n2}° to go";
 
             return angle < max_angle;
         }
@@ -195,7 +195,7 @@ namespace K2D2.Node
             Vector3d forward_direction = (vessel_rotation.localRotation * Vector3.up).normalized;
 
             angle = Vector3d.Angle(maneuver_dir.vector, forward_direction);
-            status_line = $"Waiting for good sas direction\nAngle = {angle:n2}°";
+            status_line = $"Lining up... {angle:n2}° to go";
 
             return angle < max_angle;
         }
@@ -205,7 +205,7 @@ namespace K2D2.Node
             double max_angular_speed = TurnToSettings.max_angular_speed.V;
             var angular_rotation_pc = current_vessel.GetAngularSpeed().vector;
 
-            status_line = "Waiting for stabilisation";
+            status_line = "Holding steady...";
             if (System.Math.Abs(angular_rotation_pc.x) > max_angular_speed)
                 return false;
 
@@ -220,7 +220,7 @@ namespace K2D2.Node
 
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
-            st.Warning("Check Attitude");
+            st.Warning("Aligning...");
             st.Console(status_line);
 
             // UI_Tools.Console($"sas.sas_response v {Tools.print_vector(sas_response)}");

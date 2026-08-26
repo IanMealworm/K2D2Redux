@@ -96,7 +96,7 @@ namespace K2D2.Node
                 start_dt = UT - GeneralTools.Game.UniverseModel.UniverseTime;
                 if (start_dt > 0)
                 {
-                    status_line = $"start in {StrTool.DurationToString(start_dt)}";
+                    status_line = $"Ignition in {StrTool.DurationToString(start_dt)}";
                     set_throttle(0);
                     return;
                 }
@@ -159,14 +159,14 @@ namespace K2D2.Node
                 {
                     compute_throttle();
                     set_throttle(needed_throttle);
-                    status_line = $"remaining dV : {remaining_dv:n2} m/S";
+                    status_line = $"{remaining_dv:n2} m/s remaining";
                 }
             }
         }
 
         void Finished()
         {
-            status_line = $"ended, error is {remaining_dv} m/S";
+            status_line = $"Burn complete - {remaining_dv:n2} m/s error";
             set_throttle(0);
             finished = true;
         }
@@ -203,16 +203,17 @@ namespace K2D2.Node
             switch (mode)
             {
                 case Mode.Waiting:
-                    st.Status("Waiting !");
+                    st.Status("Standing by...");
                     st.Console(status_line);
                     break;
                 case Mode.Burning:
-                    st.Warning("Burning !");
-                    st.Console(status_line);
+                    st.Warning("Burning!");
                     if (maneuver.BurnRequiredDV >= 0)
                         st.Progress(remaining_dv / maneuver.BurnRequiredDV, $"{remaining_dv:n1} m/s");
-                    
-                    st.Console(StrTool.DurationToString(remaining_full_burn_time));
+
+                    // dV remaining and time remaining on one line so they read side by side
+                    // instead of stacked as two separate console lines.
+                    st.Console($"{status_line}    |    {StrTool.DurationToString(remaining_full_burn_time)}");
                     break;
             }
 

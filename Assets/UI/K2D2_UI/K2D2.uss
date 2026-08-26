@@ -55,29 +55,73 @@ Label {
    this only ports the stock colors/font onto K2UI.ToggleButton's own class structure
    (.toggle-button / .checked / > Label, from ToggleButton.uss). #debug is used instead of
    a shared class so these rules win regardless of stylesheet load order. */
+/* Same pixel-bevel treatment as #run/#pause below, toned down - see that block's comment for why
+   this has to be an ID selector and how the bevel itself is built. Debug Mode keeps its own
+   established purple "settings toggle" color instead of the green used for Start/Pause's
+   running state, since this isn't an active-process indicator. */
 #debug {
-    background-color: rgb(189, 196, 209);
+    background-color: rgb(225, 227, 233);
     background-image: none;
-    border-width: 1px;
-    border-color: rgb(87, 95, 111);
-    border-radius: 8px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
 }
 
 #debug:hover {
-    background-color: rgb(214, 224, 255);
+    background-color: rgb(238, 240, 245);
 }
 
 #debug:active {
-    background-color: rgb(191, 202, 235);
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
 }
 
 #debug.checked {
     background-image: none;
     background-color: rgb(188, 161, 255);
+    border-color: rgb(50, 35, 75) rgb(216, 200, 255) rgb(150, 120, 210) rgb(50, 35, 75);
 }
 
 #debug.checked:hover {
     background-color: rgb(206, 190, 255);
+}
+
+/* "Reset All Settings" is a stock UitkForKsp2.Controls.OabButton (Button -> .oab-button__inner ->
+   .oab-button__label), not a K2UI.ToggleButton like the others on this page - same bevel look
+   applied directly to the button itself, with its label recolored to match since the stock
+   .oab-button__label styling assumes a dark button face, not this light one. */
+#reset_all {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#reset_all:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#reset_all:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
+/* OabButton's own stock KerbalUI style (.oab-button.unity-text-element > .oab-button__inner)
+   paints an opaque flat-gray fill AND its own separate 7px-rounded corners on this inner wrapper,
+   regardless of what's set on the button itself - that's what was actually showing through as the
+   button's face, sitting inside the bevel border above rather than being replaced by it, which is
+   why this looked visibly different from Debug Mode (a plain K2UI.ToggleButton with no such
+   nested layer). Made fully transparent in every state so only the outer #reset_all bevel paints. */
+#reset_all > .oab-button__inner,
+#reset_all:hover > .oab-button__inner,
+#reset_all:active > .oab-button__inner {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 0;
+}
+
+#reset_all .oab-button__label {
+    color: rgb(34, 38, 46);
 }
 
 #debug > Label {
@@ -90,38 +134,52 @@ Label {
     color: rgb(34, 38, 46) !important;
 }
 
-/* Node tab: Start/Pause toggle buttons - restyled to the stock KerbalUI oab-button-toggle
-   palette. Both stay K2UI.ToggleButton (NodeExUI.cs binds them via .Value/.listeners/.Bind()),
-   so - same as Debug Mode above - this only ports the stock colors onto the existing class
-   structure rather than swapping control types. Label color uses !important from the start
-   this time, since we already found .toggle-button > Label's color needs it to lose to an
-   ID selector here (see the #debug case above for the diagnosis). */
+/* Node tab: Start/Pause toggle buttons. Originally just ported the stock KerbalUI oab-button-
+   toggle palette (flat fill, thin uniform border) - now redone as Reese's pixel-art 3D "PAUSE"/
+   "PLAY" bevel reference. This has to live HERE, as an ID selector, not as the .toggle-button.big
+   class rules over in ToggleButton.uss: an ID selector always wins a specificity fight against
+   any class selector regardless of which stylesheet loads later, so those .big rules were being
+   silently overridden by this block the entire time - same lesson as the #debug case above.
+   UI Toolkit has no real box-shadow/gradient, so the bevel is faked with asymmetric border
+   widths/colors: a dark keyline all round, a light face, and heavier right/bottom borders in
+   darker shades standing in for the block's own right-side and underside faces - the diagonal
+   seam where they meet at the corner falls out for free from how adjacent border colors miter.
+   Reese: the first pass read as too heavy/3D - thinner borders and less contrast between the
+   face/right-face/bottom-face shades tones it down while keeping the same bevel shape. Explicit
+   height here (not left to each button's own natural sizing) also fixes Pause reading shorter
+   than Start - #pause was capped at .toggle-button.big.icon's own height:30px (inside the same
+   border-box as its now-thicker border, shrinking its content) while #run had no explicit height
+   at all, so the two drifted apart the instant the borders got heavier. */
 #run, #pause {
-    background-color: rgb(189, 196, 209);
+    background-color: rgb(225, 227, 233);
     background-image: none;
-    border-width: 1px;
-    border-color: rgb(87, 95, 111);
-    border-radius: 8px;
+    height: 32px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
 }
 
 #run:hover, #pause:hover {
-    background-color: rgb(214, 224, 255);
+    background-color: rgb(238, 240, 245);
 }
 
+/* Pressed reads as the block nudging down into its own shadow rather than resizing it (changing
+   border-width here would jitter the button's layout size). */
 #run:active, #pause:active {
-    background-color: rgb(191, 202, 235);
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
 }
 
-/* Checked (running) state uses the stock "confirm" green (#00cc53, also used by KerbalUI's own
-   radio button checkmark) rather than the purple used for Debug Mode - Start/Pause are an
-   active-process indicator, not a settings toggle, so it gets its own semantic color. */
+/* Checked (running) state re-themed to the reference's own green "PLAY" bevel - same block shape,
+   still the stock "confirm" green family used elsewhere in this theme (progress bar fill, etc.). */
 #run.checked, #pause.checked {
     background-image: none;
-    background-color: rgb(0, 204, 83);
+    background-color: rgb(46, 204, 92);
+    border-color: rgb(20, 60, 32) rgb(110, 200, 140) rgb(50, 150, 80) rgb(20, 60, 32);
 }
 
 #run.checked:hover, #pause.checked:hover {
-    background-color: rgb(51, 219, 118);
+    background-color: rgb(66, 224, 112);
 }
 
 #run > Label {

@@ -41,6 +41,9 @@ namespace K2D2.Node
             status_bar = new FullStatus(panel);
 
             pilot.is_running_event += is_running => run_button.Value = is_running;
+            // "Give him a little life": K2's 3 grille lines cascade on/off with the autopilot
+            // itself, via the same is_running_event run_button already listens to above.
+            pilot.is_running_event += is_running => status_bar.avatar?.SetRunning(is_running);
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;

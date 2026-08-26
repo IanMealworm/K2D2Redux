@@ -59,6 +59,7 @@ namespace KTools
                 new K2UI.K2ProgressBar.UxmlFactory(),
                 new K2UI.ExFoldoutGroup.UxmlFactory(),
                 new K2UI.K2SliderInt.UxmlFactory(),
+                new K2UI.K2Avatar.UxmlFactory(),
                 new K2UI.Tabs.TabsBar.UxmlFactory(),
                 new K2UI.Tabs.TabPage.UxmlFactory(),
                 new K2UI.Tabs.TabButton.UxmlFactory(),

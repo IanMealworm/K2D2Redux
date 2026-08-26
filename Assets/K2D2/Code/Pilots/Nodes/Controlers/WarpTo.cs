@@ -126,7 +126,7 @@ namespace K2D2.Node
             if (check_direction)
             {
                 turn_to.Update();
-                status_line = $"Attitude Correction = {turn_to.angle:n2} ° < {max_angle}";
+                status_line = $"Attitude correction: {turn_to.angle:n2}° (limit {max_angle}°)";
                 if (TimeWarpTools.CurrentRateIndex > 0)
                 {
                     if (turn_to.angle > max_angle)
@@ -162,15 +162,15 @@ namespace K2D2.Node
 
             float wanted_rate = TimeWarpTools.indexToRatio(wanted_warp_index);
             TimeWarpTools.SetRateIndex(wanted_warp_index, false);
-            status_line = $"End warp : {StrTool.DurationToString(dt)} | x{wanted_rate}";
+            status_line = $"Warp ends in {StrTool.DurationToString(dt)} (x{wanted_rate})";
             if (check_direction)
             {
-                status_line += $"\nAttitude Correction = {turn_to.angle:n2} ° < {max_angle}";
+                status_line += $"\nAttitude correction: {turn_to.angle:n2}° (limit {max_angle}°)";
             }
         }
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
-            st.Status("Time Warp");
+            st.Status("Warping ahead...");
             st.Console(status_line);
 
             if (K2D2Settings.debug_mode.V)

@@ -11,13 +11,18 @@ namespace K2D2.UI
             status = group.Q<StatusLine>("status_pilot");
             console = group.Q<K2UI.Console>("pilot_console");
             progressBar = group.Q<K2UI.K2ProgressBar>("progress");
+            // Not every tab has a K2Avatar yet (only the Node tab, so far) - Q<>() just returns
+            // null when it's not there, which is fine since nothing here calls avatar.* itself;
+            // callers (e.g. NodeExUI) are the ones that need to null-check before using it.
+            avatar = group.Q<K2UI.K2Avatar>("k2_avatar");
             main_group = status.parent;
         }
 
         VisualElement main_group;
         public K2UI.Console console;
         public K2UI.StatusLine status;
-        public K2UI.K2ProgressBar progressBar;  
+        public K2UI.K2ProgressBar progressBar;
+        public K2UI.K2Avatar avatar;
 
         public void Reset()
         {

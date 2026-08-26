@@ -215,6 +215,80 @@
     -unity-font-style: normal;
 }
 
+/* Node tab "finish it up" pass: K2's own face replaces the redundant "K2:" text prefix that used
+   to open every status line (stripped from the strings themselves in TurnTo.cs/BurnManeuvre.cs/
+   WarpTo.cs/NodeExPilot.cs), and the yellow headline (.k2-status-line) + the plain-text detail
+   readout underneath it (.console) sit directly on top of each other with no gap, read together
+   as one continuous message from K2 instead of two separate-looking labels. */
+.k2-status-row {
+    flex-direction: row;
+    align-items: center;
+    /* Reese: the icon sat flush against the panel's own left edge - a little breathing room, same
+       idea as the slider label row's own left/right padding fix earlier. */
+    padding-left: 6px;
+}
+
+.k2-status-speech {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+/* Scoped to only the merged speech block above - .console keeps its normal 5px top margin
+   everywhere else it's used (Node Info readouts, other tabs' own console-style panels, etc.). */
+.k2-status-speech > .console {
+    margin-top: 0;
+}
+
+.k2-status-speech > .k2-status-line {
+    margin-bottom: 0;
+}
+
+/* k2d2_big_icon.png is the same sticker-style mascot face already used on the About tab and the
+   window's own title icon - reused here at a smaller size as the "K2 is talking" avatar. Reese:
+   64px read as too big, and the text sat too close to K2 - shrunk the icon and widened the gap
+   to the speech text (light positions below are rescaled to match this new size). */
+.k2-avatar {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    margin-right: 16px;
+}
+
+.k2-avatar-icon {
+    width: 100%;
+    height: 100%;
+    background-image: url('project://database/Assets/Images/k2d2_big_icon.png?fileID=2800000&guid=8ef988e0f43beb149a76620d7ba3ed65&type=3#k2d2_big_icon');
+    -unity-background-scale-mode: scale-to-fit;
+    position: relative;
+}
+
+/* The 3 small grille lines already baked into the bottom-left of k2d2_big_icon.png's own artwork
+   (measured directly off the 240x240 source PNG's pixels, then scaled to this 48px icon size) -
+   K2Avatar.cs lights these up blue in sequence while the autopilot runs, and back off in reverse
+   when it stops, so it reads as those exact lines glowing rather than a decoration bolted on top.
+   Sized/positioned in flat px (not %) on purpose - a previous slider dash bug in this same game
+   embedding traced back to a 1px-scale line rounding to an invisible sub-pixel sliver, so these
+   stay comfortably thick (2px) rather than trying to match the artwork's thinner line weight
+   exactly. */
+.k2-avatar-light {
+    position: absolute;
+    left: 12px;
+    width: 8px;
+    height: 2px;
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 1px;
+    transition-property: background-color;
+    transition-duration: 0.15s;
+}
+
+.k2-avatar-light-0 { top: 41px; }
+.k2-avatar-light-1 { top: 43px; }
+.k2-avatar-light-2 { top: 45px; }
+
+.k2-avatar-light--on {
+    background-color: rgb(90, 190, 255);
+}
+
 Label {
     min-width: 50px;
     -unity-text-align: upper-left;

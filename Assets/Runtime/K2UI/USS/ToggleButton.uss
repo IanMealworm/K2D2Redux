@@ -34,13 +34,60 @@
     -unity-background-image-tint-color: rgb(255, 238, 0);
 }
 
+/* ===== Pixel-art 3D button treatment (Reese's PAUSE/PLAY reference images) =====
+   Scoped to .big only (Start/Stop and the small square Pause icon button), not the base
+   .toggle-button class - InlineEnum's row buttons and the Advanced-settings gear mini-toggle use
+   a much smaller, differently-shaped button that this chunky treatment isn't meant for.
+   UI Toolkit has no real box-shadow or gradient, so this fakes the reference's flat-shaded 3D
+   block look with asymmetric border widths/colors instead: a dark keyline all the way round, a
+   light face, and two darker flat bands (wider right + bottom borders) standing in for the
+   block's own right-side and underside faces. The diagonal seam where the right-face meets the
+   bottom-face in both reference images falls out for free from how adjacent border colors miter
+   at a corner - it just happens to land exactly where the reference's own seam sits.
+
+   NOTE: this class-based rule set has NO visible effect on the actual Node tab Start/Pause
+   buttons - K2D2.uss has its own #run, #pause ID-selector overrides (from an earlier styling
+   pass) that win the specificity fight against ANY class selector here regardless of load order,
+   so the real bevel colors for those two buttons live in K2D2.uss, not here. This block is kept
+   as the default look for any future .big button that ISN'T ID-overridden there. */
 .toggle-button.big {
     justify-content: center;
     font-size: 16px;
+    border-radius: 4px;
+    border-width: 3px 5px 6px 3px;
+    border-color: rgb(20, 20, 26) rgb(150, 152, 160) rgb(90, 92, 100) rgb(20, 20, 26);
+    background-color: rgb(225, 227, 233);
 }
 
 .toggle-button.big > Label {
     font-size: 17px;
+    color: rgb(30, 32, 38);
+    -unity-font-style: bold;
+}
+
+.toggle-button.big:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+/* Pressed reads as the block nudging down into its own shadow, rather than resizing it (changing
+   border-width here would shift layout/jitter the button's size) - just a small offset + a darker
+   face. */
+.toggle-button.big:active {
+    translate: 1px 1px;
+    background-color: rgb(210, 212, 218);
+}
+
+/* Running/checked state re-themed to the reference's own green "PLAY" bevel, same chunky-block
+   shape, instead of the old Light_Button.png sprite tint (still used as-is by every other
+   .toggle-button that isn't .big). */
+.toggle-button.big.checked {
+    background-image: none;
+    background-color: rgb(46, 204, 92);
+    border-color: rgb(12, 60, 26) rgb(94, 214, 130) rgb(28, 130, 60) rgb(12, 60, 26);
+}
+
+.toggle-button.big.checked > Label {
+    color: rgb(10, 40, 18);
 }
 
 .toggle-button.big.icon {
@@ -52,6 +99,13 @@
     padding-right: 4px;
     padding-top: 4px;
     padding-bottom: 4px;
+}
+
+/* The small square Pause icon button keeps its own yellow accent, same bevel treatment. */
+.toggle-button.big.icon.yellow.checked {
+    background-image: none;
+    background-color: rgb(255, 214, 51);
+    border-color: rgb(90, 68, 0) rgb(255, 234, 133) rgb(214, 163, 0) rgb(90, 68, 0);
 }
 
 .toggle-button.big.icon Label {

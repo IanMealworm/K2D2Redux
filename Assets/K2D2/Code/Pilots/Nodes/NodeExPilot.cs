@@ -164,25 +164,34 @@ namespace K2D2.Node
             var st = ui.status_bar;
             if (!isRunning)
             {
+                // K2's own face (see k2_avatar in node.uxml) now sits right next to this line, so
+                // it no longer needs its own "K2:" text prefix to read as K2 talking - same for
+                // every st.Warning()/st.Status() call in TurnTo.cs/BurnManeuvre.cs/WarpTo.cs below.
                 if (next_maneuver_node == null)
                 {
-                    st.Status("No Maneuver node.");
+                    st.Status("No Node Created");
                     return;
                 }
 
                 if (!valid_maneuver)
                 {
-                    st.Warning("No Maneuver node.");
-                    st.Console("Actually a KSP2 bug when loading scenaries. Please open map to fix it");               
+                    st.Warning("Node data glitched");
+                    st.Console("That's a known KSP2 map-loading glitch - pop open the map view and I'll pick it back up.");
                     return;
                 }
 
-                if (!isRunning && !canStart())
+                if (!canStart())
                 {
-                    st.Warning("No valid Maneuver node found");
+                    st.Warning("That node's already in the past - replot it.");
                     return;
                 }
-            } 
+
+                // Previously this state (node plotted, valid, startable, but the pilot hasn't
+                // been started yet) fell through with nothing set at all - the only way to tell a
+                // node was ready to go was to open the "NODE INFO" dropdown. This is the "in your
+                // face" indicator Reese asked for.
+                st.Status("Ready to execute node!");
+            }
             else
                 current_executor.updateUI(page.panel, st);
         }
