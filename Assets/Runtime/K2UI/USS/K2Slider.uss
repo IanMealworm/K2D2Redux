@@ -19,27 +19,58 @@
     flex-grow: 1;
 }
 
+/* label_row (the label+value pair) ends up as a direct VisualElement child of main_slider
+   itself whenever label-on-top is false (see K2Slider.cs's setLabelPos, which inserts it into
+   main_slider instead of into "this" in that case) - the ">VisualElement" rule right above this
+   one was written for main_slider's real input container, but it unintentionally caught
+   label_row too, since label_row is *also* a direct VisualElement child in that layout. That
+   handed label_row an equal flex-grow:1 share of the row, squeezing the actual track/dragger
+   down to roughly half width - Max Throttle is the one that showed it, since it's the only
+   label-on-top="false" slider in current use. Locking label_row back to a content-sized, non-
+   growing box (via its own id, which beats the class+type selector above) so the whole rest of
+   the row's width goes to the track like it should. */
+.k2-slider > #label_row {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
 .k2-slider #unity-drag-container {
+    /* Back to overflow: hidden (its original value) - a diagnostic swap to visible didn't change
+       anything (every slider still showed no dashes with the clip removed), so clipping wasn't
+       the actual mechanism either. See #unity-tracker below for where this landed. */
     overflow: hidden;
     margin-left: 0;
 }
 
 /* Retro/astromech pass, matching the stock RCS Thruster reference panel's sliders: a dashed
    line track instead of a solid black bar, and a small rectangular handle instead of a circular
-   knob. The dash texture reuses the same dash.png the base Redux/KerbalUI theme already ships
-   and uses for its own default slider tracker (Packages/uitkforksp2.controls/Assets/Theme/
-   Sprites/dash.png) - no new asset needed, and it keeps this control visually consistent with
-   any stock-styled sliders elsewhere. The green fill_bar is hidden: the reference has no filled
-   progress segment on its sliders at all (only toggles get the green "on" fill), just the dash
-   line + handle position, so this drops it to match rather than leaving a mismatched accent. */
+   knob.
+   This used to be a background-image referencing the base Redux/KerbalUI theme's own dash.png
+   (Packages/uitkforksp2.controls/Assets/Theme/Sprites/dash.png) via a USS url(). Four rounds of
+   troubleshooting that (a hidden->visible container transition, the reference itself dropping on
+   relayout, sub-pixel height rounding, and this container's own overflow clipping it) each got
+   ruled out empirically via Ksp2-2.log - resolvedStyle consistently reported everything as it
+   should be (right sprite, correct non-fractional size, Visible, opacity 1) and the dashes still
+   didn't render in-game. That means the failure is happening below what resolvedStyle can even
+   see - somewhere in this game's embedding actually painting a tiled background-image from a
+   package-sourced sprite - not something fixable by tuning more USS properties. K2Slider.cs now
+   draws the dashes itself with generateVisualContent (plain Painter2D line segments, no texture
+   involved at all), so background-image/tint/repeat/size are dropped here - height stays, since
+   the C# draw call reads this element's resolvedStyle.height for the line's thickness. */
 .k2-slider #unity-tracker {
     background-color: rgba(0, 0, 0, 0);
-    background-image: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Sprites/dash.png?fileID=21300000&guid=8bcad968150482849aed7025ed71c162&type=3#dash');
-    -unity-background-image-tint-color: rgb(110, 120, 140);
-    background-repeat: repeat-x;
-    background-size: 16px;
+    /* Explicit "none" matters here, not just omitting the property: KerbalUI.uss (the stock Redux
+       theme, loaded before this file) has its own rule for .unity-base-slider--horizontal ...
+       .unity-base-slider__tracker that sets a background-image to this SAME dash.png, just tinted
+       a lighter blue (rgb(119, 152, 204) vs our rgb(110, 120, 140)). Our old #unity-tracker rule
+       always won that property via ID-selector specificity regardless of whether it actually
+       rendered, so this stock rule never showed - but the moment this rule stopped declaring
+       background-image at all (switching to the Painter2D draw in K2Slider.cs), the cascade fell
+       through to KerbalUI's declaration instead, which showed up as a lighter dashed line ghosting
+       behind our darker hand-drawn one. Declaring none here re-blocks it explicitly. */
+    background-image: none;
     visibility: visible;
-    height: 1px;
+    height: 3px;
     margin-top: -1px;
     border-width: 0;
     border-radius: 0;
@@ -79,13 +110,45 @@
     flex-grow: 1;
 }
 
-.k2-slider-main > Label {
+/* Was ">" (direct child) - label_element now lives one level deeper, inside label_row (see
+   K2Slider.cs), so this needs to match through that wrapper too. The more specific
+   #min_max_bar Label rule below still wins for min/max labels regardless. */
+.k2-slider-main Label {
     font-size: 13px;
 }
 
 .k2-slider-main #min_max_bar {
     flex-direction: row;
     justify-content: space-between;
+}
+
+/* Reese wants these to read like the game's own cockpit gauges: title pinned left, live value
+   pinned right in the gauge's amber/yellow instead of both baked into one "Label : value" string
+   (which can only have one alignment/color for its whole length). label_element keeps whatever
+   default width/margins Unity's BaseField gives it as a title; this just stops it from also
+   trying to grow/shrink like a normal field label now that it shares a row with the value. */
+.k2-slider-label-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    /* Reese: the left (title) side sat flush against the row's own edge with no breathing room,
+       while the right (value) side wasn't - reads as lopsided even though both sides are honestly
+       just sitting at their natural flex position. Equal padding on both sides guarantees they're
+       symmetric regardless of either Label's own default margins. */
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.k2-slider-label-row > Label {
+    flex-grow: 0;
+    flex-shrink: 1;
+    margin: 0;
+}
+
+/* Best-guess match to the amber/yellow of the in-game "ORBIT 1969.9 m/s" gauge readout Reese
+   referenced - nudge this hex if it's not a close enough match once seen next to the real gauge. */
+.k2-slider-value-label {
+    color: rgb(242, 201, 76);
 }
 
 /* margin-top was -10px, tuned for the old 16px circular dragger. The new dragger is 20px tall

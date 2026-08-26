@@ -165,5 +165,28 @@ namespace K2UI.Tabs
             reset_bt.RegisterCallback<ClickEvent>(evt => SettingsFile.Instance.Reset(chapter));
             close.RegisterCallback<ClickEvent>(evt => GlobalSetting.settings_visible.V = false);
         }
+
+        // The settings-gear page (and its Reset+Close pair above) is on its way out - it's being
+        // replaced by an info button that opens the About tab once the restyle is done. Tabs that
+        // have already moved their settings into an inline ADVANCED foldout (Node, Lift so far)
+        // use this instead: just the Reset button, dropped at the bottom of whatever foldout is
+        // passed in - no Close button, since that only ever meant "go back to the main page from
+        // the settings page," which doesn't apply here.
+        public void addResetButton(VisualElement parent, string chapter)
+        {
+            if (parent == null)
+                return;
+
+            // Named so K2D2.uss can pick it up with the same pixel-art bevel treatment as
+            // Debug Mode/Reset All Settings/Start-Pause (see #reset_advanced there).
+            Button reset_bt = new Button() { text = "Reset" };
+            reset_bt.name = "reset_advanced";
+            reset_bt.style.height = 30;
+            reset_bt.style.marginTop = 8;
+
+            parent.Add(reset_bt);
+
+            reset_bt.RegisterCallback<ClickEvent>(evt => SettingsFile.Instance.Reset(chapter));
+        }
     }
 }

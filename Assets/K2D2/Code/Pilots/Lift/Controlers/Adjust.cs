@@ -38,15 +38,19 @@ namespace K2D2.Lift
             turn_to.StartProGrade(SpeedDisplayMode.Surface);
         }
 
+        // Narrative feedback only here now - Altitude/Apoapsis Alt./Throttle moved to
+        // UpdateInfoRows below (LIFT INFO table).
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
-            st.Console($"Altitude = {ascent.current_altitude_km:n2} km");
-            st.Console($"Apoapsis Alt. = {ascent.ap_km:n2} km");
-
             if (!turn_to.finished)
-                st.Console(turn_to.status_line);       
-            else
-                st.Console($"wanted_throttle. = {wanted_throttle:n2}");
+                st.Console(turn_to.status_line);
+        }
+
+        public override void UpdateInfoRows(System.Action<string, string> addRow)
+        {
+            addRow("Altitude", $"{ascent.current_altitude_km:n2} km");
+            addRow("Apoapsis Alt.", $"{ascent.ap_km:n2} km");
+            addRow("Throttle", $"{wanted_throttle:n2}");
         }
 
         public override void Update()

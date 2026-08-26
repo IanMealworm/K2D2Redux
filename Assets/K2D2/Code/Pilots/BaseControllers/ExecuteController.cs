@@ -55,6 +55,13 @@ namespace K2D2.Controller
         {
             finished = false;
         }
+
+        // Numeric telemetry a controller wants shown as label/value rows in its tab's own
+        // "INFO" table dropdown (see Lift's LiftUI.cs/UpdateLiftInfos for the caller), instead of
+        // scrolling through the console text alongside actual narrative feedback (status_line,
+        // warnings). Default no-op so controllers that have nothing to report (or haven't been
+        // updated yet) don't need to override this.
+        public virtual void UpdateInfoRows(System.Action<string, string> addRow) { }
     }
 }
 

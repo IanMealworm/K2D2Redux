@@ -48,17 +48,23 @@ namespace K2D2.Lift
             turn_to.StartProGrade(SpeedDisplayMode.Surface);
         }
 
+        // Narrative feedback only here now - Altitude/Atm Density moved to UpdateInfoRows below
+        // (LIFT INFO table), same split NodeExUI's controllers already use between console text
+        // and the Node Info table.
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
             st.Status("Coasting");
-
-            st.Console($"Altitude = {current_altitude_km:n2} km");
-            st.Console($"Atm Density = {densityAtm:n2}");
 
             if (!turn_to.finished)
                 st.Console(turn_to.status_line);
             else
                 st.Console($"End warp : {StrTool.DurationToString(duration_to_atm)} x{TimeWarpTools.CurrentRate}");
+        }
+
+        public override void UpdateInfoRows(System.Action<string, string> addRow)
+        {
+            addRow("Altitude", $"{current_altitude_km:n2} km");
+            addRow("Atm Density", $"{densityAtm:n2}");
         }
 
         public override void Update()

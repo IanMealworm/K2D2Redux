@@ -58,7 +58,11 @@ namespace K2D2.Node
             // Advanced Info foldout on "page" instead of the separate hidden "settings"
             // VisualElement, so setupUI needs to query the whole panel to find them.
             pilot.settings.setupUI(panel);
-            addSettingsResetButton("node_ex");
+
+            // Reset button moved down into the ADVANCED foldout itself, now that the settings
+            // page it used to live on is on its way out (replaced by an info button to the About
+            // tab once the restyle is done).
+            addResetButton(panel.Q<Foldout>("advanced_info_foldout"), "node_ex");
 
 
             return true;

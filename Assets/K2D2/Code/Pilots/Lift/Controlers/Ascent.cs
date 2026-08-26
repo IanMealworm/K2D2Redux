@@ -53,11 +53,18 @@ namespace K2D2.Lift
             if (current_vessel.VesselComponent == null)
                 return;
 
-            // VesselComponent.Orbit can return a CurrentPatchedConicsOrbit (Redux's ECS live-vessel
-            // orbit) instead of PatchedConicsOrbit for the actively-flown vessel - they're unrelated
-            // sibling classes that both implement IKeplerPatch, so casting straight to PatchedConicsOrbit
-            // threw InvalidCastException every Update(). Apoapsis/referenceBody are on IOrbit
-            // (which IKeplerPatch extends), so just read them off the interface, no cast needed.
+            // FOURTEENTH follow-up fix (see NOTICE.md): the comment this replaced said the cast to the
+            // concrete PatchedConicsOrbit was "VERIFIED" - that was true for orbits in general, but not
+            // for the actively-flown vessel. IL/metadata inspection of Assembly-CSharp.dll showed
+            // KSP.Sim.impl.PatchedConicsOrbit is NOT the only class implementing KSP.Sim.IKeplerPatch -
+            // Redux.Ecs.Components.CurrentPatchedConicsOrbit also implements it, as a completely
+            // unrelated sibling class (both extend System.Object directly, neither derives from the
+            // other). Redux's ECS layer hands back a CurrentPatchedConicsOrbit for the vessel currently
+            // being simulated/flown - exactly this vessel, exactly while the Lift autopilot is running -
+            // so the hard cast below threw InvalidCastException on every single Update(), which is why
+            // the Lift autopilot didn't work at all. Apoapsis and referenceBody are both members of the
+            // IOrbit interface (which IKeplerPatch extends), so no concrete cast is needed - just read
+            // them straight off the interface VesselComponent.Orbit already returns.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             ap_km = (float)(orbit.Apoapsis - orbit.referenceBody.radius) / 1000;
             current_altitude_km = (float)(current_vessel.GetSeaAltitude() / 1000);
@@ -139,19 +146,25 @@ namespace K2D2.Lift
         }
 
 
+        // Ascent has no narrative feedback of its own beyond LiftUI's generic "Status : Ascent"
+        // headline - all its telemetry moved to UpdateInfoRows below (LIFT INFO table) instead of
+        // scrolling through the console text.
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
-            st.Status($"Apoapsis Alt. = {ap_km:n2} km");
-            st.Console($"Last delta ap. = {delta_ap_per_second:n2} km/s");
-            st.Console($"Altitude = {current_altitude_km:n2} km");
+        }
 
-            st.Console($"Inclination = {wanted_elevation:n2} °");
-            st.Console($"wanted_throttle. = {wanted_throttle:n2}");
+        public override void UpdateInfoRows(System.Action<string, string> addRow)
+        {
+            addRow("Apoapsis Alt.", $"{ap_km:n2} km");
+            addRow("Altitude", $"{current_altitude_km:n2} km");
+            addRow("Climb Rate", $"{delta_ap_per_second:n2} km/s");
+            addRow("Pitch Target", $"{wanted_elevation:n2} °");
+            addRow("Throttle", $"{wanted_throttle:n2}");
 
             if (settings.heading_correction.V)
             {
-                st.Console($"h_speed_heading. = {h_speed_heading:n2}°");
-                st.Console($"heading_correction. = {heading_correction:n2}°");        
+                addRow("Surface Heading", $"{h_speed_heading:n2} °");
+                addRow("Heading Correction", $"{heading_correction:n2} °");
             }
         }
 

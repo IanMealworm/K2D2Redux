@@ -10,14 +10,14 @@ namespace K2D2.Lift
         public ClampSetting<float> heading = new ("lift.heading", 90,  0 , 360);
  
         public Setting<int> start_altitude_km = new ("lift.start_altitude_km", 2);
-   
+
         public ClampSetting<float> mid_rotate_ratio = new ("lift.mid_rotate_ratio", 0.2f, 0, 1);
 
         public ClampSetting<float> end_rotate_ratio = new ("lift.end_rotate_ratio", 0.5f, 0, 1);
 
         public LiftSettings()
         {
-            start_altitude_km.listeners += v => update_altitudes();    
+            start_altitude_km.listeners += v => update_altitudes();
             mid_rotate_ratio.listeners += v => update_altitudes();
             end_rotate_ratio.listeners += v => update_altitudes();
             destination_Ap_km.listeners += v => update_altitudes();
@@ -42,7 +42,7 @@ namespace K2D2.Lift
         float _end_rotate_altitude_km = -1;
         public float end_rotate_altitude_km
         {
-            get { 
+            get {
                 return _end_rotate_altitude_km;
             }
         }

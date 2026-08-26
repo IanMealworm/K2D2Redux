@@ -124,6 +124,29 @@ Label {
     color: rgb(34, 38, 46);
 }
 
+/* Node/Lift tabs: the settings Reset button, relocated to the bottom of each tab's own ADVANCED
+   foldout (see K2Page.cs's addResetButton) now that the settings-gear page it used to live on is
+   on its way out. Same bevel as Debug Mode/Reset All Settings - this one's a plain Unity Button
+   (not an OabButton), so unlike #reset_all there's no nested .oab-button__inner/label to also
+   neutralize - the color/background/border all land directly on the element itself. */
+#reset_advanced {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#reset_advanced:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#reset_advanced:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
 #debug > Label {
     color: rgb(34, 38, 46);
     -unity-font-style: bold;
@@ -313,36 +336,18 @@ Label {
     background-size: 16px 16px !important;
 }
 
-/* K2Tabs.uss's #tab_light is a separate "pilot is running" indicator (unrelated to tab
-   selection) that by default absolutely-positions itself as a full-width bar above/around the
-   tab button. Now that tab selection has its own green underline, that read as a second,
-   competing green line sitting above the whole tab row whenever a pilot runs. A first attempt to
-   just hide it with ".k2-tab-button #tab_light { display: none !important; }" did NOT apply
-   in-game, for the same reason the original tab-bar pass didn't: the leftmost anchor
-   (".k2-tab-button") is a bare class selector, and - per the DIAGNOSIS comment above - overrides
-   for these runtime-built TabButton elements only reliably win when every element in the chain
-   is ID-anchored, same as "#TabsBar #node" etc. below. Restyled (not hidden) as a small
-   pixelated dot in the tab's top-right corner instead of a full-width bar, using the same
-   tab_underline.png "white square + CSS tint" asset as the selection underline - transparent/
-   colorless while idle, tinted green only while ".tab_light--lighted" is applied. */
+/* K2Tabs.uss's #tab_light was a separate "pilot is running" indicator (unrelated to tab
+   selection), restyled as a small pixelated dot in each tab's top-right corner (see git history
+   for the full backstory on that pass). Reese: remove it outright - only one autopilot can
+   actually be running at a time (K2D2_Plugin.ResetControllers() stops whichever pilot was active
+   the moment a different one starts), so it never showed more than one tab lit anyway and wasn't
+   worth the extra chrome. Hidden via the same ID-anchored selectors that were needed to style it
+   in the first place - a bare ".k2-tab-button #tab_light { display: none; }" won't reliably apply
+   here for the same specificity reason a plain hide attempt failed when this was first touched:
+   these runtime-built TabButton elements only reliably take overrides when every element in the
+   selector chain is ID-anchored, same as "#TabsBar #node" etc. below. */
 #TabsBar #node #tab_light, #TabsBar #lift #tab_light, #TabsBar #landing #tab_light, #TabsBar #dock #tab_light, #TabsBar #attitude #tab_light, #TabsBar #about #tab_light {
-    top: 3px !important;
-    left: auto !important;
-    right: 3px !important;
-    bottom: auto !important;
-    width: 5px !important;
-    height: 5px !important;
-    flex-grow: 0 !important;
-    border-radius: 0 !important;
-    background-image: none !important;
-    opacity: 1 !important;
-}
-
-#TabsBar #node #tab_light.tab_light--lighted, #TabsBar #lift #tab_light.tab_light--lighted, #TabsBar #landing #tab_light.tab_light--lighted, #TabsBar #dock #tab_light.tab_light--lighted, #TabsBar #attitude #tab_light.tab_light--lighted, #TabsBar #about #tab_light.tab_light--lighted {
-    background-image: url('project://database/Assets/Images/tab_underline.png?fileID=2800000&guid=8fe0d00951b4482e921b0a7d1cd22b4a&type=3#tab_underline') !important;
-    -unity-background-image-tint-color: rgb(0, 204, 83) !important;
-    background-repeat: no-repeat !important;
-    background-size: 5px 5px !important;
+    display: none !important;
 }
 
 /* Node tab's "Advanced Info" dropdown (formerly an always-visible console block near the top,
