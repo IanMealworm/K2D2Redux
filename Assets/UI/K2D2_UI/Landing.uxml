@@ -1,5 +1,4 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <ui:Template name="StatusGroup" src="project://database/Assets/UI/K2D2_UI/StatusGroup.uxml?fileID=9197481963319205126&amp;guid=6d8db5aba9b53334ca8e1489f83a4ba3&amp;type=3#StatusGroup" />
     <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
@@ -7,35 +6,76 @@
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="landing" label="Land" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Safe Landing" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
-            <K2UI.Console tabindex="-1" name="landing_infos" text="Landing infos&#10;&#10;&#10;....." />
-            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
+            <ui:Label tabindex="-1" text="Landing Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
+
+            <!-- Landing readout - a table directly on the page rather than tucked into a
+                 collapsible dropdown like Node/Lift's INFO foldouts: this is live, time-critical
+                 descent info (fall speed, collision countdown) the player wants at a glance during
+                 an actual landing, not one click away. Built into label/value rows from C# (see
+                 LandingUI.cs's AddInfoRow/updateContext), same table styling as NODE INFO/LIFT
+                 INFO. Shown/hidden via the "Show Landing Context" toggle, now inside ADVANCED
+                 below. -->
+            <ui:VisualElement name="landing_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
+
+            <!-- Brake/Touch Down restyled to the same bevel look as the reset buttons (see
+                 #touch_down in K2D2.uss - Brake already got this via its shared "#run" id), and
+                 given equal flex-grow so the two buttons split the row evenly instead of Touch
+                 Down sizing to its own text. margin-top/bottom on the row gives both buttons some
+                 breathing room from the table above and K2 below, matching Lift's Start button. -->
+            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; margin-top: 10px; margin-bottom: 10px;">
                 <K2UI.ToggleButton name="run" label="Brake" class="big" style="flex-grow: 1;" />
-                <ui:Button text="Touch Down" display-tooltip-when-elided="true" name="touch_down" style="height: 30px; margin-left: 2px; margin-right: 2px; margin-top: 0; margin-bottom: 0;" />
+                <ui:Button text="Touch Down" display-tooltip-when-elided="true" name="touch_down" style="flex-grow: 1; margin-left: 3px; margin-right: 0; margin-top: 0; margin-bottom: 0;" />
             </ui:VisualElement>
-            <ui:Instance template="StatusGroup" name="StatusGroup" />
-        </ui:VisualElement>
-        <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Landing Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
-            <K2UI.ExFoldoutGroup opened-index="-1" style="margin-top: 6px;">
+
+            <!-- K2 arrives on the Landing tab too: same merged "K2 is talking" element as Node/
+                 Lift (yellow status line + console read together, next to K2's animated icon)
+                 instead of the shared StatusGroup template's plain status_pilot/pilot_console
+                 pair. -->
+            <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 10px; margin-bottom: 12px;">
+                <ui:VisualElement name="k2_status_row" class="k2-status-row">
+                    <K2UI.K2Avatar name="k2_avatar" />
+                    <ui:VisualElement name="k2_status_speech" class="k2-status-speech">
+                        <K2UI.StatusLine tabindex="-1" text="Status Pilot" name="status_pilot" />
+                        <K2UI.Console tabindex="-1" name="pilot_console" text="Console Pilot" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
+            </ui:VisualElement>
+
+            <!-- Same treatment as Node/Lift: settings collapsed into one ADVANCED dropdown with
+                 "// SECTION" header bars, replacing the old ExFoldoutGroup-of-3-foldouts (which
+                 kept Warp/Brake/Touch Down each independently collapsible, accordion-style, inside
+                 the separate hidden "settings" page). "settings" below is kept only because
+                 K2Page.Init()'s Q<VisualElement>("settings") lookup expects to find it, but it no
+                 longer carries any real controls - the Reset button now lives at the bottom of
+                 this ADVANCED foldout instead (see LandingUI.cs's addResetButton call).
+                 "Show Landing Context" isn't tied to any one phase, so it sits ungrouped at the
+                 top rather than under one of the "// SECTION" headers below. -->
+            <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
                 <K2UI.K2Toggle label="Show Landing Context" name="landing_context" />
-                <ui:Foldout text="Warp" value="true" name="Warp">
-                    <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" style="margin-bottom: 10px;" />
+                <ui:VisualElement name="Warp">
+                    <ui:Label text="// WARP" class="k2-section-header" />
+                    <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" />
                     <ui:VisualElement name="warp_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
                         <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration" tooltip="During Rotation Warp, Attitude is checked" />
                         <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
                     </ui:VisualElement>
-                </ui:Foldout>
-                <ui:Foldout text="Brake" value="true" name="Landing">
+                </ui:VisualElement>
+                <ui:VisualElement name="Brake">
+                    <ui:Label text="// BRAKE" class="k2-section-header" />
                     <K2UI.K2Slider name="burn_before" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
-                </ui:Foldout>
-                <ui:Foldout text="Touch Down" value="true" name="TouchDown">
+                </ui:VisualElement>
+                <ui:VisualElement name="TouchDown">
+                    <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
                     <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle" label="Max Angle" tooltip="Max Angle for Final touch Down" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
-                </ui:Foldout>
-            </K2UI.ExFoldoutGroup>
+                </ui:VisualElement>
+            </ui:Foldout>
+        </ui:VisualElement>
+        <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
+            <ui:Label tabindex="-1" text="Landing Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
 </ui:UXML>

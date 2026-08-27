@@ -162,10 +162,29 @@ namespace K2D2.Landing
             }
 
             compute_Throttle();
-            status_line = $"Max Speed : {max_speed:n2} m/s";
 
             // no stop for gravity compensation
             current_vessel.SetThrottle(wanted_throttle);
+        }
+
+        // Numeric telemetry for the Landing tab's own on-page info table (see LandingUI.cs's
+        // updateContext) - status_line stays narrative-only now (checkDirection's "Waiting for
+        // ..." messages) instead of being overwritten every tick with this Max Speed readout.
+        public override void UpdateInfoRows(System.Action<string, string> addRow)
+        {
+            addRow("Max Speed", $"{max_speed:n2} m/s");
+            addRow("Delta Speed", $"{delta_speed:n2} m/s");
+
+            if (K2D2Settings.debug_mode.V)
+            {
+                if (gravity_compensation)
+                {
+                    addRow("Gravity", $"{gravity:n2}");
+                    addRow("Gravity Dir. Factor", $"{gravity_direction_factor:n2}");
+                }
+
+                addRow("Wanted Throttle", $"{wanted_throttle:n2}");
+            }
         }
 
         public override void updateUI(VisualElement el, FullStatus st)

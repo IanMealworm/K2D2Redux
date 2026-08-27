@@ -55,6 +55,11 @@ Label {
    this only ports the stock colors/font onto K2UI.ToggleButton's own class structure
    (.toggle-button / .checked / > Label, from ToggleButton.uss). #debug is used instead of
    a shared class so these rules win regardless of stylesheet load order. */
+/* Reese liked #reset_all's font (it never overrides one, so it just falls through to the
+   generic Label rule above - plain JetBrains Mono Regular) better than the SFPixelate bold
+   this block and #run below used to carry, so both now point at that same JetBrains Mono
+   Regular SDF asset instead, matching Reset All Settings/#reset_advanced without needing
+   their own override at all. */
 /* Same pixel-bevel treatment as #run/#pause below, toned down - see that block's comment for why
    this has to be an ID selector and how the bevel itself is built. Debug Mode keeps its own
    established purple "settings toggle" color instead of the green used for Start/Pause's
@@ -62,6 +67,7 @@ Label {
 #debug {
     background-color: rgb(225, 227, 233);
     background-image: none;
+    flex-basis: 0;
     border-width: 2px 3px 4px 2px;
     border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
     border-radius: 3px;
@@ -90,9 +96,15 @@ Label {
    .oab-button__label), not a K2UI.ToggleButton like the others on this page - same bevel look
    applied directly to the button itself, with its label recolored to match since the stock
    .oab-button__label styling assumes a dark button face, not this light one. */
+/* flex-basis: 0 (instead of the default "auto", which sizes each flex item off its own content
+   width before growing) makes Reset All Settings and Debug Mode split buttons_bar's width
+   exactly evenly - with flex-basis:auto, OabButton's slightly different intrinsic padding/font
+   metrics vs. K2UI.ToggleButton's meant the two never came out equal despite both already having
+   flex-grow:1 in the uxml. */
 #reset_all {
     background-color: rgb(225, 227, 233);
     background-image: none;
+    flex-basis: 0;
     border-width: 2px 3px 4px 2px;
     border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
     border-radius: 3px;
@@ -122,6 +134,7 @@ Label {
 
 #reset_all .oab-button__label {
     color: rgb(34, 38, 46);
+    font-size: 14px;
 }
 
 /* Node/Lift tabs: the settings Reset button, relocated to the bottom of each tab's own ADVANCED
@@ -133,6 +146,7 @@ Label {
     background-color: rgb(225, 227, 233);
     background-image: none;
     color: rgb(34, 38, 46);
+    font-size: 14px;
     border-width: 2px 3px 4px 2px;
     border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
     border-radius: 3px;
@@ -147,10 +161,18 @@ Label {
     translate: 1px 1px;
 }
 
+/* ToggleButton.uss's ".toggle-button.big > Label" rule sets an explicit font-size: 17px (plus
+   the SFPixelate-era bold) - that's a plain class selector so it loses the font-FAMILY fight to
+   this ID selector, but font-size/weight are properties this rule never touched, so they kept
+   falling through from that class rule untouched. That's why Debug Mode/Start/Brake still looked
+   "off" against Reset All Settings/Touch Down after the font swap - same family, different size.
+   Pinned to 14px here to match #reset_all/#reset_advanced/#touch_down below, none of which are
+   .toggle-button.big elements so none of them ever got the 17px override in the first place. */
 #debug > Label {
     color: rgb(34, 38, 46);
-    -unity-font-style: bold;
-    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/SFPixelate/SFPixelate%20SDF.asset?fileID=11400000&guid=b74cecddccdf00b47a63d040e8e3821a&type=2#SFPixelate SDF') !important;
+    font-size: 14px;
+    -unity-font-style: normal;
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF') !important;
 }
 
 #debug.checked > Label {
@@ -205,10 +227,13 @@ Label {
     background-color: rgb(66, 224, 112);
 }
 
+/* Same font-size fix as #debug > Label above - .toggle-button.big > Label's own font-size: 17px
+   survived the earlier font-family swap since that rule never touched size, only family. */
 #run > Label {
     color: rgb(34, 38, 46) !important;
-    -unity-font-style: bold;
-    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/SFPixelate/SFPixelate%20SDF.asset?fileID=11400000&guid=b74cecddccdf00b47a63d040e8e3821a&type=2#SFPixelate SDF') !important;
+    font-size: 14px;
+    -unity-font-style: normal;
+    -unity-font-definition: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Fonts/JetBrainsMono/JetBrainsMono-Regular%20SDF.asset?fileID=11400000&guid=f5454c9c675002c44a5a7234bd40c390&type=2#JetBrainsMono-Regular SDF') !important;
 }
 
 #run.checked > Label {
@@ -219,6 +244,76 @@ Label {
    background, but not on the new light-gray/purple fills - so tint it dark in both states. */
 #pause #icon {
     -unity-background-image-tint-color: rgb(34, 38, 46);
+}
+
+/* Landing's Touch Down button - was a completely unstyled stock ui:Button, now given the same
+   light-gray pixel-bevel as Brake (#run) sits next to it, so the two read as one matched pair
+   instead of a themed button next to a plain default one. Plain Unity Button (not an OabButton),
+   so same as #reset_advanced there's no nested .oab-button__inner/label to separately neutralize
+   - color/background/border land directly on the element, and its text already gets the shared
+   JetBrains Mono Regular from the base Label rule with no override needed here, same as
+   #reset_all/#reset_advanced. No .checked state since this is a one-shot action button, not a
+   toggle. */
+#touch_down {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    font-size: 14px;
+    height: 32px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#touch_down:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#touch_down:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
+/* Brake and Touch Down both already carry flex-grow:1 in their uxml, but flex-grow alone splits
+   space starting from each item's own content-based width (flex-basis:auto) - since "Brake"/
+   "Stop" and "Touch Down" aren't the same width, that alone doesn't produce two equal-size
+   buttons, same root cause as the Reset All Settings/Debug Mode mismatch above. flex-basis:0
+   makes both start from zero and split the row exactly evenly. Scoped to "#landing" (the Landing
+   TabPage's own name/id) rather than a bare "#run" so this doesn't reach Node/Lift's Start, which
+   share the same "button_bars" container name for their own, differently-composed row (Start +
+   the fixed-size Pause icon button, not a second flex-grow item to balance against). */
+#landing #button_bars #run, #landing #button_bars #touch_down {
+    flex-basis: 0;
+}
+
+/* ToggleButton.uss's base ".toggle-button" rule gives Brake its own built-in
+   2px/2px/2px/4px (left/right/top/bottom) margin, meant for generic toggle buttons elsewhere -
+   Touch Down (a plain Button, not a .toggle-button) never had that, and instead got its spacing
+   from explicit margins in the uxml. Two flex items with different margins end up different
+   sizes even at equal flex-basis/flex-grow, since margin is reserved outside each item's own box
+   rather than shared - zeroed out here (scoped to "#landing" specifically, same reasoning as the
+   flex-basis rule above - a bare "#button_bars #run" previously also caught Node's Start button,
+   stripping the margin it shares with Pause and throwing that pair back out of alignment with
+   each other) so Brake's box matches Touch Down's; the visible gap between the two still comes
+   from Touch Down's own margin-left in the uxml. */
+#landing #button_bars #run {
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+/* Same fix as #button_bars #run above, for the About tab's own Reset All Settings/Debug Mode
+   row (named "buttons_bar", singular, not "button_bars") - Debug Mode is a K2UI.ToggleButton so
+   it inherits .toggle-button's built-in margin, Reset All Settings (an OabButton) doesn't and
+   instead gets its spacing from an explicit margin-right in the uxml. Zeroing Debug Mode's here
+   leaves the gap between them coming from just that one explicit margin, same box width both
+   sides. */
+#buttons_bar #debug {
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 /* Tab bar (Node/Lift/Land/Dock/Att.) - redesigned to match the flat "underline" tab style from

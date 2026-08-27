@@ -34,6 +34,11 @@ namespace K2D2.Controller
             }
         }
 
+        // Forwards to whichever ExecuteController is currently active, same idea as status_line
+        // above - lets LandingUI ask "current_executor" for its numeric telemetry rows without
+        // caring whether it's TouchDown, WarpTo, or nothing at all right now.
+        public void UpdateInfoRows(System.Action<string, string> addRow) { sub_controler?.UpdateInfoRows(addRow); }
+
         public override void updateUI(VisualElement root_el, FullStatus st) { if (sub_controler != null) sub_controler.updateUI(root_el, st); }
         public override void Update() { if (sub_controler != null) sub_controler.Update(); }
         public override void LateUpdate() { if (sub_controler != null) sub_controler.LateUpdate(); }

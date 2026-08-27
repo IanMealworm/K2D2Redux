@@ -6,7 +6,7 @@
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="lift" label="Lift" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Lift - the Ascent autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Ascent Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
             <ui:Foldout text="Profile" value="false" name="profile">
                 <ui:IntegerField label="Ap Altitude" value="42" name="destination_Ap_km" style="justify-content: space-between;">
                     <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />

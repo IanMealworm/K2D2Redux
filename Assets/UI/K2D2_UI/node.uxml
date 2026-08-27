@@ -8,7 +8,7 @@
     <K2UI.Tabs.TabPage name="node" label="Node" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
             <!-- Section A: page title -->
-            <ui:Label tabindex="-1" text="Node Auto-Executor" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Maneuver Node Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
 
             <!-- Section C: Start/Pause buttons + K2's own status readout + progress bar.
                  StatusGroup.uxml's shared template isn't used here anymore - status_pilot and

@@ -6,7 +6,7 @@
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="attitude" label="Att." style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Attitude Pilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Attitude Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
             <K2UI.Group text="Elevation" name="elevation_group">
                 <ui:VisualElement style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
                     <ui:Label tabindex="-1" text="Elevation (°) :" display-tooltip-when-elided="true" />

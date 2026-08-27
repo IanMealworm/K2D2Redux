@@ -18,7 +18,7 @@ namespace K2D2.Landing
             code = "landing";
         }
 
-        public K2UI.Console landing_infos;
+        public VisualElement landing_infos;
         public FullStatus status_bar;
 
         public ToggleButton run_button;
@@ -29,7 +29,7 @@ namespace K2D2.Landing
         public override bool onInit()
         {
             LandingSettings settings = pilot.settings;
-            landing_infos = panel.Q<K2UI.Console>("landing_infos");
+            landing_infos = panel.Q<VisualElement>("landing_infos");
             settings.landing_context.listen(v => landing_infos.Show(v));
 
             run_button = panel.Q<ToggleButton>("run");
@@ -37,6 +37,10 @@ namespace K2D2.Landing
             status_bar = new FullStatus(panel);
 
             pilot.is_running_event += is_running => run_button.Value = is_running;
+            // Same "give him a little life" touch as Node/Lift: K2's 3 grille lines cascade
+            // on/off with the autopilot, via the same is_running_event run_button already
+            // listens to above.
+            pilot.is_running_event += is_running => status_bar.avatar?.SetRunning(is_running);
             run_button.listeners += v =>
             {
                 pilot.isRunning = v;
@@ -49,32 +53,59 @@ namespace K2D2.Landing
                 pilot.setMode(LandingPilot.Mode.TouchDown);
             });
 
-            pilot.settings.setupUI(pilot, settings_page);
-            addSettingsResetButton("land");
+            pilot.settings.setupUI(pilot, panel);
+            addResetButton(panel.Q<Foldout>("advanced_foldout"), "land");
 
             return true;
         }
 
+        void AddInfoRow(string label, string value)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("advanced-info-row");
+
+            var label_el = new Label(label);
+            label_el.AddToClassList("advanced-info-row-label");
+            row.Add(label_el);
+
+            var value_el = new Label(value);
+            value_el.AddToClassList("advanced-info-row-value");
+            row.Add(value_el);
+
+            landing_infos.Add(row);
+        }
+
         public void updateContext()
         {
-            landing_infos.Set("<b>Landing Context</b>");
-            landing_infos.Add($"Current Fall Speed : {pilot.current_falling_speed:n2} m/s");
+            landing_infos.Clear();
 
-            LandingSettings settings = pilot.settings;
+            AddInfoRow("Fall Speed", $"{pilot.current_falling_speed:n2} m/s");
+            AddInfoRow("Altitude", StrTool.DistanceToString(pilot.altitude));
+
             if (pilot.collision_detected)
             {
-                landing_infos.Add("<b>Collision detected !</b>");
-                landing_infos.Add($" Collision in {StrTool.DurationToString(pilot.adjusted_collision_UT - GeneralTools.Game.UniverseModel.UniverseTime)}");
-                landing_infos.Add($" speed collision {pilot.speed_collision:n2} m/s");
-                landing_infos.Add($" start_burn in <b>{StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime)}</b>");
-                landing_infos.Add($" burn_duration {pilot.burn_duration:n2} s");
-
-                // landing_infos.Add( $"\ncurrent_V_speed : {StrTool.DistanceToString(pilot.altitude)}");
-                // landing_infos.Add( $"\nAltitude : {StrTool.DistanceToString(pilot.altitude)}");
+                AddInfoRow("Collision", "Detected");
+                AddInfoRow("Collision In", StrTool.DurationToString(pilot.adjusted_collision_UT - GeneralTools.Game.UniverseModel.UniverseTime));
+                AddInfoRow("Collision Speed", $"{pilot.speed_collision:n2} m/s");
+                AddInfoRow("Start Burn In", StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime));
+                AddInfoRow("Burn Duration", $"{pilot.burn_duration:n2} s");
             }
             else
             {
-                landing_infos.Add("<b>No Collision detected</b>");
+                AddInfoRow("Collision", "None detected");
+            }
+
+            // Same idea as Lift's LIFT INFO: numeric telemetry from whichever sub-controller is
+            // actually driving the vessel right now (TouchDown's Max/Delta Speed while braking;
+            // WarpTo has nothing to report during the warp phases) folds into this table via
+            // ExecuteController.UpdateInfoRows, instead of scrolling through the console text
+            // alongside the narrative status line below.
+            if (pilot.isRunning)
+            {
+                pilot.current_executor?.UpdateInfoRows(AddInfoRow);
+
+                if (isRunning && pilot.burn_dV.burned_dV > 0)
+                    AddInfoRow("Burned", $"{pilot.burn_dV.burned_dV:n1} m/s");
             }
         }
 
@@ -131,13 +162,15 @@ namespace K2D2.Landing
                 if (pilot.current_executor != null && !string.IsNullOrEmpty(pilot.current_executor.status_line))
                     status_bar.Console(pilot.current_executor.status_line);
             }
-
-            status_bar.Console($"Altitude : {StrTool.DistanceToString(pilot.altitude)}");
+            else
+            {
+                // Idle placeholder, same idea as Node's "No Node Created"/Lift's "Lift autopilot
+                // not enabled" - K2 has something to say here instead of the status readout just
+                // sitting empty before the pilot's ever been run.
+                status_bar.Status("Landing autopilot not enabled");
+            }
 
             //    UI_Tools.Console("SurfaceVelocity" + StrTool.VectorToString(SurfaceVelocity.vector));
-
-            if (isRunning && pilot.burn_dV.burned_dV > 0)
-                status_bar.Console($"Burned : {pilot.burn_dV.burned_dV:n1} m/s");
 
             return true;
         }
