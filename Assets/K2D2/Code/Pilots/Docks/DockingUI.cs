@@ -22,7 +22,7 @@ namespace K2D2.Controller.Docks
 
         private VisualElement select_group, button_bars;
 
-        public K2UI.Console context;
+        public VisualElement context;
         private ToggleButton run_button;
         private Button main_brake, rcs_final_approach, cheat;
         private K2Toggle align_dock;
@@ -38,7 +38,7 @@ namespace K2D2.Controller.Docks
             // select_target_ui = SelectTargetUI(this.pilot, panel)
             // select_target_ui.onInitUI();
 
-            context = panel.Q<K2UI.Console>("context");
+            context = panel.Q<VisualElement>("context");
     
             button_bars = panel.Q<VisualElement>("button_bars");
             run_button = button_bars.Q<ToggleButton>("run");
@@ -76,6 +76,10 @@ namespace K2D2.Controller.Docks
                     pilot.isRunning = false;
             });
 
+            // Same "give him a little life" touch as Node/Lift/Land: K2's 3 grille lines cascade
+            // on/off with the autopilot.
+            pilot.listenIsRunning(is_running => st.avatar?.SetRunning(is_running));
+
             main_brake.listenClick(() =>
             {
                 pilot.Mode = DockingPilot.PilotMode.MainThrustKillSpeed;
@@ -86,18 +90,37 @@ namespace K2D2.Controller.Docks
                 pilot.Mode = DockingPilot.PilotMode.RCSFinalApproach;
             });
 
-            pilot.final_approach_pilot.onInitUI(panel, settings_page);
+            // RCS Power now lives inside the ADVANCED foldout on "page" instead of the separate
+            // "settings" VisualElement (same move as Node/Lift/Land) - panel.Q<>() searches the
+            // whole TabPage regardless, so passing it in place of settings_page is enough.
+            pilot.final_approach_pilot.onInitUI(panel, panel);
 
-            addSettingsResetButton("dock");
+            addResetButton(panel.Q<Foldout>("advanced_foldout"), "dock");
 
             return true;
         }
 
+        void AddInfoRow(string label, string value)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("advanced-info-row");
+
+            var label_el = new Label(label);
+            label_el.AddToClassList("advanced-info-row-label");
+            row.Add(label_el);
+
+            var value_el = new Label(value);
+            value_el.AddToClassList("advanced-info-row-value");
+            row.Add(value_el);
+
+            context.Add(row);
+        }
+
         void updateContext()
         {
-            context.Set("<b>Context</b>");
-            context.Add("Control : " + ListPart.formatComponent( pilot.current_vessel.VesselComponent, pilot.control_component ));
-            context.Add("Target : " + ListPart.formatComponent( pilot.target_vessel, pilot.target_part ));
+            context.Clear();
+            AddInfoRow("Control", ListPart.formatComponent( pilot.current_vessel.VesselComponent, pilot.control_component ));
+            AddInfoRow("Target", ListPart.formatComponent( pilot.target_vessel, pilot.target_part ));
         }
 
         public override bool onUpdateUI()
@@ -113,6 +136,10 @@ namespace K2D2.Controller.Docks
             pilot.final_approach_pilot.Hide();
             if (pilot.sub_controler != null)
                 pilot.sub_controler.updateUI(panel, st);
+            else
+                // Idle placeholder, same idea as Node/Lift/Land - K2 has something to say here
+                // instead of the status readout just sitting empty before the pilot's ever run.
+                st.Status("Docking autopilot not enabled");
 
             return true;
         }

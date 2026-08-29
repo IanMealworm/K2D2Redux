@@ -274,6 +274,32 @@ Label {
     translate: 1px 1px;
 }
 
+/* Dock tab: Main Thrust Brake/RCS Final Approach - same plain-Button bevel treatment as Touch
+   Down above (no nested .oab-button__inner/label, no .checked state - one-shot mode-select
+   buttons, not toggles). Align Dock (a K2Toggle) and Stop/Start (already themed via the shared
+   "#run" id) didn't need this. Small margin-top since these stack in a column (button_bars) with
+   Stop/Start above them, rather than sitting side-by-side in a row like Brake/Touch Down. */
+#main_brake, #rcs_final_approach {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    font-size: 14px;
+    height: 32px;
+    margin-top: 4px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#main_brake:hover, #rcs_final_approach:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#main_brake:active, #rcs_final_approach:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
 /* Brake and Touch Down both already carry flex-grow:1 in their uxml, but flex-grow alone splits
    space starting from each item's own content-based width (flex-basis:auto) - since "Brake"/
    "Stop" and "Touch Down" aren't the same width, that alone doesn't produce two equal-size
@@ -537,27 +563,55 @@ Label {
     background-size: 8px 8px;
 }
 
-/* Settings gear (window footer toolbar) - swapped from the old default ToggleButton.uss gear.png
-   art to a new pixelated 8-tooth gear (gear_pixel.png) hand-modeled off the stock gear icon
-   Reese referenced, using the same "white silhouette + CSS tint" pattern as tab_underline.png/
-   check_mark.png so it can be recolored without a new asset per theme. Kept white/light-gray
-   (not the reference's blue-purple accent color) per Reese's call. */
-#settings-toggle #icon {
-    background-image: url('project://database/Assets/Images/gear_pixel.png?fileID=2800000&guid=a7da2bdb4d5542489a33c4f7ae22fcb8&type=3#gear_pixel') !important;
-    -unity-background-image-tint-color: rgb(192, 199, 213) !important;
-    background-repeat: no-repeat !important;
-    background-position: center !important;
-    background-size: 18px 18px !important;
+/* SUPERSEDED - the settings gear/page mechanism is gone, replaced by the #info-toggle button
+   below, which jumps straight to the About tab instead of toggling a shared settings pane.
+   (Old gear art comment kept only in git history, not worth preserving here.)
+
+   New info button: Reese's reference image was a pixel-art blue circular info badge, so this is
+   built CSS-only (no new PNG/GUID asset) using the same bevel language as the rest of the mod's
+   buttons - a circular blue face, a dark navy outer border standing in for the pixel-bevel shadow
+   edge, and a lighter blue top/left highlight - with the "i" set directly as the Button's text
+   rather than a separate icon child. */
+#info-toggle {
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    background-color: rgb(96, 170, 235);
+    border-left-width: 2px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+    border-left-color: rgb(150, 205, 250);
+    border-top-color: rgb(150, 205, 250);
+    border-right-color: rgb(15, 30, 70);
+    border-bottom-color: rgb(15, 30, 70);
+    -unity-font-style: bold;
+    font-size: 14px;
+    color: rgb(15, 30, 70);
+    -unity-text-align: middle-center;
+    padding: 0;
+    margin: 0;
 }
 
-/* Clears room for the new bottom-right resize handle (see ResizeManipulator.cs/K2D2_Window.uxml)
-   so it doesn't sit directly on top of the settings gear button. Both are absolutely positioned
-   at right:0/bottom:0 of the same containing box (the AppShell content area - the toolbar row is
-   its last in-flow child, so its bottom-right corner IS that box's bottom-right corner), so
-   without this the two controls occupied the exact same ~24x24px square: clicking the gear was
-   actually landing on the resize handle underneath it, which is also why a plain click nudged the
-   window size ("does stuff even when you just touch it"). Shifting the whole toolbar row left by
-   the handle's width moves the gear button clear of that corner instead. */
+#info-toggle:hover {
+    background-color: rgb(120, 190, 250);
+}
+
+#info-toggle:active {
+    background-color: rgb(75, 145, 205);
+    border-left-color: rgb(15, 30, 70);
+    border-top-color: rgb(15, 30, 70);
+    border-right-color: rgb(150, 205, 250);
+    border-bottom-color: rgb(150, 205, 250);
+}
+
+/* Clears room for the bottom-right resize handle (see ResizeManipulator.cs/K2D2_Window.uxml) so
+   it doesn't sit directly on top of the toolbar's rightmost button. Both are absolutely
+   positioned at right:0/bottom:0 of the same containing box (the AppShell content area - the
+   toolbar row is its last in-flow child, so its bottom-right corner IS that box's bottom-right
+   corner), so without this the two controls would occupy the exact same ~24x24px square.
+   Shifting the whole toolbar row left by the handle's width moves the button clear of that
+   corner instead. */
 #toolbar {
     padding-right: 28px;
 }

@@ -20,8 +20,25 @@
                 <ui:Label tabindex="-1" text="Heading : 90°" display-tooltip-when-elided="true" name="heading_label" />
                 <K2UI.K2Compass name="heading" style="margin-top: 7px; margin-bottom: 7px;" />
             </K2UI.Group>
-            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
+            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; margin-top: 10px; margin-bottom: 10px;">
                 <K2UI.ToggleButton name="run" label="Start" class="big" style="flex-grow: 1;" />
+            </ui:VisualElement>
+
+            <!-- K2 arrives on the Attitude tab too: same merged "K2 is talking" element as every
+                 other tab (yellow status line + console read together, next to K2's animated
+                 icon). Attitude never had any status/console readout before this - Elevation and
+                 Heading are the whole point of the tab (not hidden preferences), so unlike every
+                 other tab there's no ADVANCED foldout here and nothing for a Reset button to
+                 reset - K2 just confirms whether he's holding attitude or not. -->
+            <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 10px; margin-bottom: 12px;">
+                <ui:VisualElement name="k2_status_row" class="k2-status-row">
+                    <K2UI.K2Avatar name="k2_avatar" />
+                    <ui:VisualElement name="k2_status_speech" class="k2-status-speech">
+                        <K2UI.StatusLine tabindex="-1" text="Status Pilot" name="status_pilot" />
+                        <K2UI.Console tabindex="-1" name="pilot_console" text="Console Pilot" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
