@@ -10,9 +10,9 @@
             <K2UI.Group text="Elevation" name="elevation_group">
                 <ui:VisualElement style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
                     <ui:Label tabindex="-1" text="Elevation (°) :" display-tooltip-when-elided="true" />
-                    <ui:RepeatButton name="elevation_n_rb" tooltip="Add Small Step ∆v" text="--" class="unity-button fixed-button icon-right" style="height: 24px;" />
+                    <ui:RepeatButton name="elevation_n_rb" tooltip="Add Small Step ∆v" text="-" />
                     <ui:FloatField value="42" name="elevation_field" />
-                    <ui:RepeatButton name="elevation_p_rb" tooltip="Add Small Step ∆v" text="++" class="unity-button fixed-button icon-right" style="height: 24px;" />
+                    <ui:RepeatButton name="elevation_p_rb" tooltip="Add Small Step ∆v" text="+" />
                 </ui:VisualElement>
                 <K2UI.K2Slider name="elevation_slider" />
             </K2UI.Group>

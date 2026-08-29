@@ -150,6 +150,12 @@ namespace K2UI
 
         Label label_element;
 
+        // See K2Slider.cs for the full explanation - title pinned left, value pinned right in the
+        // gauge amber, which needs two separate Labels in a row rather than one "Label : value"
+        // string.
+        VisualElement label_row;
+        Label value_label_element;
+
         VisualElement dragger;
         VisualElement tracker;
 
@@ -175,6 +181,12 @@ namespace K2UI
             fill_bar = new VisualElement() { name = "fill_bar" };
             label_element = main_slider.labelElement;
 
+            value_label_element = new Label() { name = "value_label" };
+            value_label_element.AddToClassList("k2-slider-value-label");
+
+            label_row = new VisualElement() { name = "label_row" };
+            label_row.AddToClassList("k2-slider-label-row");
+
             min_max_bar = new VisualElement() { name = "min_max_bar" };
             min_element = new Label() { name = "min_label" };
             max_element = new Label() { name = "max_label" };
@@ -187,6 +199,47 @@ namespace K2UI
             tracker.Add(fill_bar);
             main_slider.RegisterCallback<ChangeEvent<int>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
+
+            // Mirrors K2Slider.cs (this class is "a complete copy" of it, per the class doc comment
+            // above) - see that file for the full story of why the dashed track is drawn directly
+            // with generateVisualContent instead of a USS background-image: the background-image
+            // approach reported a fully correct resolved style (right sprite, right size, visible)
+            // while still not actually painting anything in this game's embedding, so this avoids
+            // that whole mechanism rather than continuing to chase it.
+            tracker.generateVisualContent += DrawDashedTrack;
+            tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
+        }
+
+        // See K2Slider.cs's DrawDashedTrack for the full story - the Butt line cap (not the dash
+        // size) was the real fix for the rounded-blob look, so this keeps Reese's original wider
+        // proportions.
+        static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
+        const float dash_length = 8f;
+        const float dash_gap = 6f;
+
+        void DrawDashedTrack(MeshGenerationContext mgc)
+        {
+            float width = tracker.resolvedStyle.width;
+            float height = tracker.resolvedStyle.height;
+            if (width <= 0 || height <= 0) return;
+
+            var painter = mgc.painter2D;
+            painter.strokeColor = dash_tint;
+            painter.lineWidth = height;
+            painter.lineCap = LineCap.Butt;
+            painter.BeginPath();
+
+            float x = 0f;
+            float y = height / 2f;
+            while (x < width)
+            {
+                float segment_end = Mathf.Min(x + dash_length, width);
+                painter.MoveTo(new Vector2(x, y));
+                painter.LineTo(new Vector2(segment_end, y));
+                x += dash_length + dash_gap;
+            }
+
+            painter.Stroke();
         }
 
         void SliderValueChanged()
@@ -199,34 +252,47 @@ namespace K2UI
 
         void setLabelPos()
         {
+            if (label_element.parent == null) return;
+
+            // Pull label_element (and add value_label_element alongside it) into label_row exactly
+            // once - see K2Slider.cs's setLabelPos for the full explanation.
+            if (label_element.parent != label_row)
+            {
+                label_element.parent.Remove(label_element);
+                label_row.Add(label_element);
+                label_row.Add(value_label_element);
+            }
+
             if (_labelOnTop)
             {
-                if (label_element.parent == null) return;
-
-                if (label_element.parent != this)
-                {
-                    label_element.parent.Remove(label_element);
-                    Insert(0, label_element);
-                }
+                if (label_row.parent != this)
+                    Insert(0, label_row);
             }
             else
             {
-                if (label_element.parent == null) return;
-
-                label_element.parent.Remove(label_element);
-                main_slider.Insert(0, label_element);
+                if (label_row.parent != main_slider)
+                    main_slider.Insert(0, label_row);
             }
-
         }
 
         void setLabels()
         {
-            setLabelPos();
+            // Still goes through main_slider.label (not label_element.text directly) so Unity's
+            // own BaseField show/hide-on-empty-label handling for label_element keeps working -
+            // this only ever carries the title text now, never the value.
+            main_slider.label = Label;
 
             if (printValue)
-                main_slider.label = Label + $" : {value}";
+            {
+                value_label_element.text = $"{value}";
+                value_label_element.style.display = DisplayStyle.Flex;
+            }
             else
-                main_slider.label = Label;
+            {
+                value_label_element.style.display = DisplayStyle.None;
+            }
+
+            setLabelPos();
 
             if (string.IsNullOrEmpty(minMaxLabel))
             {

@@ -6,7 +6,6 @@ namespace K2D2.Landing
 {
     public class LandingSettings
     {
-        public Setting<bool> landing_context = new("land.landing_context", true);
         public Setting<bool> auto_warp = new("land.auto_warp", true);
         public ClampSetting<float> burn_before = new("land.burnBefore", 0, 0, 10);
         public Setting<int> rotation_warp_duration = new("land.rotation_warp_duration", 60);
@@ -35,8 +34,6 @@ namespace K2D2.Landing
 
         public void setupUI(LandingPilot pilot, VisualElement root)
         {
-            root.Q<K2Toggle>("landing_context").Bind(landing_context);
-          
             // WARP
             root.Q<K2Toggle>("auto_warp").Bind(auto_warp);
             var warp_settings = root.Q<VisualElement>("warp_settings");    

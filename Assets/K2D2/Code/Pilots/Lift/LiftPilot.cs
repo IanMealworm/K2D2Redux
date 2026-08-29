@@ -138,7 +138,16 @@ namespace K2D2.Lift
         {
             this.result_ok = result_ok;
             this.end_status = end_status;
-            status = LiftStatus.Off;
+            // Was: status = LiftStatus.Off directly. That flips the getter's answer
+            // (isRunning reads _status != Off) but skips the isRunning SETTER entirely, so
+            // base.isRunning's own backing field never gets updated and is_running_event never
+            // fires. Node/Landing end their run via isRunning = false (see NodeExPilot.Stop(),
+            // LandingPilot's touchdown/abort paths) for exactly this reason - anything bound to
+            // is_running_event (LiftUI's run_button toggle state, K2's avatar SetRunning) needs
+            // that callback to update, or it stays stuck showing "running" after the pilot has
+            // actually finished on its own (as opposed to being stopped via the Brake/Start
+            // button, which already goes through this setter).
+            isRunning = false;
         }
 
         public WarpTo warp_to = new WarpTo();

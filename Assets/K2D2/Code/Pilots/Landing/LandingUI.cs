@@ -19,6 +19,7 @@ namespace K2D2.Landing
         }
 
         public VisualElement landing_infos;
+        public Label collision_value;
         public FullStatus status_bar;
 
         public ToggleButton run_button;
@@ -28,9 +29,8 @@ namespace K2D2.Landing
 
         public override bool onInit()
         {
-            LandingSettings settings = pilot.settings;
             landing_infos = panel.Q<VisualElement>("landing_infos");
-            settings.landing_context.listen(v => landing_infos.Show(v));
+            collision_value = panel.Q<Label>("collision_value");
 
             run_button = panel.Q<ToggleButton>("run");
             touch_down = panel.Q<Button>("touch_down");
@@ -75,6 +75,14 @@ namespace K2D2.Landing
             landing_infos.Add(row);
         }
 
+        // Always-visible "am I about to hit something" readout, next to the Brake/Touch Down
+        // buttons regardless of whether LANDING INFO below is expanded. Kept separate from
+        // updateContext()/landing_infos so it never depends on that Foldout's collapsed state.
+        void updateCollisionStatus()
+        {
+            collision_value.text = pilot.collision_detected ? "Detected" : "None detected";
+        }
+
         public void updateContext()
         {
             landing_infos.Clear();
@@ -84,15 +92,10 @@ namespace K2D2.Landing
 
             if (pilot.collision_detected)
             {
-                AddInfoRow("Collision", "Detected");
                 AddInfoRow("Collision In", StrTool.DurationToString(pilot.adjusted_collision_UT - GeneralTools.Game.UniverseModel.UniverseTime));
                 AddInfoRow("Collision Speed", $"{pilot.speed_collision:n2} m/s");
                 AddInfoRow("Start Burn In", StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime));
                 AddInfoRow("Burn Duration", $"{pilot.burn_duration:n2} s");
-            }
-            else
-            {
-                AddInfoRow("Collision", "None detected");
             }
 
             // Same idea as Lift's LIFT INFO: numeric telemetry from whichever sub-controller is
@@ -114,9 +117,9 @@ namespace K2D2.Landing
             if (!base.onUpdateUI())
                 return false;
 
-            if (pilot.settings.landing_context.V)
-                updateContext();
-            
+            updateCollisionStatus();
+            updateContext();
+
             status_bar.Reset();
 
             // This used to return early whenever collision_detected was false, which also skipped the

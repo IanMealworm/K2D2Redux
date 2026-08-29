@@ -39,8 +39,11 @@ namespace K2D2.Lift
             TimeWarpTools.SetRateIndex(0, false);
             current_vessel.SetThrottle(0);
 
-            if (lift_settings.pause_on_final.V)
-                TimeWarpTools.SetIsPaused(true);
+            // The pause_on_final pause used to happen right here - but by the time Adjust's real-
+            // time fine-tuning burn finishes and we reach Circularize, the vessel is already close
+            // to actual apoapsis, leaving little runway to manually create the circularization
+            // node. Moved to Coasting.cs instead, so it fires the moment the vessel clears the
+            // atmosphere - see that file's comment.
 
             // Circularizing at apoapsis needs FlightPlan hooked up via K2D2OtherModsInterface, which
             // isn't wired up yet - the create_ap/create_now/run buttons in updateUI() below just call

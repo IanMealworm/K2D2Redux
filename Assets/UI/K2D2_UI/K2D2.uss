@@ -300,6 +300,44 @@ Label {
     translate: 1px 1px;
 }
 
+/* Attitude tab: Elevation's -/+ stepper (RepeatButton, held down to repeat-step - see
+   AttitudeUI.cs's SetAction calls). These came from a stock RepeatButton preset ("unity-button
+   fixed-button icon-right" in attitude.uxml) that rendered as a plain dark dashed-border button,
+   the only unstyled controls left on this tab - same bevel treatment as Touch Down/Main Brake
+   above, just square instead of a full-width bar. Sized to sit snugly on either side of the
+   FloatField rather than stretching, hence no flex-grow here (unlike the full-width buttons
+   above). */
+#elevation_n_rb, #elevation_p_rb {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    font-size: 14px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    width: 26px;
+    height: 24px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#elevation_n_rb:hover, #elevation_p_rb:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#elevation_n_rb:active, #elevation_p_rb:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
+/* The FloatField between them used to sit flush against both buttons with no breathing room at
+   all (see attitude.uxml) - a small side margin on the field itself is simpler than margins on
+   both buttons since it only has to be set in one place. */
+#elevation_field {
+    margin-left: 6px;
+    margin-right: 6px;
+}
+
 /* Brake and Touch Down both already carry flex-grow:1 in their uxml, but flex-grow alone splits
    space starting from each item's own content-based width (flex-basis:auto) - since "Brake"/
    "Stop" and "Touch Down" aren't the same width, that alone doesn't produce two equal-size

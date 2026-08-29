@@ -152,13 +152,38 @@ on Redux build 26w33a):
   widening to the interface (only `Apoapsis`/`referenceBody.radius`/
   `TimeToAp` were actually needed, all available on `IOrbit`/`IKeplerPatch`).
 - **Landing** (`Pilots/Landing/LandingPilot.cs`) - same cast bug in
-  `computeValues()`, plus a second, trickier case in
-  `compute_real_collision()`: it depended on `GetStateVectorsFromUT()`,
-  which only exists on the concrete `PatchedConicsOrbit` class. Fixed by
-  switching to `IOrbit.GetTruePositionAtUT()`, an interface member that
-  returns the same fully-resolved, coordinate-system-correct result -
-  confirmed working, real terrain-collision detection now functions
-  correctly for the live vessel with no concrete-class dependency.
+  `computeValues()`, plus a second, much trickier case in
+  `compute_real_collision()`. It originally depended on
+  `GetStateVectorsFromUT()`, concrete-class-only like the cases above. The
+  first fix attempt widened this to `IOrbit.GetTruePositionAtUT()`, which
+  compiles and runs without error - but doesn't actually pair correctly with
+  a body's local frame. This wasn't something reading the code would catch:
+  real in-game testing showed the computed terrain altitude off by anywhere
+  from hundreds of thousands to tens of millions of meters, on a calm orbit
+  with no thrust involved, so collision never registered. (An earlier
+  version of this note described `GetTruePositionAtUT()` as the fix - it
+  wasn't, and this is the correction.) There's no direct documentation for
+  this part of the Sim API, so the real fix came from reading two other KSP2
+  mods' source for comparison: use `orbit.GetRelativePositionAtUTZup(ut)`
+  instead, which is already relative to the orbit's reference body (no
+  reframing needed) but comes back in "Zup" convention - its Y and Z
+  components need swapping before use - paired with
+  `body.SimulationObject.transform.celestialFrame`, not
+  `body.coordinateSystem` (confirmed against KontrolSystem2's
+  `BodyWrapper.cs`, which builds every body-relative position the same way).
+  Confirmed working via full autopilot landings on both the Mun and a Kerbin
+  boostback.
+- **Lift** (`Pilots/Lift/LiftPilot.cs`) - a second bug, unrelated to the
+  Redux port itself: `EndLiftPilot()` ended a run by setting the internal
+  `status` field straight to `Off`, which is what `isRunning`'s getter reads
+  from but skips its setter entirely - so `is_running_event` never fired
+  when the ascent finished on its own. Anything bound to that event (the
+  Start/Stop toggle's pressed state, K2's avatar animation) stayed showing
+  "running" even after the pilot had already stopped. Only affected the
+  natural end-of-run path; stopping it manually via the toggle worked fine
+  since that already goes through `isRunning`'s setter. Fixed by having
+  `EndLiftPilot()` set `isRunning = false` instead, matching how Node/Landing
+  already end their own runs.
 - **Landing UI** (`LandingUI.cs`) - once collision detection actually
   started working, an early `return` in `onUpdateUI()` (guarded on
   `!pilot.collision_detected`) was found to also skip the Touch Down

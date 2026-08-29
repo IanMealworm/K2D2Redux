@@ -97,8 +97,9 @@ Assets/Mods
 Packages/packages-lock.json
 ksp2.catalog
 
+
+# --- added in this project ---
 # Stray unused mirror folder from an earlier Claude session mistake (files were pushed here by
 # accident instead of Assets/K2D2/Code - the folder is dead, Unity never reads it, safe to ignore
 # or delete manually). See NOTICE.md's Fifteenth follow-up.
 /Source/
-

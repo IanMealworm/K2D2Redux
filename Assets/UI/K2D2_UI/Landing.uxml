@@ -8,14 +8,16 @@
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
             <ui:Label tabindex="-1" text="Landing Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
 
-            <!-- Landing readout - a table directly on the page rather than tucked into a
-                 collapsible dropdown like Node/Lift's INFO foldouts: this is live, time-critical
-                 descent info (fall speed, collision countdown) the player wants at a glance during
-                 an actual landing, not one click away. Built into label/value rows from C# (see
-                 LandingUI.cs's AddInfoRow/updateContext), same table styling as NODE INFO/LIFT
-                 INFO. Shown/hidden via the "Show Landing Context" toggle, now inside ADVANCED
-                 below. -->
-            <ui:VisualElement name="landing_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
+            <!-- The one thing worth seeing at a glance without opening anything: whether the
+                 autopilot currently thinks it's on a collision course. Always visible and updated
+                 every frame (LandingUI.cs's updateCollisionStatus), independent of LANDING INFO's
+                 collapsed state below - the rest of the numeric readout (fall speed, altitude,
+                 collision timing) used to sit here as a whole table, but that front-loaded the tab
+                 with numbers before you even reach the Brake/Touch Down buttons. -->
+            <ui:VisualElement name="collision_status_row" class="advanced-info-row" style="border-bottom-width: 0;">
+                <ui:Label text="Collision" class="advanced-info-row-label" />
+                <ui:Label text="None detected" name="collision_value" class="advanced-info-row-value" />
+            </ui:VisualElement>
 
             <!-- Brake/Touch Down restyled to the same bevel look as the reset buttons (see
                  #touch_down in K2D2.uss - Brake already got this via its shared "#run" id), and
@@ -42,17 +44,29 @@
                 <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
             </ui:VisualElement>
 
+            <!-- Same treatment as Node/Lift's own INFO dropdowns (LIFT INFO, see Lift.uxml): the
+                 numeric readout that used to sit as a table right at the top of the page - Fall
+                 Speed, Altitude, and (once a collision is predicted) Collision In/Speed, Start
+                 Burn In, Burn Duration, plus running executor telemetry - now lives one click away
+                 here instead of front-loading the tab before the Brake/Touch Down buttons. The
+                 always-visible Collision line above the buttons covers the "am I about to hit
+                 something" question at a glance; this covers the rest. Built into label/value rows
+                 from C# (LandingUI.cs's AddInfoRow/updateContext), same table styling as NODE INFO/
+                 LIFT INFO. No persisted toggle needed - the Foldout's own collapsed state (default
+                 closed, same as ADVANCED below) is enough, so the old "Show Landing Context"
+                 setting/toggle that used to gate this is gone. -->
+            <ui:Foldout text="LANDING INFO" value="false" name="landing_info_foldout">
+                <ui:VisualElement name="landing_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
+            </ui:Foldout>
+
             <!-- Same treatment as Node/Lift: settings collapsed into one ADVANCED dropdown with
                  "// SECTION" header bars, replacing the old ExFoldoutGroup-of-3-foldouts (which
                  kept Warp/Brake/Touch Down each independently collapsible, accordion-style, inside
                  the separate hidden "settings" page). "settings" below is kept only because
                  K2Page.Init()'s Q<VisualElement>("settings") lookup expects to find it, but it no
                  longer carries any real controls - the Reset button now lives at the bottom of
-                 this ADVANCED foldout instead (see LandingUI.cs's addResetButton call).
-                 "Show Landing Context" isn't tied to any one phase, so it sits ungrouped at the
-                 top rather than under one of the "// SECTION" headers below. -->
+                 this ADVANCED foldout instead (see LandingUI.cs's addResetButton call). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
-                <K2UI.K2Toggle label="Show Landing Context" name="landing_context" />
                 <ui:VisualElement name="Warp">
                     <ui:Label text="// WARP" class="k2-section-header" />
                     <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" />

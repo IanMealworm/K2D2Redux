@@ -101,6 +101,27 @@ namespace K2D2.UI
             return checkTargetType<TargetType>(target.parent, nb_parents);
         }
 
+        /// <summary>
+        /// Same recursive parent walk as <see cref="checkTargetType{TargetType}"/>, but matching a
+        /// USS class name instead of a C# type - for plain VisualElements (like the resize handle)
+        /// that don't have a dedicated type of their own to check against.
+        /// </summary>
+        private bool checkTargetClass(VisualElement target, string className, int nb_parents = 5)
+        {
+            if (target.ClassListContains(className))
+                return true;
+
+            if (nb_parents == 0)
+                return false;
+
+            if (target.parent == null)
+                return false;
+
+            nb_parents--;
+
+            return checkTargetClass(target.parent, className, nb_parents);
+        }
+
         public Vector3 clampWindow(Vector3 position)
         {
             position.x = Mathf.Clamp(
@@ -130,6 +151,15 @@ namespace K2D2.UI
             if (checkTargetType<TextField>(target)) return;
             if (checkTargetType<K2Toggle>(target)) return;
             if (checkTargetType<K2Compass>(target)) return;
+            // The resize handle is a plain VisualElement (no dedicated C# type to check via
+            // checkTargetType<T>), and it's a child of whatever this manipulator's target is
+            // (the whole window) - so without this exclusion, every resize-handle drag also
+            // bubbled into here and moved the entire window at the same time as it was resizing.
+            // ResizeManipulator now calls evt.StopPropagation() itself, which should already
+            // prevent this - this is a second, class-name-based check kept as cheap insurance,
+            // matching this codebase's existing habit of not fully trusting this game's UI
+            // Toolkit event pipeline (see ResizeManipulator's Tick() watchdog for the same idea).
+            if (checkTargetClass(target, "window-resize-handle")) return;
 
             // _mode = target.pickingMode;
             // target.pickingMode = PickingMode.Ignore;

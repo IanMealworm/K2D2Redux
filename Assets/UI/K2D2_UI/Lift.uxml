@@ -87,6 +87,12 @@
                 <ui:VisualElement name="Coasting">
                     <ui:Label text="// COASTING" class="k2-section-header" />
                     <K2UI.K2Toggle label="Coasting Warp" name="coasting_warp" tooltip="Auto Warp while waiting for leaving Atm." />
+                    <!-- Moved here from the old "Final" section below (now removed) - this is
+                         where the pause actually fires now (see Coasting.cs), the moment the
+                         vessel clears the atmosphere, instead of waiting for Adjust to finish its
+                         fine-tuning burn and Circularize to end the run. Same setting/name
+                         (lift.pause_on_final) so existing saved preferences carry over. -->
+                    <K2UI.K2Toggle label="Pause Leaving Atmosphere" name="pause_on_final" tooltip="Pause once you clear the atmosphere, so there's time to create the circularization node yourself" />
                 </ui:VisualElement>
                 <ui:VisualElement name="Adjust">
                     <ui:Label text="// ADJUST" class="k2-section-header" />
@@ -95,10 +101,6 @@
                         <K2UI.K2Slider label="Final Alt Error (%)" name="end_adjust_pc" print-value="true" label-on-top="true" />
                         <ui:Label tabindex="-1" text="End Adjust Alt : " display-tooltip-when-elided="true" name="end_adjust_alt" />
                     </K2UI.Group>
-                </ui:VisualElement>
-                <ui:VisualElement name="Final">
-                    <ui:Label text="// FINAL" class="k2-section-header" />
-                    <K2UI.K2Toggle label="Pause on Final" name="pause_on_final" tooltip="Pause when creating final node" />
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>

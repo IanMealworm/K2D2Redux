@@ -157,6 +157,15 @@ namespace K2D2.UI
             height = Mathf.Min(height, Configuration.CurrentScreenHeight - _resizeTarget.resolvedStyle.top);
 
             _resizeTarget.style.height = height;
+
+            // Confirmed via Ksp2-2.log: the new height is applied correctly (later gestures'
+            // startHeight always reflects it), but resolvedStyle/the actual on-screen render lags
+            // well behind the drag itself in this game's embedding - the resize only visibly
+            // "pops in" some time after the gesture ends instead of tracking the pointer live.
+            // Same family of issue as the dashed-slider-track bug (K2Slider.cs) - force a repaint
+            // immediately after every height change instead of waiting for this panel's own
+            // update cadence to get to it.
+            _resizeTarget.MarkDirtyRepaint();
         }
 
         private void OnPointerDown(PointerDownEvent evt)
@@ -185,11 +194,26 @@ namespace K2D2.UI
             _target.CapturePointer(evt.pointerId);
             L.Log($"ResizeManipulator: PointerDown id={evt.pointerId} y={_pointerStartY} " +
                   $"startHeight={_heightStart} hasCapture={_target.HasPointerCapture(evt.pointerId)}");
+
+            // The handle is a child of _rootElement, which DragManipulator is ALSO attached to for
+            // whole-window dragging - without this, the same PointerDownEvent bubbles straight up
+            // from the handle into DragManipulator's own handler on every resize gesture, which
+            // sets ITS IsDragging=true too. Neither manipulator then gives way for the rest of the
+            // gesture (nothing here previously stopped that bubble), so every drag on the handle
+            // was simultaneously resizing the window AND moving it - matching Reese's report that
+            // pulling the handle down "just moves the window" while the resize itself lands
+            // invisibly until later. Stopping propagation here (and in OnPointerMove/OnPointerUp
+            // below) keeps this gesture exclusive to the handle.
+            evt.StopPropagation();
         }
 
         private void OnPointerMove(PointerMoveEvent evt)
         {
             if (!_pointerDown || !IsEnabled || evt.pointerId != _pointerId) return;
+
+            // See the matching comment in OnPointerDown - keep every move of this gesture from
+            // also reaching DragManipulator on _rootElement.
+            evt.StopPropagation();
 
             float deltaY = evt.position.y - _pointerStartY;
 
@@ -222,6 +246,9 @@ namespace K2D2.UI
                   $"pointerDown={_pointerDown}, isResizing={IsResizing}");
 
             if (!_pointerDown || evt.pointerId != _pointerId) return;
+
+            // See the matching comment in OnPointerDown.
+            evt.StopPropagation();
 
             _target.ReleasePointer(evt.pointerId);
             EndInteraction("PointerUp");

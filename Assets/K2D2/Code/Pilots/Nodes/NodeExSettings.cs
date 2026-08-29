@@ -66,23 +66,6 @@ namespace K2D2.Node
 
                 bool show_constant = mode == StartMode.constant;
                 start_mode_constant_content.Show(show_constant);
-
-                // Second attempt at start_before's missing dashed track (still broken after the
-                // first attempt, per Reese's screenshot). Two changes from that first attempt:
-                // 1) target the tracker VisualElement itself ("unity-tracker", the same ID
-                //    K2Slider.uss's dash background is keyed to) instead of the outer K2Slider
-                //    wrapper - repaint-dirtying a parent isn't guaranteed to force a specific
-                //    descendant's own background image to redraw.
-                // 2) schedule the repaint instead of firing it immediately: MarkDirtyRepaint()
-                //    called in the same frame as Show(true) likely repaints using the stale
-                //    zero-width geometry left over from display:none, since layout hasn't run yet
-                //    that frame - scheduling it lets one layout pass happen first.
-                // Still speculative/unconfirmed - flag to Reese as needs-testing again either way.
-                if (show_constant)
-                {
-                    var tracker_el = start_before_el.Q<VisualElement>("unity-tracker");
-                    tracker_el?.schedule.Execute(() => tracker_el.MarkDirtyRepaint());
-                }
             }
 
             start_mode.listeners += UpdateStartModeToggles;

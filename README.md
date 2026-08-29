@@ -17,7 +17,7 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 **Confirmed working (tested in-game):**
 - Full UI - all tabs, styling, custom controls
 - Node autopilot
-- Lift/ascent autopilot - flies the configured profile to orbit; ends by asking for a manual circularization node (see Known limitations below)
+- Lift/ascent autopilot - flies the configured profile to orbit, pausing once it clears the atmosphere so there's time to build the circularization node yourself (see Known limitations below)
 - Landing autopilot - descent, braking, and touchdown, including collision detection
 - Docking autopilot - final approach and main-thrust kill-speed/brake
 - Attitude hold
@@ -29,7 +29,8 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 ## Installation
 
 1. Install [Redux](https://ksp2redux.org) for Kerbal Space Program 2.
-2. Download the latest K2-D2 release and drop the contents into your KSP2 `mods` folder (merge folders if prompted).
+2. Make sure you're on KSP2 beta snapshot 26w33a or newer (Redux Launcher: Settings [gear icon to the right of the "Mods" tab] > Release Channel > Beta, then update to the latest beta).
+3. Download the latest K2-D2 release and drop the contents into your KSP2 `mods` folder (merge folders if prompted).
 
 ## Credits
 
