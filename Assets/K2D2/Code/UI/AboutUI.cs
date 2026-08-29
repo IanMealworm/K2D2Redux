@@ -17,16 +17,15 @@ namespace K2D2.UI
             code = "about";
         }
 
-        void onSettingsChanged(bool visible)
-        {
-            enabled = visible;
-        }
-
-
         public override bool onInit()
         {
-            // enable only if settings is visible
-            GlobalSetting.settings_visible.listen(onSettingsChanged);
+            // About no longer gets its own tab button in the bar - it's reached only via the new
+            // info button (K2D2Window.cs: tab_page.Select("about")), same mechanism TabbedPage
+            // already exposes for switching tabs directly regardless of button visibility. Setting
+            // enabled=false here hides the button the same way the old
+            // GlobalSetting.settings_visible-driven onSettingsChanged used to, just unconditionally
+            // instead of toggling with a shared flag nothing sets to true anymore.
+            enabled = false;
 
             Label label = panel.Q<Label>("version");
             label.text = K2D2_Plugin.Instance.SWMetadata.SWInfo.Version;

@@ -197,18 +197,24 @@ namespace K2D2.UI
                 return;
             }
 
-            var settings_button = title_bar.Q<ToggleButton>("settings-toggle");
+            // The settings gear/page is gone - this is now a plain "i" button that jumps straight to
+            // the About tab via TabbedPage.Select(), instead of toggling the old shared
+            // GlobalSetting.settings_visible flag. That flag itself is left in place (see
+            // GlobalSettings.cs/K2Page.cs) since every tab's generic onSettingsChanged handler is
+            // harmless as long as nothing ever sets it back to true again - not worth the extra risk
+            // of ripping out for something that wasn't actually part of this ask.
+            var info_button = title_bar.Q<Button>("info-toggle");
             var staging_toggle = title_bar.Q<ToggleButton>("staging-toggle");
-            if (settings_button == null)
+            if (info_button == null)
             {
-                L.Log("K2D2Window.OnUiReload: title_bar.Q<ToggleButton>(\"settings-toggle\") returned null.");
+                L.Log("K2D2Window.OnUiReload: title_bar.Q<Button>(\"info-toggle\") returned null.");
             }
             if (staging_toggle == null)
             {
                 L.Log("K2D2Window.OnUiReload: title_bar.Q<ToggleButton>(\"staging-toggle\") returned null.");
             }
 
-            settings_button?.Bind(GlobalSetting.settings_visible);
+            info_button?.RegisterCallback<ClickEvent>(evt => tab_page.Select("about"));
             // This used to write to StagingPilot.Instance.Enabled, which only gates BaseController.isActive
             // (tab visibility/availability) - nothing in StagingPilot.Update()/CheckStaging() ever reads it,
             // so toggling it had no effect on whether auto-staging actually ran. The setting that

@@ -43,9 +43,7 @@
             <K2UI.ToggleButton label="Auto-staging" name="staging-toggle" value="false" class="auto-staging-toggle">
                 <ui:VisualElement name="icon" />
             </K2UI.ToggleButton>
-            <K2UI.ToggleButton label=" " name="settings-toggle" value="false" class="mini-toggle" style="width: 25px; height: 25px;">
-                <ui:VisualElement name="icon" style="height: 20px; width: 21px;" />
-            </K2UI.ToggleButton>
+            <ui:Button text="i" name="info-toggle" tooltip="About K2-D2" style="width: 25px; height: 25px;" />
         </ui:VisualElement>
         <!-- Stock drag-to-resize handle: reuses Redux's own ".window-resize-handle"/
              ".window-resize-handle-icon" CSS and resize-handle.png (KerbalUI.uss) rather than
