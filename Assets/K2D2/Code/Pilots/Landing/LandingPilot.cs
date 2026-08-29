@@ -218,17 +218,33 @@ namespace K2D2.Landing
             double start_time = GeneralTools.Game.UniverseModel.UniverseTime + 2 * 60;
             bool collide = false;
 
-            // IOrbit.GetTruePositionAtUT() has two overloads: GetTruePositionAtUT(UT), which
-            // returns a full Position resolved against the universe's root star frame, and
-            // GetTruePositionAtUT(UT, coordinateSystem), which returns just a Vector3d local
-            // position within the given frame (the single-arg version wraps that same call with
-            // the star's frame internally). Passing body.coordinateSystem explicitly and wrapping
-            // it into a Position ourselves anchors the result to the same body
-            // GetAltitudeFromTerrain below is being asked about, instead of the star. This is
-            // closer to what the original SpaceWarp1 version did too (it built its Position from
-            // GetStateVectorsFromUT's output using a body-relative frame, not the universal one).
-            // No concrete cast needed either way - both overloads are on IOrbit, which IKeplerPatch
-            // extends.
+            // FIXED (was silently broken since the original SpaceWarp1 K2D2 mod, not just this
+            // Redux port - collision detection would essentially never trigger, which is also why
+            // Brake would warp to a nonsense time: the scheduling math below reads
+            // adjusted_collision_UT unconditionally, garbage or not).
+            //
+            // The old approach called orbit.GetTruePositionAtUT() (or, pre-Redux,
+            // GetStateVectorsFromUT() - concrete-class-only, which is why the port moved off it, see
+            // NOTICE.md) and paired the result with body.coordinateSystem to build a Position for
+            // GetAltitudeFromTerrain. That never actually landed in the body's own frame - the
+            // sampled "terrain altitude" for a vessel sitting at ~10km real altitude came back in the
+            // hundreds of thousands to tens of millions of meters, varying with body and elapsed
+            // search time, so collide never triggered.
+            //
+            // The real fix, found by reading KontrolSystem2's orbit/terrain code
+            // (github.com/untoldwind/KontrolSystem2) rather than guessing further:
+            //  1. orbit.GetRelativePositionAtUTZup(ut) returns a Vector3d already relative to the
+            //     orbit's reference body - no separate reframing needed - but in "Zup" convention
+            //     (Z is "up", standard orbital-mechanics axis order), not Unity's Y-up. It needs its
+            //     Y/Z components swapped before use with Position/Vector. GetOrbitalVelocityAtUTZup
+            //     (unchanged, a few lines below) has this exact same convention but nobody noticed
+            //     because it's only ever consumed via .magnitude, which doesn't care about axis
+            //     order.
+            //  2. That swapped vector needs to be paired with body.SimulationObject.transform.
+            //     celestialFrame, not body.coordinateSystem - confirmed against KontrolSystem2's
+            //     BodyWrapper.cs, which builds every body-relative Position that way.
+            // Verified in-game: real collision now detected with sane numbers on both a Mun descent
+            // and a Kerbin boostback landing, and both completed a full autopilot landing end to end.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             var body = orbit.referenceBody;
             double current_time_ut = GeneralTools.Game.UniverseModel.UniverseTime;
@@ -241,8 +257,11 @@ namespace K2D2.Landing
 
             for (int i = 0; i < max_occurrences; i++)
             {
-                Vector3d ps_local = orbit.GetTruePositionAtUT(time, body.coordinateSystem);
-                Position ps = new Position(body.coordinateSystem, ps_local);
+                Vector3d rel_pos_zup = orbit.GetRelativePositionAtUTZup(time);
+                // Zup -> Yup: swap Y and Z before this is usable as a Position's local vector (see
+                // the fix note above).
+                Vector3d rel_pos = new Vector3d(rel_pos_zup.x, rel_pos_zup.z, rel_pos_zup.y);
+                Position ps = new Position(body.SimulationObject.transform.celestialFrame, rel_pos);
                 double sceneryOffset;
 
                 body.GetAltitudeFromTerrain(ps, out terrainAltitude, out sceneryOffset);
@@ -302,10 +321,22 @@ namespace K2D2.Landing
 
             if (!collision_detected)
             {
-                // after patch ksp detect with altitude and remove the collision point
+                // Once close enough to the ground, "no predicted collision" usually just means the
+                // patched-conics bisection search in compute_real_collision() can't resolve one this
+                // close in anymore (not that the danger is gone) - falling back straight to Touch Down
+                // is correct there, same as before. But that same collision_detected flag can also blip
+                // false for a single frame much higher up in the descent (the search is fragile, and an
+                // active Brake burn keeps changing the coasting orbit it extrapolates from every frame)
+                // - snapping straight to Touch Down THEN was skipping the Brake phase entirely and
+                // free-falling in far too early, which matches Reese's report of the pilot suddenly
+                // reporting "no collision" mid-descent and jumping to immediate touchdown. Gating the
+                // fallback behind the touchdown-altitude threshold means a transient false negative
+                // higher up just gets ignored and re-checked next frame, while the legitimate
+                // close-to-the-ground case still falls back exactly as it did before.
                 if (isRunning)
                 {
-                    setMode(Mode.TouchDown);
+                    if (altitude < settings.start_touchdown_altitude.V)
+                        setMode(Mode.TouchDown);
                 }
                 else
                 {
