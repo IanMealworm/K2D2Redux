@@ -32,8 +32,25 @@ namespace K2D2.Landing
 
         public ClampSetting<float> touch_down_speed = new("land.touch_down_speed", 2.5f,  0, 10);
 
+        // TARGET (precision landing). Manual lat/lon entry only for now - this is the settings/UI
+        // half of the feature. Steering toward this target, and pulling it from Redux's own
+        // waypoint system instead of typing it in, both need the real Sim API for lat/lon <->
+        // position confirmed against the live assembly first (same reason compute_real_collision()
+        // in LandingPilot.cs went through 2 attempts before it worked - see NOTICE.md). Vacuum
+        // bodies only to start (no atmosphere/drag model yet).
+        public Setting<bool> precision_landing = new("land.precision_landing", false);
+        public Setting<float> target_latitude = new("land.target_latitude", 0f);
+        public Setting<float> target_longitude = new("land.target_longitude", 0f);
+
         public void setupUI(LandingPilot pilot, VisualElement root)
         {
+            // TARGET
+            root.Q<K2Toggle>("precision_landing").Bind(precision_landing);
+            var target_settings = root.Q<VisualElement>("target_settings");
+            precision_landing.listeners += v => target_settings.Show(v);
+            target_settings.Q<FloatField>("target_latitude").Bind(target_latitude);
+            target_settings.Q<FloatField>("target_longitude").Bind(target_longitude);
+
             // WARP
             root.Q<K2Toggle>("auto_warp").Bind(auto_warp);
             var warp_settings = root.Q<VisualElement>("warp_settings");    

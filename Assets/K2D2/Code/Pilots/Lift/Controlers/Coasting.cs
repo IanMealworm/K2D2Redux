@@ -100,14 +100,18 @@ namespace K2D2.Lift
                 // fine-tuning burn and Circularize to end the run (see Final.cs) - that used to be
                 // the only pause point, but Adjust's real-time correction burn could eat most of
                 // the runway before the player gets a chance to create their own circularization
-                // node (FlightPlan auto-creation isn't hooked up yet, see Final.cs's comment).
-                // Pausing here instead means the whole coast to apoapsis is available as node-
-                // creation time. See LiftSettings.pause_on_final / Lift.uxml's "Pause Leaving
+                // node. Pausing here instead means the whole coast to apoapsis is available as
+                // node-creation time. See LiftSettings.pause_on_final / Lift.uxml's "Pause Leaving
                 // Atmosphere" toggle (moved here from the old "Final" section). Cancel warp
                 // first (same order Final.cs/Adjust.cs used) - we can still be mid-warp right at
                 // the instant this threshold is crossed, since warping toward it is this phase's
                 // whole job just below.
-                if (lift_settings.pause_on_final.V)
+                //
+                // Only relevant at all when auto_circularize is off, though: with it on (the
+                // default) FinalCircularize now creates and flies the circularize burn itself
+                // (see Final.cs), so there's nothing left for the player to manually do here and
+                // no reason to interrupt the flight.
+                if (!lift_settings.auto_circularize.V && lift_settings.pause_on_final.V)
                 {
                     TimeWarpTools.SetRateIndex(0, false);
                     TimeWarpTools.SetIsPaused(true);

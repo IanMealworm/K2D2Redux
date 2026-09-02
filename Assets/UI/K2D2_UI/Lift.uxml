@@ -87,12 +87,19 @@
                 <ui:VisualElement name="Coasting">
                     <ui:Label text="// COASTING" class="k2-section-header" />
                     <K2UI.K2Toggle label="Coasting Warp" name="coasting_warp" tooltip="Auto Warp while waiting for leaving Atm." />
+                    <!-- Default on: FinalCircularize (see Final.cs) now creates and flies its own
+                         circularize-at-apoapsis burn once ascent clears the atmosphere, so the
+                         whole ascent-to-orbit sequence can just run straight through with no
+                         manual step. Turning this off falls back to the old "pause and let the
+                         player make their own node" flow via the toggle below. -->
+                    <K2UI.K2Toggle label="Circularize Once Ascent Complete" name="auto_circularize" tooltip="Automatically circularize once you clear the atmosphere, instead of pausing so you can create the node yourself" />
                     <!-- Moved here from the old "Final" section below (now removed) - this is
                          where the pause actually fires now (see Coasting.cs), the moment the
                          vessel clears the atmosphere, instead of waiting for Adjust to finish its
                          fine-tuning burn and Circularize to end the run. Same setting/name
-                         (lift.pause_on_final) so existing saved preferences carry over. -->
-                    <K2UI.K2Toggle label="Pause Leaving Atmosphere" name="pause_on_final" tooltip="Pause once you clear the atmosphere, so there's time to create the circularization node yourself" />
+                         (lift.pause_on_final) so existing saved preferences carry over. Only
+                         takes effect when "Circularize Once Ascent Complete" above is off. -->
+                    <K2UI.K2Toggle label="Pause Leaving Atmosphere" name="pause_on_final" tooltip="Pause once you clear the atmosphere, so there's time to create the circularization node yourself (only used when Circularize Once Ascent Complete is off)" />
                 </ui:VisualElement>
                 <ui:VisualElement name="Adjust">
                     <ui:Label text="// ADJUST" class="k2-section-header" />

@@ -24,13 +24,31 @@ namespace K2D2.Landing
 
         public WarpTo warp_to = new WarpTo();
 
-        public TouchDown brake = new TouchDown();
+        // Passes itself so TouchDown's closed-loop steering (see TouchDown.ComputeSteeredDirection)
+        // can read predicted_landing_lat/lon, settings.target_latitude/longitude, and altitude off
+        // this pilot directly rather than LandingPilot pushing a pile of individual fields into
+        // TouchDown every Update() the way it already does for max_speed/gravity_compensation
+        // below. Constructed in the constructor body (below), not here - 'this' isn't available
+        // in an instance field initializer (CS0027, caught on the first build attempt).
+        public TouchDown brake;
+
+        // Precision landing's precondition phase, run before deorbit_burn below: circularizes
+        // the starting orbit if it isn't already close enough to circular (or refuses if it's too
+        // high). See Circularize.cs for why - deorbit_burn's own math assumes a roughly circular
+        // starting orbit, so this makes that assumption hold instead of teaching the search to
+        // cope with an arbitrary orbit shape.
+        public Circularize circularize = new Circularize();
+
+        // Precision landing's deorbit/phasing burn phase - see DeorbitBurn.cs for why this has
+        // its own Turn/Warp/Burn instances instead of driving NodeExPilot.
+        public DeorbitBurn deorbit_burn = new DeorbitBurn();
 
         public SingleExecuteController current_executor = new SingleExecuteController();
 
         public LandingPilot()
         {
             settings = new LandingSettings();
+            brake = new TouchDown(this);
             _page = new LandingUI(this);
 
             Instance = this;
@@ -49,6 +67,14 @@ namespace K2D2.Landing
         public enum Mode
         {
             Off,
+            // Circularize inserted right after Off (before DeorbitBurn), same reasoning as
+            // DeorbitBurn's own insertion note below: nextMode() just does mode+1, so anything
+            // inserted here needs to stay ahead of Pause/QuickWarp/.../TouchDown, which keep their
+            // same relative ordering either way.
+            Circularize,
+            // DeorbitBurn = Off + 2 now (not +1) - still fine, nextMode() only cares about
+            // relative order, not the exact enum values.
+            DeorbitBurn,
             Pause,
             QuickWarp,
             RotationWarp,
@@ -81,6 +107,14 @@ namespace K2D2.Landing
             {
                 case Mode.Off:
                     current_executor.setController(null);
+                    break;
+                case Mode.Circularize:
+                    current_executor.setController(circularize);
+                    circularize.Start();
+                    break;
+                case Mode.DeorbitBurn:
+                    current_executor.setController(deorbit_burn);
+                    deorbit_burn.Start();
                     break;
                 case Mode.Pause:
                     end_pause_Ut = GeneralTools.Current_UT + settings.pause_time;
@@ -160,11 +194,21 @@ namespace K2D2.Landing
                     K2D2_Plugin.ResetControllers();
 
                     _active = true;
-                    setMode(Mode.QuickWarp);
+
+                    // Precision landing now starts with Circularize (which itself does nothing
+                    // and finishes immediately if the orbit's already close enough to circular,
+                    // or refuses with a status message if it's too high - see Circularize.cs),
+                    // then plans and flies a real, visible deorbit/phasing node, before falling
+                    // into the normal Pause->QuickWarp->...->TouchDown sequence. Everything else
+                    // about that sequence is unchanged either way.
+                    if (settings.precision_landing.V)
+                        setMode(Mode.Circularize);
+                    else
+                        setMode(Mode.QuickWarp);
                 }
 
                 // send call backs
-                base.isRunning = value; 
+                base.isRunning = value;
             }
         }
 
@@ -182,6 +226,15 @@ namespace K2D2.Landing
         internal double startSafeWarp_UT = 0;
         internal double speed_collision;
         internal double burn_duration;
+
+        // Precision landing (settings/UI side of this is in LandingSettings.cs). Predicted lat/lon
+        // is computed alongside the collision check below, since it already has the terrain-
+        // crossing time and position worked out. target_error_m is only meaningful once a target's
+        // been set and precision_landing is on - it's not used to steer anything yet, just
+        // displayed, so we can sanity-check the lat/lon math in-game before it drives the vessel.
+        internal double predicted_landing_lat = 0;
+        internal double predicted_landing_lon = 0;
+        internal double target_error_m = 0;
 
         public void computeValues()
         {
@@ -208,7 +261,32 @@ namespace K2D2.Landing
 
         public void compute_startBurn()
         {
-            startBurn_UT = adjusted_collision_UT - burn_duration - settings.burn_before.V;
+            double burn_before = settings.burn_before.V;
+
+            // Precision landing: TouchDown's closed-loop steering (see its ComputeSteeredDirection)
+            // needs real time to act before touchdown, not just the right direction - confirmed
+            // in-game, a correction attempted only in the last couple seconds before collision
+            // barely moved a 20km miss, however correctly aimed. Closing a lateral error needs
+            // lateral_deltaV * time_remaining >= error, so back out how much EXTRA margin (beyond
+            // the efficiency-only burn_before setting) buys enough time for the maximum lateral
+            // deltaV the steering angle cap allows to actually close the gap - a bigger miss earns
+            // an earlier burn start (more fuel spent, more time to correct), a small one barely
+            // changes anything. First-pass heuristic (treats it as one lateral kick + coast rather
+            // than modeling the whole burn), not exact, but ties the "start sooner/later" question
+            // directly to how far off target we actually are instead of a fixed margin.
+            if (settings.precision_landing.V && target_error_m > 0 && brake.steering_max_angle.V > 0)
+            {
+                double steering_max_angle_rad = brake.steering_max_angle.V * Math.PI / 180.0;
+                double lateral_dv_budget = speed_collision * Math.Sin(steering_max_angle_rad);
+
+                if (lateral_dv_budget > 0.1) // avoid a near-zero budget blowing this up
+                {
+                    double correction_time_needed = target_error_m / lateral_dv_budget;
+                    burn_before = Math.Max(burn_before, correction_time_needed);
+                }
+            }
+
+            startBurn_UT = adjusted_collision_UT - burn_duration - burn_before;
             startSafeWarp_UT = startBurn_UT - settings.rotation_warp_duration.V;
         }
 
@@ -301,7 +379,42 @@ namespace K2D2.Landing
             logger.LogInfo($"compute_real_collision: collide={collide} final terrainAltitude={terrainAltitude:n1} adjusted_collision_UT+{time - current_time_ut:n0}s");
 
             adjusted_collision_UT = time;
+
+            // Predicted landing lat/lon, reusing the exact frame math confirmed above (same Zup->Yup
+            // swap, same celestialFrame-relative Position) just handed to GetLatLonAltFromRadius -
+            // a real method on CelestialBodyComponent found by inspecting the live assembly, not
+            // guessed. This is the first half of precision landing: knowing where we'd actually come
+            // down. target_error_m is straight-line lat/lon (haversine) against the player's chosen
+            // target, not a 3D position diff - that sidesteps needing to also confirm the lat/lon ->
+            // position direction (GetSurfacePosition vs GetRelSurfacePosition look like they might
+            // disagree on whether body rotation is applied - see HaversineDistanceMeters below)
+            // before we've had a chance to test any of this in-game.
+            Vector3d final_rel_pos_zup = orbit.GetRelativePositionAtUTZup(time);
+            Vector3d final_rel_pos = new Vector3d(final_rel_pos_zup.x, final_rel_pos_zup.z, final_rel_pos_zup.y);
+            Position final_position = new Position(body.SimulationObject.transform.celestialFrame, final_rel_pos);
+            body.GetLatLonAltFromRadius(final_position, out predicted_landing_lat, out predicted_landing_lon, out _);
+
+            if (settings.precision_landing.V)
+            {
+                target_error_m = HaversineDistanceMeters(predicted_landing_lat, predicted_landing_lon,
+                    settings.target_latitude.V, settings.target_longitude.V, body.radius);
+            }
+
             return collide;
+        }
+
+        // Great-circle distance between two lat/lon points on a sphere of the given radius. Used
+        // for target_error_m instead of a 3D position diff - see the comment above
+        // compute_real_collision()'s use of it.
+        static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
+        {
+            double toRad = Math.PI / 180.0;
+            double dLat = (lat2 - lat1) * toRad;
+            double dLon = (lon2 - lon1) * toRad;
+            double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2)
+                + Math.Cos(lat1 * toRad) * Math.Cos(lat2 * toRad) * Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+            double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+            return radius * c;
         }
         Vector SurfaceVelocity;
         public override void Update()
@@ -333,6 +446,10 @@ namespace K2D2.Landing
                 // fallback behind the touchdown-altitude threshold means a transient false negative
                 // higher up just gets ignored and re-checked next frame, while the legitimate
                 // close-to-the-ground case still falls back exactly as it did before.
+                //
+                // Note this also naturally covers the DeorbitBurn phase: while still safely in orbit
+                // waiting on/flying the phasing node, altitude is far above start_touchdown_altitude,
+                // so this branch simply does nothing until we're actually on a collision course.
                 if (isRunning)
                 {
                     if (altitude < settings.start_touchdown_altitude.V)
@@ -383,22 +500,43 @@ namespace K2D2.Landing
             }
             else if (mode == Mode.Brake)
             {
-                brake.max_speed = 0;
                 brake.gravity_compensation = true;
-                if (current_falling_speed < settings.brake_speed)
+
+                if (settings.precision_landing.V)
                 {
-                    // we reached the speed to stop brake
-                    // check next phase
+                    // Precision landing skips the brake-to-near-stop / Pause / re-brake cycle
+                    // below entirely. That cycle repeatedly zeroes throttle (Mode.Pause above
+                    // does current_vessel.SetThrottle(0) outright), and TouchDown's closed-loop
+                    // steering only runs while actually burning (see checkDirection) - so every
+                    // Pause cycle killed the steering's authority right along with the throttle,
+                    // which is what made precision landings feel "clunky" per Reese, even though
+                    // the same cycle works fine for a normal (non-precision) landing. Using the
+                    // exact same speed-limit profile TouchDown itself uses turns Brake and
+                    // TouchDown into one continuous burn split only by an altitude threshold,
+                    // instead of two different behaviors - steering stays live the whole way down.
+                    brake.max_speed = settings.compute_limit_speed(altitude);
+
                     if (altitude < settings.start_touchdown_altitude.V)
-                    {
                         setMode(Mode.TouchDown);
-                    }
-                    else
+                }
+                else
+                {
+                    brake.max_speed = 0;
+                    if (current_falling_speed < settings.brake_speed)
                     {
-                        // too high altitude retry.... very worng burn time ......
-                        setMode(Mode.Pause);
+                        // we reached the speed to stop brake
+                        // check next phase
+                        if (altitude < settings.start_touchdown_altitude.V)
+                        {
+                            setMode(Mode.TouchDown);
+                        }
+                        else
+                        {
+                            // too high altitude retry.... very worng burn time ......
+                            setMode(Mode.Pause);
+                        }
+                        return;
                     }
-                    return;
                 }
             }
             else if (mode == Mode.TouchDown)

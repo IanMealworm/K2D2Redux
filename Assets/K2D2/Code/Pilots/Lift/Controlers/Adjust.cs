@@ -57,6 +57,7 @@ namespace K2D2.Lift
         {
             if (!lift_settings.adjust.V)
             {
+                current_vessel.SetThrottle(0);
                 finished = true;
                 return;
             }
@@ -68,6 +69,12 @@ namespace K2D2.Lift
             float remaining_Ap = lift_settings.destination_Ap_km.V - ascent.ap_km;
             if (remaining_Ap <= lift_settings.end_adjust_error) // we stop at 0.1% of dest AP
             {
+                // Whatever throttle the line below set last frame is still commanded - without
+                // zeroing it here, that burn keeps firing into whatever comes next (Circularize
+                // turning to align with its own node, in the ascent flow) since nothing else is
+                // guaranteed to zero it first. Confirmed in-game: exactly this stray burn during
+                // Circularize's turn-to-node phase.
+                current_vessel.SetThrottle(0);
                 finished = true;
                 return;
             }

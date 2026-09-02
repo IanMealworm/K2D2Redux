@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 // disable wrning : unused value
 #pragma warning disable CS0414
@@ -8,8 +8,8 @@ namespace KSP2FlightAssistant.MathLibrary
     public static class VisVivaEquation
     {
         static double GravityConstant = 6.67408e-11;
-        
-        
+
+
         /// <summary>
         /// Calculates the velocity of a body in orbit
         /// </summary>
@@ -38,7 +38,7 @@ namespace KSP2FlightAssistant.MathLibrary
             return Math.Sqrt(gravitation * (2 / distance - 1 / a));
 
         }
-        
+
 
         public static double CalculateGravitation(double CurrentDistance, double Apoapsis, double Periapsis,
             double Velocity)
@@ -46,9 +46,20 @@ namespace KSP2FlightAssistant.MathLibrary
             double MajorSemiAxis = (Apoapsis + Periapsis) / 2;
             return (Velocity*Velocity)/(2/CurrentDistance-1/MajorSemiAxis);
         }
-        
 
-        
-        
+        // Vis-viva straight from the semi-major axis, instead of from Apoapsis/Periapsis like
+        // CalculateVelocity above. Added for the precision-landing deorbit burn
+        // (LandingTargeting.cs), which computes a target semi-major axis directly (via a
+        // resonance/phasing search) and just needs the resulting speed - going by way of
+        // apoapsis/periapsis there would mean re-deriving them from the same semi-major axis
+        // for no benefit.
+        public static double CalculateVelocityFromSMA(double CurrentDistance, double SemiMajorAxis,
+            double gravitation)
+        {
+            return Math.Sqrt(gravitation * (2 / CurrentDistance - 1 / SemiMajorAxis));
+        }
+
+
+
     }
 }

@@ -19,6 +19,24 @@
                 <ui:Label text="None detected" name="collision_value" class="advanced-info-row-value" />
             </ui:VisualElement>
 
+            <!-- Landing mode - promoted up from a buried ADVANCED setting (per Reese: this needs
+                 to be an obvious choice before pressing Brake, not something discovered later in a
+                 dropdown) since it's really "which of two landing behaviors do you want," not a
+                 fine-tuning knob. Off (default) = brake straight down wherever the current course
+                 naturally lands, same as always. On = shows the target picker below - a waypoint
+                 dropdown (reads whatever's placed in Redux's own Waypoints window, see
+                 ReduxWaypoints.cs) or manual lat/lon. Steering toward that target isn't wired up
+                 yet - see LandingPilot.cs - so right now this only changes what Target Error
+                 reports, not how the ship flies. -->
+            <ui:VisualElement name="landing_mode_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px;">
+                <K2UI.K2Toggle label="Precision Landing" name="precision_landing" tooltip="Steer toward a chosen landing site instead of just braking straight down wherever the current course naturally lands (vacuum bodies only for now)" />
+                <ui:VisualElement name="target_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
+                    <ui:FloatField label="Target Latitude" value="0" name="target_latitude" />
+                    <ui:FloatField label="Target Longitude" value="0" name="target_longitude" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
             <!-- Brake/Touch Down restyled to the same bevel look as the reset buttons (see
                  #touch_down in K2D2.uss - Brake already got this via its shared "#run" id), and
                  given equal flex-grow so the two buttons split the row evenly instead of Touch

@@ -66,6 +66,13 @@ namespace K2D2.Lift
             get => destination_Ap_km.V * end_adjust_pc.V/100;
         }
 
+        // Default on: run straight through ascent -> atmosphere clear -> circularize with no
+        // pause, since FinalCircularize (Controlers/Final.cs) now creates and flies the
+        // circularize burn itself instead of waiting on a manually- or FlightPlan-created node.
+        // Turning this off falls back to the old flow - Coasting.cs only actually pauses on
+        // pause_on_final below when this is off.
+        public Setting<bool> auto_circularize = new ("lift.auto_circularize", true);
+
         public Setting<bool> pause_on_final = new ("lift.pause_on_final", true);
 
         public Setting<bool> heading_correction = new ("lift.heading_correction", true);
@@ -102,7 +109,9 @@ namespace K2D2.Lift
             root.Q<K2Slider>("end_adjust_pc").Bind(end_adjust_pc);
             end_adjust_pc.listen(v => setLabels());
 
-            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);   
+            root.Q<K2Toggle>("auto_circularize").Bind(auto_circularize);
+
+            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
         }
     }
 }
