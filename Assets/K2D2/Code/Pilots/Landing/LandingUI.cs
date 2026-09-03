@@ -110,8 +110,26 @@ namespace K2D2.Landing
             // re-fire the ChangeEvent handler above.
             string current = waypoint_drop.value;
             waypoint_drop.choices = choices;
+
             if (choices.Contains(current))
+            {
                 waypoint_drop.SetValueWithoutNotify(current);
+            }
+            else if (waypoint_choices.Count > 0)
+            {
+                // Whatever was selected doesn't exist for this body - the bug Reese hit by
+                // teleporting between planets: the dropdown just kept showing the OLD body's
+                // waypoint label with nothing real behind it, and target_latitude/longitude
+                // silently stayed on the old body's coordinates until typed in by hand. Auto-
+                // select the new body's first real waypoint instead, through the normal .value
+                // setter (not SetValueWithoutNotify) so the ChangeEvent handler above actually
+                // fires and updates target_latitude/longitude, same as if the player had clicked
+                // it themselves. Side effect: this also means the dropdown starts pre-selected on
+                // the first waypoint (if any) instead of blank - an improvement, not just a fix.
+                waypoint_drop.value = choices[0];
+            }
+            // else: no real waypoints on this body at all (just the "No body"/"No waypoints on
+            // X" placeholder) - leave target_latitude/longitude alone, nothing sensible to select.
         }
 
         void AddInfoRow(string label, string value)

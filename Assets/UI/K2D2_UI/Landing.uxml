@@ -104,6 +104,17 @@
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
                 </ui:VisualElement>
+                <!-- Only meaningful while Precision Landing is on (LandingSettings.setupUI shows/
+                     hides this alongside target_settings above) - these are the closed-loop
+                     steering caps from TouchDown.ComputeSteeredDirection, exposed so they can be
+                     tuned live in-game instead of needing a code change + rebuild per test. -->
+                <ui:VisualElement name="PrecisionLanding">
+                    <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="40" max="80" name="steering_max_angle" label="Max Steering Angle °" tooltip="How far off retrograde the burn can tilt sideways to correct a left/right miss. Wider catches a bigger miss (or a slightly mismatched orbital plane) but costs more fuel - it never touches the vertical/braking component." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="80" max="90" name="arc_extend_max_angle" label="Max Extend Angle °" tooltip="How far the burn can tilt toward straight up to stretch the landing arc when undershooting. Only ever adds vertical braking margin, so it's safe to run high." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="45" name="arc_shorten_max_angle" label="Max Shorten Angle °" tooltip="How far the burn can tilt toward horizontal to cut the landing arc short when overshooting. Spends vertical braking margin, so keep this one conservative." />
+                </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>
         <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">

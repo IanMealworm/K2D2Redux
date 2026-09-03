@@ -114,14 +114,22 @@ namespace K2D2.Landing
             Vector3d v_now = orbit.GetOrbitalVelocityAtUTZup(now);
             double period = LandingTargeting.OrbitalPeriodFromStateVectors(r_now, v_now, body.gravParameter);
 
+            double target_latitude = LandingPilot.Instance.settings.target_latitude.V;
             double target_longitude = LandingPilot.Instance.settings.target_longitude.V;
             double target_periapsis_radius = body.radius - periapsis_safety_margin;
+            double max_plane_trim_dv = LandingPilot.Instance.settings.max_plane_trim_dv.V;
 
             double search_start = now + 30;
 
+            // Now scores candidates against target latitude AND longitude together (real ground
+            // distance), not longitude alone, and can add a small normal/antinormal trim on top
+            // of the usual prograde/retrograde burn (capped by max_plane_trim_dv, the Max Plane
+            // Trim slider - 0 disables it) - see FindBestDeorbitBurn's own comment for both.
             bool found = LandingTargeting.FindBestDeorbitBurn(orbit, body, search_start, period,
-                target_periapsis_radius, target_longitude, out double burn_UT, out double deltaV,
-                out double predicted_lon, out double predicted_error_deg, out double predicted_impact_UT);
+                target_periapsis_radius, target_latitude, target_longitude, max_plane_trim_dv,
+                out double burn_UT, out double deltaV, out double normalDeltaV,
+                out double predicted_lon, out double predicted_lat, out double predicted_error_m,
+                out double predicted_impact_UT);
 
             if (!found)
             {
@@ -134,13 +142,17 @@ namespace K2D2.Landing
             // landing error (see the big comment on PredictImpactLongitude in LandingTargeting.cs
             // for the root cause and fix: using the engine's own UniverseModel.ZupAtUT instead of
             // guessing the body's future orientation ourselves). Worth watching on the next few
-            // flights: predicted_error_deg here should now track the REAL in-game Target Error
+            // flights: predicted_error_m here should now track the REAL in-game Target Error
             // readout much more closely than before - if it doesn't, that's a sign something else
-            // is still off downstream (turn/warp/burn timing, the braking phase).
+            // is still off downstream (turn/warp/burn timing, the braking phase). normalDeltaV is
+            // new (the plane trim) - worth specifically checking that the real in-game error gets
+            // BETTER, not worse, whenever this comes out nonzero; see the sign-convention note on
+            // FindBestDeorbitBurn if it doesn't.
             logger.LogInfo($"[DeorbitBurn] now={now:n1} search_start={search_start:n1} period={period:n1}s " +
                 $"body={body.Name} rotationPeriod={body.rotationPeriod:n1}s | " +
-                $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s | " +
-                $"target_lon={target_longitude:n3} predicted_lon={predicted_lon:n3} predicted_error={predicted_error_deg:n3}deg | " +
+                $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s normalDeltaV={normalDeltaV:n2}m/s | " +
+                $"target=({target_latitude:n3}, {target_longitude:n3}) predicted=({predicted_lat:n3}, {predicted_lon:n3}) " +
+                $"predicted_error={predicted_error_m:n1}m | " +
                 $"predicted_impact_UT={predicted_impact_UT:n1} " +
                 $"(coast={predicted_impact_UT - burn_UT:n1}s, total_elapsed={predicted_impact_UT - now:n1}s)");
 
@@ -163,14 +175,16 @@ namespace K2D2.Landing
             // own comment in ManeuverCreator.cs) - Turn/Warp/Burn setup below now happens in the
             // completion callback since node isn't available synchronously anymore; Update() below
             // already no-ops while node is still null, so there's nothing else to guard.
-            status_line = $"Deorbit burn planned: {deltaV:n1} m/s";
+            status_line = normalDeltaV != 0
+                ? $"Deorbit burn planned: {deltaV:n1} m/s (+ {normalDeltaV:n1} m/s plane trim)"
+                : $"Deorbit burn planned: {deltaV:n1} m/s";
             maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
             {
                 node = created_node;
                 mode = Mode.Turn;
                 current_executor.setController(turn);
                 turn.StartManeuver(node);
-            });
+            }, normalDeltaV);
         }
 
         public override void Update()

@@ -274,10 +274,29 @@ namespace K2D2.Landing
             // changes anything. First-pass heuristic (treats it as one lateral kick + coast rather
             // than modeling the whole burn), not exact, but ties the "start sooner/later" question
             // directly to how far off target we actually are instead of a fixed margin.
-            if (settings.precision_landing.V && target_error_m > 0 && brake.steering_max_angle.V > 0)
+            //
+            // This used to only look at steering_max_angle (the heading/cross-track correction's
+            // budget). That's what was behind the Minmus overshoot Reese kept seeing: target_error_m
+            // is just a straight-line miss distance, it doesn't say whether the miss is left/right
+            // (heading's job) or long/short (the arc correction's job, see TouchDown.
+            // ComputeSteeredDirection) - so sizing the time margin off steering_max_angle alone was
+            // assuming the generous 40 degree heading budget applied even to overshoots, when an
+            // overshoot can only be fixed by the much tighter arc_shorten_max_angle (10 degrees by
+            // default, deliberately conservative since tilting toward horizontal spends braking
+            // margin). On low-gravity Minmus that mismatch bites hard: burn starts late because the
+            // math thinks there's plenty of lateral authority, then the actual correction available
+            // to shorten the arc is far smaller than assumed and the burn runs out of room before it
+            // can pull the overshoot in. Using whichever of the three correction caps is smallest
+            // (steering, extend, or shorten) sizes the margin off the worst case instead of the best
+            // case - exactly Reese's own read on this: "if it were to start burning sooner the arc
+            // would come way closer to the landing spot".
+            double min_correction_angle_deg = Math.Min(brake.steering_max_angle.V,
+                Math.Min(brake.arc_extend_max_angle.V, brake.arc_shorten_max_angle.V));
+
+            if (settings.precision_landing.V && target_error_m > 0 && min_correction_angle_deg > 0)
             {
-                double steering_max_angle_rad = brake.steering_max_angle.V * Math.PI / 180.0;
-                double lateral_dv_budget = speed_collision * Math.Sin(steering_max_angle_rad);
+                double min_correction_angle_rad = min_correction_angle_deg * Math.PI / 180.0;
+                double lateral_dv_budget = speed_collision * Math.Sin(min_correction_angle_rad);
 
                 if (lateral_dv_budget > 0.1) // avoid a near-zero budget blowing this up
                 {
@@ -405,8 +424,10 @@ namespace K2D2.Landing
 
         // Great-circle distance between two lat/lon points on a sphere of the given radius. Used
         // for target_error_m instead of a 3D position diff - see the comment above
-        // compute_real_collision()'s use of it.
-        static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
+        // compute_real_collision()'s use of it. internal (not private) so LandingTargeting.cs's
+        // deorbit search can score candidates on the same real distance metric instead of
+        // duplicating this math.
+        internal static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
         {
             double toRad = Math.PI / 180.0;
             double dLat = (lat2 - lat1) * toRad;

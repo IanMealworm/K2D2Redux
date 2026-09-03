@@ -22,9 +22,13 @@ namespace K2D2.Landing
 
         // Closed-loop lateral correction (precision landing): how far off pure retrograde the
         // burn direction is allowed to tilt, at full strength (i.e. anywhere in Brake, well above
-        // start_touchdown_altitude - see ComputeSteeredDirection's taper). Same default order of
-        // magnitude as touch_down_max_angle above; 0 disables steering entirely.
-        public ClampSetting<float> steering_max_angle = new("land.steering_max_angle", 20, 0, 45);
+        // start_touchdown_altitude - see ComputeSteeredDirection's taper). 0 disables steering
+        // entirely. Unlike the arc correction below, this one never touches the vertical
+        // component at all (see checkDirection/ComputeSteeredDirection), so a wide angle here
+        // costs fuel efficiency, not crash safety - raised well past the old 45deg cap so Reese
+        // can test how much cross-track/plane-mismatch error (his target: up to ~35km) this can
+        // absorb on its own before a player genuinely needs to fix their orbital plane by hand.
+        public ClampSetting<float> steering_max_angle = new("land.steering_max_angle", 40, 0, 80);
 
         // Along-track (arc length) correction caps - see ComputeSteeredDirection. Two separate
         // settings, not one, because the two directions carry very different risk: tilting toward
@@ -44,6 +48,12 @@ namespace K2D2.Landing
         const float max_correction_rate_deg_per_sec = 8f;
         float smoothed_correction_deg = 0;
         float smoothed_arc_deg = 0;
+
+        // Debug-only snapshot of the extend correction's vertical-speed safety gate (see its own
+        // comment in ComputeSteeredDirection) - exposed in the info table so it can actually be
+        // watched live on the next Minmus test instead of having to pull the log afterward.
+        float debug_vertical_speed_up = 0;
+        float debug_descent_margin_factor = 1;
 
         // How fast the ENGINE THROTTLE ITSELF is allowed to change, in fraction/second (5 = 0 to
         // full in 0.2s). compute_Throttle() below recomputes wanted_throttle fresh every frame
@@ -308,6 +318,42 @@ namespace K2D2.Landing
             float max_pitch_up_deg = (float)Math.Min(arc_extend_max_angle.V * taper, angle_from_up);
             float max_pitch_horizontal_deg = (float)Math.Min(arc_shorten_max_angle.V * taper, angle_from_horiz);
 
+            // Reese's Minmus overshoots: "right overhead" then "goes up again" right after Brake
+            // starts. Root cause traced to checkDirection() above - it's a pre-existing guard (not
+            // touched this session) that goes fully idle (SetThrottle(0), no steering at all)
+            // the instant the vessel's real velocity picks up ANY upward component, on the
+            // assumption that just means "still climbing toward apoapsis before the natural fall
+            // starts, coast and wait". That's a fine assumption for a plain retrograde burn, but
+            // this extend correction actively commands thrust tilted toward straight up - on a
+            // near-zero-gravity body like Minmus there's almost nothing fighting that, so a
+            // sustained high-throttle burn pitched up doesn't just slow the fall like it would on
+            // Mun, it can push real vertical speed past zero into an actual climb. The instant it
+            // does, checkDirection() kills the engine entirely and the vessel coasts - now with no
+            // thrust and no steering - on whatever velocity it had at that moment, sailing over the
+            // target while it "goes up", matching exactly what was described.
+            //
+            // The geometric clamp above (angle_from_up) already stops the AIM direction from ever
+            // pointing past straight up, but it says nothing about the vessel's ACTUAL vertical
+            // speed - it's just as large mid-descent as it is a frame before tipping into a climb.
+            // Gating directly on real vertical speed instead closes that gap: once descent rate
+            // drops under a small margin, ease the extend correction back off before it can push
+            // past zero, instead of only reacting after checkDirection() has already had to cut
+            // everything to stop it.
+            // Margin kept deliberately small - this only needs to catch the last stretch before
+            // vertical speed actually crosses zero, not suppress extend through an entire gentle
+            // low-gravity descent (Minmus can sit at a low sink rate for a long time by nature,
+            // and that's exactly the undershoot case extend is supposed to help with). First-pass
+            // number, not tuned against a real flight yet - if extend still feels like it's barely
+            // doing anything on Minmus after this, this margin is too generous and should come down
+            // further; if it's still climbing, it needs to go up instead.
+            double vertical_speed_up = -Vector3d.Dot(retro_dir_vec.normalized, up_vec) * current_speed;
+            const float vertical_margin_speed = 1.5f; // m/s of descent rate to fully trust the extend correction at
+            float descent_margin_factor = Mathf.Clamp01((float)(-vertical_speed_up) / vertical_margin_speed);
+            max_pitch_up_deg *= descent_margin_factor;
+
+            debug_vertical_speed_up = (float)vertical_speed_up;
+            debug_descent_margin_factor = descent_margin_factor;
+
             double pitch_target_deg = (along_cos >= 0)
                 ? along_cos * max_pitch_up_deg
                 : along_cos * max_pitch_horizontal_deg;
@@ -449,6 +495,12 @@ namespace K2D2.Landing
                 {
                     addRow("Heading Correction", $"{smoothed_correction_deg:n2}°");
                     addRow("Arc Correction", $"{smoothed_arc_deg:n2}°");
+                    // Watch this pair on Minmus specifically - Vertical Speed should stay negative
+                    // (descending) through Brake; if it's creeping toward/past 0, Extend Margin
+                    // should already be sliding toward 0 well before it gets there. If Vertical
+                    // Speed goes positive anyway, the margin (currently 1.5 m/s) is too small.
+                    addRow("Vertical Speed (up+)", $"{debug_vertical_speed_up:n2} m/s");
+                    addRow("Extend Margin", $"{debug_descent_margin_factor:n2}");
                 }
             }
         }

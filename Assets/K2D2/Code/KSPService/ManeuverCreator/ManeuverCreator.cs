@@ -329,9 +329,12 @@ namespace K2D2.KSPService
         /// as of this writing, so treat it as unverified rather than proven - this method is new
         /// on top of that, and needs a real in-game test same as the rest of precision landing.
         /// </summary>
-        public ManeuverNodeData CreateManeuverNodeAtUT(double UT, double progradeDeltaV)
+        // normalDeltaV added for precision landing's optional small plane trim (see
+        // LandingTargeting.FindBestDeorbitBurn) - defaults to 0 so every existing caller
+        // (Circularize.cs, Final.cs) keeps behaving exactly as before, pure prograde/retrograde.
+        public ManeuverNodeData CreateManeuverNodeAtUT(double UT, double progradeDeltaV, double normalDeltaV = 0)
         {
-            Vector3d burnVector = ProgradeBurnVector(progradeDeltaV);
+            Vector3d burnVector = ProgradeBurnVector(progradeDeltaV) + NormalBurnVector(normalDeltaV);
 
             var SimulationObject = _vesselComponent.SimulationObject;
 
@@ -395,22 +398,22 @@ namespace K2D2.KSPService
         /// the same frame it adds a node. This is the fix to try first; logs the node count right
         /// after creation so a next test confirms it either way if this isn't the whole story.
         /// </summary>
-        public void RemoveAllNodesThenCreate(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated)
+        public void RemoveAllNodesThenCreate(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated, double normalDeltaV = 0)
         {
             RemoveAllNodes();
-            K2D2_Plugin.Instance.StartCoroutine(RemoveAllNodesThenCreate_Co(UT, progradeDeltaV, onCreated));
+            K2D2_Plugin.Instance.StartCoroutine(RemoveAllNodesThenCreate_Co(UT, progradeDeltaV, onCreated, normalDeltaV));
         }
 
-        private IEnumerator RemoveAllNodesThenCreate_Co(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated)
+        private IEnumerator RemoveAllNodesThenCreate_Co(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated, double normalDeltaV = 0)
         {
             yield return new WaitForFixedUpdate();
 
-            var nodeData = CreateManeuverNodeAtUT(UT, progradeDeltaV);
+            var nodeData = CreateManeuverNodeAtUT(UT, progradeDeltaV, normalDeltaV);
 
             var maneuvers_component = _vesselComponent?.SimulationObject?.FindComponent<ManeuverPlanComponent>();
             int count_after = maneuvers_component?.GetNodes()?.Count ?? -1;
             logger.LogInfo($"[ManeuverCreator] RemoveAllNodesThenCreate: created node {nodeData?.NodeID} at UT={UT:n1} " +
-                $"deltaV={progradeDeltaV:n2} - {count_after} node(s) now on the plan.");
+                $"deltaV={progradeDeltaV:n2} normalDeltaV={normalDeltaV:n2} - {count_after} node(s) now on the plan.");
 
             onCreated?.Invoke(nodeData);
         }

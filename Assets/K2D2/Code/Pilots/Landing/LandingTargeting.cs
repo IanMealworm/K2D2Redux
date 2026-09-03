@@ -291,90 +291,195 @@ namespace K2D2.Landing
             return collide;
         }
 
-        // The actual search: samples candidate burn times across roughly one orbit, evaluates
-        // the resulting impact longitude for each (via ComputeDeorbitDeltaV + PredictImpactLongitude
-        // above), and linearly refines around whichever pair of adjacent samples bracket the
-        // target longitude (i.e. where the error crosses zero) for a tighter final answer.
+        // The actual search: samples candidate burn times across roughly one orbit, evaluates the
+        // resulting impact point for each (via ComputeDeorbitDeltaV + PredictImpactLongitude
+        // above) against BOTH target latitude and longitude - not longitude alone - and refines
+        // around whichever sample came out best for a tighter final answer.
+        //
+        // Worth being honest about what this can and can't do: one burn from one fixed-inclination
+        // orbit is really one degree of freedom (when in the orbit to burn), which determines
+        // BOTH the resulting latitude and longitude together, not independently - so this searches
+        // for the single best-achievable point across the orbit, not a guaranteed exact hit on an
+        // arbitrary target. If the target's latitude is outside the orbit's inclination band, no
+        // burn timing reaches it at all; that's a real plane mismatch the player has to fix, not
+        // something this search (or the descent-phase steering) can paper over. Within the
+        // reachable band, this should noticeably shrink whatever's left for TouchDown's closed-
+        // loop steering to correct, especially off the equator, where the old longitude-only
+        // version had no way to even notice a latitude miss.
+        //
         // Returns false if no candidate produced a terrain impact at all (shouldn't normally
         // happen given targetPeriapsisRadius is meant to be safely below terrain, but a very
         // unusual body/orbit combination could still miss).
-        // bestLon/bestErrorDeg/bestImpactUT are the search's OWN prediction for whichever
+        // bestLon/bestLat/bestErrorM/bestImpactUT are the search's OWN prediction for whichever
         // candidate it picked - exposed so the caller can log them. Before the ZupAtUT fix above,
-        // this was how we discovered the search's own model converged tight (predicted error
-        // under 0.25deg every test) while the actual landing still missed by ~4deg/13-16km -
-        // pointing squarely at PredictImpactLongitude's (now-fixed) rotation math rather than the
-        // search's convergence. Kept for the same reason now: cheap to log, and if a future test
-        // ever shows a gap again, this is what tells us whether it's this search or something
-        // downstream (turn/warp/burn timing, the braking phase) that's responsible.
+        // this was how we discovered the search's own model converged tight while the actual
+        // landing still missed by a lot - pointing squarely at PredictImpactLongitude's (now-
+        // fixed) rotation math rather than the search's convergence. Kept for the same reason now:
+        // cheap to log, and if a future test ever shows a gap again, this is what tells us whether
+        // it's this search or something downstream (turn/warp/burn timing, the braking phase)
+        // that's responsible.
+        // maxPlaneTrimDv (m/s, player-tunable via the Max Plane Trim slider - 0 disables this
+        // entirely, same as before) is a SMALL normal/antinormal component added on top of the
+        // usual prograde/retrograde deorbit burn - see the plane-trim block at the end of this
+        // method for why and how much it can actually help.
         public static bool FindBestDeorbitBurn(IKeplerPatch orbit, CelestialBodyComponent body,
-            double searchStartUT, double searchDuration, double targetPeriapsisRadius, double targetLongitudeDeg,
-            out double bestUT, out double bestDeltaV, out double bestLon, out double bestErrorDeg,
+            double searchStartUT, double searchDuration, double targetPeriapsisRadius,
+            double targetLatitudeDeg, double targetLongitudeDeg, double maxPlaneTrimDv,
+            out double bestUT, out double bestDeltaV, out double bestNormalDeltaV,
+            out double bestLon, out double bestLat, out double bestErrorM,
             out double bestImpactUT)
         {
             const int samples = 36;
 
             bestUT = searchStartUT;
             bestDeltaV = 0;
+            bestNormalDeltaV = 0;
             bestLon = 0;
-            bestErrorDeg = 0;
+            bestLat = 0;
+            bestErrorM = double.MaxValue;
             bestImpactUT = 0;
-            double bestAbsError = double.MaxValue;
-            bool any = false;
+            int bestIndex = -1;
 
-            bool havePrev = false;
-            double prevError = 0;
-            double prevUT = 0;
+            // Only the per-sample error needs to survive the whole loop (to look back at the
+            // winning sample's neighbors for refinement below) - everything else about the
+            // winning candidate is already captured into best* as soon as it's found.
+            double[] errors = new double[samples];
+            bool[] valid = new bool[samples];
 
             for (int i = 0; i < samples; i++)
             {
                 double candidateUT = searchStartUT + searchDuration * i / (samples - 1);
 
-                if (TryEvaluateCandidate(orbit, body, candidateUT, targetPeriapsisRadius, targetLongitudeDeg,
-                        out double dv, out double lon, out double error, out double impactUT))
+                if (TryEvaluateCandidate(orbit, body, candidateUT, targetPeriapsisRadius,
+                        targetLatitudeDeg, targetLongitudeDeg, 0,
+                        out double dv, out double lon, out double lat, out double errorM, out double impactUT))
                 {
-                    any = true;
-                    if (Math.Abs(error) < bestAbsError)
+                    valid[i] = true;
+                    errors[i] = errorM;
+
+                    if (errorM < bestErrorM)
                     {
-                        bestAbsError = Math.Abs(error);
+                        bestErrorM = errorM;
+                        bestIndex = i;
                         bestUT = candidateUT;
                         bestDeltaV = dv;
                         bestLon = lon;
-                        bestErrorDeg = error;
+                        bestLat = lat;
                         bestImpactUT = impactUT;
                     }
-
-                    // Zero-crossing between this sample and the previous one - interpolate for a
-                    // tighter estimate than the raw sample spacing (about one orbit / 35 steps).
-                    if (havePrev && Math.Sign(error) != Math.Sign(prevError) && Math.Abs(error - prevError) < 180.0)
-                    {
-                        double frac = prevError / (prevError - error);
-                        double refinedUT = prevUT + (candidateUT - prevUT) * frac;
-
-                        if (TryEvaluateCandidate(orbit, body, refinedUT, targetPeriapsisRadius, targetLongitudeDeg,
-                                out double dvR, out double lonR, out double errorR, out double impactUTR)
-                                && Math.Abs(errorR) < bestAbsError)
-                        {
-                            bestAbsError = Math.Abs(errorR);
-                            bestUT = refinedUT;
-                            bestDeltaV = dvR;
-                            bestLon = lonR;
-                            bestErrorDeg = errorR;
-                            bestImpactUT = impactUTR;
-                        }
-                    }
-
-                    prevError = error;
-                    prevUT = candidateUT;
-                    havePrev = true;
                 }
             }
 
-            return any;
+            if (bestIndex < 0)
+                return false;
+
+            // Refine around the winning sample. The old version refined by finding where a
+            // SIGNED longitude error crossed zero between two samples - that trick doesn't apply
+            // to an unsigned lat/lon distance (it never crosses zero, it just dips toward a
+            // minimum), so this fits a parabola through the winner and its two neighbors instead
+            // and jumps to that parabola's vertex - standard 1D local-minimum refinement, and
+            // just as cheap (one extra candidate evaluation).
+            if (bestIndex > 0 && bestIndex < samples - 1 && valid[bestIndex - 1] && valid[bestIndex + 1])
+            {
+                double h = searchDuration / (samples - 1);
+                double y0 = errors[bestIndex - 1];
+                double y1 = errors[bestIndex];
+                double y2 = errors[bestIndex + 1];
+                double denom = y0 - 2 * y1 + y2;
+
+                // denom > 0 means the three samples genuinely curve upward around the winner (a
+                // real local minimum, not noise or a flat run) - only trust the parabola then.
+                if (denom > 1e-9)
+                {
+                    double offset = 0.5 * (y0 - y2) / denom;
+                    // A parabola fit to three samples can still suggest stepping outside their
+                    // own span on a shallow or asymmetric error curve - clamp to the sample
+                    // spacing itself so this can only interpolate between the three points it was
+                    // fit to, never extrapolate past them.
+                    offset = Math.Clamp(offset, -1.0, 1.0);
+                    double refinedUT = bestUT + offset * h;
+
+                    if (TryEvaluateCandidate(orbit, body, refinedUT, targetPeriapsisRadius,
+                            targetLatitudeDeg, targetLongitudeDeg, 0,
+                            out double dvR, out double lonR, out double latR, out double errorR, out double impactUTR)
+                            && errorR < bestErrorM)
+                    {
+                        bestErrorM = errorR;
+                        bestUT = refinedUT;
+                        bestDeltaV = dvR;
+                        bestLon = lonR;
+                        bestLat = latR;
+                        bestImpactUT = impactUTR;
+                    }
+                }
+            }
+
+            // Optional small plane trim, on top of the timing search above. A normal/antinormal
+            // component added to the burn nudges the orbital PLANE itself (unlike the
+            // prograde/retrograde component, which can only move you along the plane you're
+            // already on) - so unlike the timing search, this genuinely gives the search a second
+            // degree of freedom, and could in principle drive the error arbitrarily close to zero
+            // with enough of it. Deliberately kept small and player-capped (maxPlaneTrimDv, the
+            // Max Plane Trim slider) rather than searched for "however much closes the gap
+            // completely" - a real plane MISMATCH is still the player's job to fly close in the
+            // first place (see the design conversation this came out of); this is only meant to
+            // trim the last bit of it away so the descent-phase steering doesn't have to work so
+            // hard, not replace flying a decent plane. 0 (the slider's floor) disables this
+            // entirely and reproduces the old in-plane-only behavior exactly.
+            //
+            // Grid search rather than solving for it directly: adding a small normal component
+            // barely changes the vessel's speed (it's perpendicular to the existing velocity, so
+            // to first order it only rotates the velocity vector, it doesn't add or remove from
+            // the prograde/retrograde magnitude already found above) - so reusing bestDeltaV
+            // as-is and just sampling a handful of normal values at the winning burn time is both
+            // cheap and simple to verify, rather than a coupled 2D search or a derivative-based
+            // solve that's harder to sanity-check by eye.
+            //
+            // SIGN CONVENTION NOTE: NormalBurnVector's positive direction (see ManeuverCreator.cs)
+            // is assumed to match Cross(r, v) here (the standard orbital angular-momentum
+            // convention) - not independently re-derived the way the descent steering's rotations
+            // were, because there's no cheap self-consistency check available for "which way does
+            // a real burn actually push the orbital plane" the way there was for a same-frame
+            // vector rotation. If plane trim ever makes the real in-game error WORSE instead of
+            // better, that sign is the first thing to flip and re-test.
+            if (maxPlaneTrimDv > 0 && bestIndex >= 0)
+            {
+                const int trimSamples = 9;
+                double bestUTForTrim = bestUT;
+                double bestDvForTrim = bestDeltaV;
+
+                for (int i = 0; i < trimSamples; i++)
+                {
+                    double dvNormal = maxPlaneTrimDv * (2.0 * i / (trimSamples - 1) - 1.0); // -max .. +max
+                    if (dvNormal == 0)
+                        continue; // already have the untrimmed result as the baseline in best*
+
+                    Vector3d r0 = orbit.GetRelativePositionAtUTZup(bestUTForTrim);
+                    Vector3d v0 = orbit.GetOrbitalVelocityAtUTZup(bestUTForTrim);
+                    Vector3d orbitNormal = Vector3d.Cross(r0, v0).normalized;
+                    Vector3d v1 = v0 + v0.normalized * bestDvForTrim + orbitNormal * dvNormal;
+
+                    if (!PredictImpactLongitude(r0, v1, body, bestUTForTrim, out double lonT, out double latT, out double impactUTT))
+                        continue;
+
+                    double errorT = LandingPilot.HaversineDistanceMeters(latT, lonT, targetLatitudeDeg, targetLongitudeDeg, body.radius);
+                    if (errorT < bestErrorM)
+                    {
+                        bestErrorM = errorT;
+                        bestNormalDeltaV = dvNormal;
+                        bestLon = lonT;
+                        bestLat = latT;
+                        bestImpactUT = impactUTT;
+                    }
+                }
+            }
+
+            return true;
         }
 
         static bool TryEvaluateCandidate(IKeplerPatch orbit, CelestialBodyComponent body, double candidateUT,
-            double targetPeriapsisRadius, double targetLongitudeDeg, out double dv, out double lon, out double error,
-            out double impactUT)
+            double targetPeriapsisRadius, double targetLatitudeDeg, double targetLongitudeDeg, double dvNormal,
+            out double dv, out double lon, out double lat, out double errorM, out double impactUT)
         {
             Vector3d r0 = orbit.GetRelativePositionAtUTZup(candidateUT);
             Vector3d v0 = orbit.GetOrbitalVelocityAtUTZup(candidateUT);
@@ -382,13 +487,21 @@ namespace K2D2.Landing
             dv = ComputeDeorbitDeltaV(r0.magnitude, v0.magnitude, body.gravParameter, targetPeriapsisRadius);
             Vector3d v1 = v0 + v0.normalized * dv;
 
-            if (!PredictImpactLongitude(r0, v1, body, candidateUT, out lon, out _, out impactUT))
+            if (dvNormal != 0)
             {
-                error = 0;
+                Vector3d orbitNormal = Vector3d.Cross(r0, v0).normalized;
+                v1 += orbitNormal * dvNormal;
+            }
+
+            if (!PredictImpactLongitude(r0, v1, body, candidateUT, out lon, out lat, out impactUT))
+            {
+                errorM = 0;
                 return false;
             }
 
-            error = WrapDegrees180(lon - targetLongitudeDeg);
+            // Real ground distance to the target, not just a longitude difference - see
+            // FindBestDeorbitBurn's own comment for why this is the actual objective now.
+            errorM = LandingPilot.HaversineDistanceMeters(lat, lon, targetLatitudeDeg, targetLongitudeDeg, body.radius);
             return true;
         }
 
