@@ -85,6 +85,36 @@
                  longer carries any real controls - the Reset button now lives at the bottom of
                  this ADVANCED foldout instead (see LandingUI.cs's addResetButton call). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
+                <!-- Moved to the top of ADVANCED per Reese - these are the settings you actually
+                     want to reach for while flying a precision landing, so they shouldn't be
+                     buried below Warp/Brake/Touch Down. Only meaningful while Precision Landing is
+                     on (LandingSettings.setupUI shows/hides this alongside target_settings above) -
+                     these are the closed-loop steering caps from TouchDown.ComputeSteeredDirection,
+                     exposed so they can be tuned live in-game instead of needing a code change +
+                     rebuild per test. -->
+                <ui:VisualElement name="PrecisionLanding">
+                    <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="40" max="80" name="steering_max_angle" label="Max Steering Angle °" tooltip="How far off retrograde the burn can tilt sideways to correct a left/right miss. Wider catches a bigger miss (or a slightly mismatched orbital plane) but costs more fuel - it never touches the vertical/braking component." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="80" max="90" name="arc_extend_max_angle" label="Max Extend Angle °" tooltip="How far the burn can tilt toward straight up to stretch the landing arc when undershooting. Only ever adds vertical braking margin, so it's safe to run high." />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="45" name="arc_shorten_max_angle" label="Max Shorten Angle °" tooltip="How far the burn can tilt toward horizontal to cut the landing arc short when overshooting. Spends vertical braking margin, so keep this one conservative." />
+                    <!-- Arc Correction Full-Scale and Min Correction Altitude Margin sliders removed -
+                         both are fixed values now (TouchDown.arc_correction_full_scale_m = 50,
+                         LandingSettings.min_correction_altitude_margin = 8000, its old slider's max)
+                         instead of player-adjustable, per Reese. -->
+                    <!-- RCS fine correction - see TouchDown.ApplyRCSFineCorrection/
+                         RCSHandlingHeading. Takes the heading-correction job over from the engine
+                         entirely once the miss is inside the threshold (engine keeps braking and
+                         keeps doing its own arc extend/shorten correction regardless) - tilting
+                         the main burn sideways to fix heading was burning extra deltaV for
+                         something RCS can do directly and without needing to turn the vessel at
+                         all (no attitude-lag near the end of a close approach). Off by default. -->
+                    <K2UI.K2Toggle label="Use RCS for Fine Correction" name="use_rcs_fine_correction" tooltip="Once the miss has closed to within the threshold below, RCS takes over heading correction from the main engine (which keeps braking and keeps correcting the arc, just stops tilting sideways for heading) - RCS doesn't need to reorient the vessel, so it doesn't lag behind a fast-changing correction the way turning the whole ship does, and it's cheaper on deltaV than steering the main burn sideways. Needs RCS enabled and monopropellant on the vessel." />
+                    <ui:VisualElement name="rcs_fine_correction_settings">
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="100" value="1000" max="5000" name="rcs_fine_correction_threshold_m" label="RCS Threshold (m)" tooltip="Target error below which RCS fine correction kicks in - fades in from here down to 0." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.05" value="0.5" max="1" name="rcs_fine_correction_power" label="RCS Power" tooltip="How hard RCS pushes toward the target once fully active (at target_error_m = 0)." />
+                    </ui:VisualElement>
+                </ui:VisualElement>
                 <ui:VisualElement name="Warp">
                     <ui:Label text="// WARP" class="k2-section-header" />
                     <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" />
@@ -103,17 +133,6 @@
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle" label="Max Angle" tooltip="Max Angle for Final touch Down" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
                     <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
-                </ui:VisualElement>
-                <!-- Only meaningful while Precision Landing is on (LandingSettings.setupUI shows/
-                     hides this alongside target_settings above) - these are the closed-loop
-                     steering caps from TouchDown.ComputeSteeredDirection, exposed so they can be
-                     tuned live in-game instead of needing a code change + rebuild per test. -->
-                <ui:VisualElement name="PrecisionLanding">
-                    <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="40" max="80" name="steering_max_angle" label="Max Steering Angle °" tooltip="How far off retrograde the burn can tilt sideways to correct a left/right miss. Wider catches a bigger miss (or a slightly mismatched orbital plane) but costs more fuel - it never touches the vertical/braking component." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="80" max="90" name="arc_extend_max_angle" label="Max Extend Angle °" tooltip="How far the burn can tilt toward straight up to stretch the landing arc when undershooting. Only ever adds vertical braking margin, so it's safe to run high." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="45" name="arc_shorten_max_angle" label="Max Shorten Angle °" tooltip="How far the burn can tilt toward horizontal to cut the landing arc short when overshooting. Spends vertical braking margin, so keep this one conservative." />
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>

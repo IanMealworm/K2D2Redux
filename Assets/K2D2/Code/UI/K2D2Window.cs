@@ -78,6 +78,10 @@ namespace K2D2.UI
 
         List<K2Page> all_panels = new();
 
+        // Which tab the info button should return to when clicked again from About - see the
+        // info_button click handler in OnUiReload below.
+        string _lastTabBeforeAbout = "node";
+
         /// <summary>
         /// Runs when the window is first created, and every time the window is re-enabled. Gets the
         /// PanelRenderer and registers for its UI-ready callback - see the _panel field's comment for why
@@ -214,7 +218,21 @@ namespace K2D2.UI
                 L.Log("K2D2Window.OnUiReload: title_bar.Q<ToggleButton>(\"staging-toggle\") returned null.");
             }
 
-            info_button?.RegisterCallback<ClickEvent>(evt => tab_page.Select("about"));
+            // Toggle, not one-way: clicking it while already on About goes back to whichever tab
+            // was open before, instead of leaving the only way out being to click another tab
+            // button by hand. "node" as the fallback matches tab_page.Bind's own default below.
+            info_button?.RegisterCallback<ClickEvent>(evt =>
+            {
+                if (tab_page.CurrentTabCode == "about")
+                {
+                    tab_page.Select(_lastTabBeforeAbout);
+                }
+                else
+                {
+                    _lastTabBeforeAbout = tab_page.CurrentTabCode;
+                    tab_page.Select("about");
+                }
+            });
             // This used to write to StagingPilot.Instance.Enabled, which only gates BaseController.isActive
             // (tab visibility/availability) - nothing in StagingPilot.Update()/CheckStaging() ever reads it,
             // so toggling it had no effect on whether auto-staging actually ran. The setting that

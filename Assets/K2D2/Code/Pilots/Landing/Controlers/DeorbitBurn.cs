@@ -148,9 +148,16 @@ namespace K2D2.Landing
             // new (the plane trim) - worth specifically checking that the real in-game error gets
             // BETTER, not worse, whenever this comes out nonzero; see the sign-convention note on
             // FindBestDeorbitBurn if it doesn't.
+            // max_plane_trim_dv (the budget FindBestDeorbitBurn was allowed to spend) is now logged
+            // alongside normalDeltaV (what it actually used) - without the budget printed too,
+            // there was no way to tell "trim wasn't needed" (normalDeltaV=0 with a healthy budget)
+            // apart from "trim was disabled" (max_plane_trim_dv=0) apart from "trim was allowed but
+            // the search still came back empty-handed" just by reading the log. Added while
+            // investigating Reese's report of plane trim not consistently engaging (item 3).
             logger.LogInfo($"[DeorbitBurn] now={now:n1} search_start={search_start:n1} period={period:n1}s " +
                 $"body={body.Name} rotationPeriod={body.rotationPeriod:n1}s | " +
-                $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s normalDeltaV={normalDeltaV:n2}m/s | " +
+                $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s " +
+                $"normalDeltaV={normalDeltaV:n2}m/s (max_plane_trim_dv={max_plane_trim_dv:n2}m/s) | " +
                 $"target=({target_latitude:n3}, {target_longitude:n3}) predicted=({predicted_lat:n3}, {predicted_lon:n3}) " +
                 $"predicted_error={predicted_error_m:n1}m | " +
                 $"predicted_impact_UT={predicted_impact_UT:n1} " +

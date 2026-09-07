@@ -43,6 +43,14 @@ namespace K2D2.Landing
         // its own Turn/Warp/Burn instances instead of driving NodeExPilot.
         public DeorbitBurn deorbit_burn = new DeorbitBurn();
 
+        // Precision landing's third phase, run right after deorbit_burn and before the normal
+        // Pause -> QuickWarp -> ... sequence - a second, small correction burn against the REAL
+        // post-deorbit-burn trajectory, so the descent-phase steering isn't left doing all the
+        // correcting late/close to the ground. See MidCourseCorrection.cs for the full reasoning
+        // (this was Reese's own idea, in response to seeing the deorbit burn alone still commit
+        // ~27-28km off target even with plane trim maxed out).
+        public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
+
         public SingleExecuteController current_executor = new SingleExecuteController();
 
         public LandingPilot()
@@ -75,6 +83,10 @@ namespace K2D2.Landing
             // DeorbitBurn = Off + 2 now (not +1) - still fine, nextMode() only cares about
             // relative order, not the exact enum values.
             DeorbitBurn,
+            // Same reasoning again - inserted right after DeorbitBurn (before Pause) so it runs
+            // once, right after the deorbit burn actually completes, before the normal coast
+            // sequence begins. See MidCourseCorrection.cs.
+            MidCourseCorrection,
             Pause,
             QuickWarp,
             RotationWarp,
@@ -115,6 +127,10 @@ namespace K2D2.Landing
                 case Mode.DeorbitBurn:
                     current_executor.setController(deorbit_burn);
                     deorbit_burn.Start();
+                    break;
+                case Mode.MidCourseCorrection:
+                    current_executor.setController(mid_course_correction);
+                    mid_course_correction.Start();
                     break;
                 case Mode.Pause:
                     end_pause_Ut = GeneralTools.Current_UT + settings.pause_time;
@@ -227,6 +243,18 @@ namespace K2D2.Landing
         internal double speed_collision;
         internal double burn_duration;
 
+        // Logging throttle for compute_real_collision() below - this runs every single Update()
+        // frame (computeValues() calls it unconditionally), so logging its result unconditionally
+        // meant over 30,000 log lines from one 10-minute test alone once the converged/skip
+        // diagnostics were added to track down the "warped way too far" bug. That bug's confirmed
+        // fixed now (see deltaTime's own comment on compute_real_collision), so this only needs to
+        // stay loud enough to catch a NEW problem, not print every frame forever. Logs immediately
+        // whenever converged flips true<->false (so a real streak of trouble is never missed) plus
+        // a periodic heartbeat regardless, same throttling idea as TouchDown's RCS ACTIVE logging.
+        bool collision_search_last_converged = true;
+        int collision_search_log_counter = 0;
+        const int CollisionSearchHeartbeatFrames = 60;
+
         // Precision landing (settings/UI side of this is in LandingSettings.cs). Predicted lat/lon
         // is computed alongside the collision check below, since it already has the terrain-
         // crossing time and position worked out. target_error_m is only meaningful once a target's
@@ -305,7 +333,54 @@ namespace K2D2.Landing
                 }
             }
 
+            // Precision landing: also make sure the burn starts with real ALTITUDE margin above
+            // the touchdown phase's own threshold (start_touchdown_altitude), not just enough TIME
+            // to make the lateral correction above - Reese's actual complaint: "it wants to make
+            // these corrections at 4km above terrain... leaves little room especially when
+            // touchdown phase defaults to start at 1.5km". The lateral floor above only sizes
+            // itself off how big the miss is, so a well-aimed deorbit burn (small target_error_m)
+            // could still leave the correction starting uncomfortably close to
+            // start_touchdown_altitude. This floor doesn't care how big the miss is - it always
+            // wants at least min_correction_altitude_margin of clearance above the touchdown
+            // threshold - and Math.Max's with the lateral floor above so whichever one asks for
+            // more wins.
+            //
+            // Deliberately uses speed_collision (the full orbital speed at the predicted impact
+            // point) here, NOT the vertical-only descent rate - an earlier version divided by the
+            // real vertical speed there instead, which sounds more accurate but blows up exactly
+            // where this search usually lands: since targetPeriapsisRadius is only a shallow dip
+            // below terrain, the predicted crossing point is often very close to the orbit's actual
+            // geometric periapsis, where vertical speed is close to ZERO by definition (that's what
+            // periapsis means). Dividing an altitude margin by a near-zero descent rate produced a
+            // multi-hour burn_before, which pushed startBurn_UT (and therefore startSafeWarp_UT)
+            // into the PAST before the QuickWarp/RotationWarp modes even got a chance to warp -
+            // WarpTo.Update() just gives up instantly when its target time has already passed (see
+            // its own dt<0 check), so the whole warp sequence silently no-op'd and dropped straight
+            // into Brake in real time with the actual collision still ~20 minutes out. That's
+            // exactly what Reese hit ("went into braking right after mid course correction and
+            // didn't do any warping"). speed_collision can't collapse like that (it's nonzero
+            // outside a full stop), at the cost of being a less precise "how fast will we actually
+            // be falling" estimate - the same tradeoff the lateral floor above already accepts.
+            if (settings.precision_landing.V && speed_collision > 0.1)
+            {
+                double target_start_altitude = settings.start_touchdown_altitude.V + LandingSettings.min_correction_altitude_margin;
+                double altitude_lead_time = target_start_altitude / speed_collision;
+                burn_before = Math.Max(burn_before, altitude_lead_time);
+            }
+
             startBurn_UT = adjusted_collision_UT - burn_duration - burn_before;
+
+            // Backstop: whatever combination of the floors above, never schedule the burn as
+            // already overdue. This is what actually broke the warp scheduling in the bug described
+            // above - WarpTo silently no-ops the instant its target time is in the past, so an
+            // overshot burn_before didn't just start the burn a bit early, it skipped the warp
+            // entirely and forced a real-time wait for however long was actually left. Clamping
+            // here means the worst case is now "start braking immediately", not "silently stop
+            // warping while still 20 minutes out".
+            double now_ut = GeneralTools.Game.UniverseModel.UniverseTime;
+            if (startBurn_UT < now_ut)
+                startBurn_UT = now_ut;
+
             startSafeWarp_UT = startBurn_UT - settings.rotation_warp_duration.V;
         }
 
@@ -345,10 +420,38 @@ namespace K2D2.Landing
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             var body = orbit.referenceBody;
             double current_time_ut = GeneralTools.Game.UniverseModel.UniverseTime;
-            double deltaTime = 60; // seconds in the future
-            int max_occurrences = 100;
+            // Coarse step for the initial forward walk below, and the starting half-step size for
+            // the flip-and-refine bisection once a below-terrain sample is hit. Narrowed 60 -> 20
+            // (max_occurrences bumped 100 -> 300 to keep the same ~6,000s total reach at the finer
+            // resolution) after a real in-game log caught this search aliasing between two
+            // DIFFERENT valid terrain crossings roughly one orbital period apart: right after a
+            // deorbit burn, the still-coasting orbit can dip below terrain both on the current pass
+            // (near) and again a full period later (far). A 60s-wide forward step can walk clean
+            // OVER a narrow near dip without ever sampling inside it - and since this whole search
+            // restarts fresh from current_ut+120s every single frame, the tiny frame-to-frame shift
+            // in that starting anchor meant most frames landed on the far crossing while roughly 1
+            // in 15 happened to land a sample inside the narrower near one, flickering the result
+            // back and forth. Everything downstream (LandingPilot.compute_startBurn, then
+            // warp_to.UT) reads whatever this function finds unconditionally every frame, so that
+            // flicker was sending the auto-warp target back and forth between "burn very soon" and
+            // "burn a full orbit later" - and whichever one briefly won right as high-speed warp
+            // kicked in could send the vessel warping straight through the real, nearer burn
+            // window before the next frame's flip caught up. That's what was behind the "warped
+            // waaay too far" report landing 40+km off target. A finer step makes it far less likely
+            // to skip the near dip in the first place; the converged/orbit-period guards below are
+            // the backstop for whatever this doesn't catch.
+            double deltaTime = 20;
+            int max_occurrences = 300;
             double time = start_time;
             double terrainAltitude = 0;
+            // True only once a sample actually lands within 1m of the terrain (the loop's own
+            // break condition below) - false if the loop instead runs out of iterations still
+            // walking/bisecting without ever narrowing that far. Previously this wasn't tracked at
+            // all, so a frame where the search simply ran out of budget (walked the full 300 steps
+            // forward without ever finding ANY below-terrain sample, or started bisecting but didn't
+            // finish) still went on to overwrite adjusted_collision_UT/target_error_m with whatever
+            // half-finished result it had - see the guard below.
+            bool converged = false;
 
             float radius = current_vessel.VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere.radius;
 
@@ -363,11 +466,6 @@ namespace K2D2.Landing
 
                 body.GetAltitudeFromTerrain(ps, out terrainAltitude, out sceneryOffset);
                 // terrainAltitude -= radius;
-
-                if (i == 0)
-                {
-                    logger.LogInfo($"compute_real_collision: first sample terrainAltitude={terrainAltitude:n1} at UT+{start_time - current_time_ut:n0}s");
-                }
 
                 if (terrainAltitude < 0)
                 {
@@ -391,11 +489,67 @@ namespace K2D2.Landing
 
                 if (Math.Abs(terrainAltitude) < 1)
                 {
+                    converged = true;
                     break;
                 }
             }
 
-            logger.LogInfo($"compute_real_collision: collide={collide} final terrainAltitude={terrainAltitude:n1} adjusted_collision_UT+{time - current_time_ut:n0}s");
+            // See collision_search_last_converged's own comment for why this is throttled instead
+            // of unconditional.
+            bool convergence_changed = converged != collision_search_last_converged;
+            collision_search_last_converged = converged;
+            collision_search_log_counter++;
+            if (convergence_changed || collision_search_log_counter % CollisionSearchHeartbeatFrames == 0)
+            {
+                logger.LogInfo($"compute_real_collision: collide={collide} converged={converged} final terrainAltitude={terrainAltitude:n1} adjusted_collision_UT+{time - current_time_ut:n0}s");
+            }
+
+            if (!converged)
+            {
+                // The loop above ran out of iterations without ever landing within 1m of the
+                // terrain - either it never found a below-terrain sample at all (legitimately no
+                // collision within the search's ~6,000s reach), or it found one but didn't finish
+                // narrowing in on it. Either way this frame's result isn't trustworthy enough to
+                // drive the warp schedule - see the big comment on deltaTime above for exactly why
+                // a half-finished/wrong-orbit search here used to send the auto-warp target
+                // flickering. Keep the last good prediction instead of overwriting it. Only log the
+                // FIRST frame of a new not-converged streak (convergence_changed) - a whole streak
+                // logging every single frame is exactly the spam this throttling exists to avoid.
+                if (convergence_changed)
+                {
+                    logger.LogInfo($"compute_real_collision: search did not converge this frame - keeping previous prediction " +
+                        $"(adjusted_collision_UT+{adjusted_collision_UT - current_time_ut:n0}s, target_error_m={target_error_m:n1}) instead of an unreliable one.");
+                }
+                return collision_detected;
+            }
+
+            // Belt-and-suspenders on top of the narrower search step above, only while genuinely
+            // coasting unpowered toward the deorbit impact point (Pause/QuickWarp/RotationWarp/
+            // Waiting) - NOT during Circularize/DeorbitBurn/Brake/TouchDown, where the vessel's own
+            // thrust is deliberately changing the orbit and a real, legitimate jump in predicted
+            // impact time (a braking burn pushing it later, say) is exactly the point, not a bug.
+            // While coasting, nothing is changing the orbit, so the same physical crossing should
+            // only ever get SOONER as current_time_ut advances - a jump forward by more than half
+            // an orbital period almost certainly means this frame's search skipped past the real
+            // near crossing and landed on a later one again (see deltaTime's comment for why that
+            // can still happen occasionally even at the finer step). Only meaningful when the orbit
+            // is actually bound (a hyperbolic capture trajectory has no "next orbit" to alias onto).
+            bool coasting_unpowered = mode == Mode.Pause || mode == Mode.QuickWarp
+                || mode == Mode.RotationWarp || mode == Mode.Waiting;
+            if (coasting_unpowered && adjusted_collision_UT > 0)
+            {
+                Vector3d r_now = orbit.GetRelativePositionAtUTZup(current_time_ut);
+                Vector3d v_now = orbit.GetOrbitalVelocityAtUTZup(current_time_ut);
+                double period = LandingTargeting.OrbitalPeriodFromStateVectors(r_now, v_now, body.gravParameter);
+
+                if (!double.IsNaN(period) && period > 0 && time > adjusted_collision_UT + 0.5 * period)
+                {
+                    logger.LogInfo($"compute_real_collision: new prediction (adjusted_collision_UT+{time - current_time_ut:n0}s) jumped more than " +
+                        $"half an orbit ({period:n0}s) later than the last one (adjusted_collision_UT+{adjusted_collision_UT - current_time_ut:n0}s) - " +
+                        "looks like the search locked onto a later orbit's crossing instead of the nearer one, keeping the previous prediction.");
+                    return collision_detected;
+                }
+            }
 
             adjusted_collision_UT = time;
 

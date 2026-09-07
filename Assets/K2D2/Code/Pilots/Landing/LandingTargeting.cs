@@ -83,6 +83,25 @@ namespace K2D2.Landing
             periapsisRadius = semiMajorAxis * (1.0 - eccentricity);
         }
 
+        // Not a real orbital period - a hyperbolic/unbound trajectory only ever passes periapsis
+        // once, it doesn't repeat. This is just a sensible time SCALE to sweep across when
+        // looking for that one passage (see TimeToNextPeriapsis's caller in NodeExPilot.
+        // CreateCircularizeNode - the "Circularize at PE" button needs to work on an inbound SOI
+        // capture trajectory, before any capture burn has happened, not just on an
+        // already-closed orbit). Same formula as OrbitalPeriodFromStateVectors above, but taking
+        // the absolute value of the semi-major axis (which comes out negative for a
+        // hyperbolic/unbound orbit - see OrbitalElementsFromStateVectors) so the result stays
+        // finite and positive instead of NaN, plus a 2x safety margin since - unlike a real
+        // period - there's no guarantee this "characteristic timescale" is itself long enough to
+        // actually contain the passage being searched for.
+        public static double SearchWindowFromStateVectors(Vector3d r0, Vector3d v0, double gravParameter)
+        {
+            double r0mag = r0.magnitude;
+            double v0mag = v0.magnitude;
+            double sma = 1.0 / (2.0 / r0mag - v0mag * v0mag / gravParameter);
+            return 4.0 * Math.PI * Math.Sqrt(Math.Abs(sma * sma * sma) / gravParameter);
+        }
+
         // Time (seconds from now) until the current orbit's next apoapsis passage - needed to
         // time the Circularize burn (standard practice: circularize by raising periapsis at
         // apoapsis). Found by propagating forward with KeplerPropagator (already proven above)
@@ -124,6 +143,61 @@ namespace K2D2.Landing
             // Radial velocity was already <= 0 from the very first sample - we're at/essentially
             // past apoapsis this instant. Shouldn't normally reach here given the loop above
             // covers a full period, but "burn now" beats leaving a caller with a stale time.
+            return 0;
+        }
+
+        // Mirror of TimeToNextApoapsis above, for the Node tab's "Circularize at PE" button -
+        // same propagate-and-bisect approach, just watching for the opposite sign flip (radial
+        // velocity negative/inbound -> positive/outbound, i.e. periapsis passage instead of
+        // apoapsis).
+        public static double TimeToNextPeriapsis(Vector3d r0, Vector3d v0, double gravParameter, double period)
+        {
+            const int samples = 24;
+            double window = period;
+
+            // Retries with a doubled window if no crossing turns up - added for the
+            // hyperbolic/unbound case (Circularize at PE during an SOI capture - see
+            // NodeExPilot.CreateCircularizeNode), where "period" is really
+            // SearchWindowFromStateVectors's heuristic estimate rather than a real, guaranteed-
+            // correct orbital period, so a single pass "not found" doesn't necessarily mean
+            // there's no such crossing - it might just mean the window undershot. A bound
+            // (elliptical) caller's real period always contains one, so this loop is a no-op
+            // (always returns on attempt 0) for every case this function was originally written
+            // for - purely extra insurance for the new one.
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                double stepSize = window / samples;
+
+                double prevDt = 0;
+                double prevRadialVelocity = Vector3d.Dot(r0, v0);
+
+                for (int i = 1; i <= samples; i++)
+                {
+                    double dt = i * stepSize;
+                    KeplerPropagator.Propagate(r0, v0, gravParameter, dt, out Vector3d r, out Vector3d v);
+                    double radialVelocity = Vector3d.Dot(r, v);
+
+                    if (prevRadialVelocity < 0 && radialVelocity >= 0)
+                    {
+                        double lo = prevDt, hi = dt;
+                        for (int j = 0; j < 40; j++)
+                        {
+                            double mid = (lo + hi) / 2.0;
+                            KeplerPropagator.Propagate(r0, v0, gravParameter, mid, out Vector3d rm, out Vector3d vm);
+                            if (Vector3d.Dot(rm, vm) < 0) lo = mid; else hi = mid;
+                        }
+                        return (lo + hi) / 2.0;
+                    }
+
+                    prevDt = dt;
+                    prevRadialVelocity = radialVelocity;
+                }
+
+                window *= 2.0;
+            }
+
+            // Radial velocity was already >= 0 from the very first sample - we're at/essentially
+            // past periapsis this instant. Same reasoning as TimeToNextApoapsis's own fallback.
             return 0;
         }
 
@@ -427,13 +501,17 @@ namespace K2D2.Landing
             // hard, not replace flying a decent plane. 0 (the slider's floor) disables this
             // entirely and reproduces the old in-plane-only behavior exactly.
             //
-            // Grid search rather than solving for it directly: adding a small normal component
-            // barely changes the vessel's speed (it's perpendicular to the existing velocity, so
-            // to first order it only rotates the velocity vector, it doesn't add or remove from
-            // the prograde/retrograde magnitude already found above) - so reusing bestDeltaV
-            // as-is and just sampling a handful of normal values at the winning burn time is both
-            // cheap and simple to verify, rather than a coupled 2D search or a derivative-based
-            // solve that's harder to sanity-check by eye.
+            // JOINTLY re-optimizes burn TIME together with each sampled trim value, rather than
+            // only sampling trim at the untrimmed search's own fixed-optimal time (what this used
+            // to do, and the reason Reese's testing found trim basically never got used even with
+            // the slider maxed out): bestUT above was picked SPECIFICALLY to minimize error at
+            // dvNormal=0, so nudging the plane while holding that exact time fixed usually made
+            // things worse, not better, even when a real plane mismatch existed and a different
+            // (time, trim) pair genuinely would have helped. Each candidate trim value below gets
+            // its own small local time search (centered on the untrimmed bestUT, not the whole
+            // orbit again - trim this small shouldn't move the optimal time far) so it gets a
+            // fair, independent shot at beating the untrimmed result instead of being evaluated at
+            // the wrong instant.
             //
             // SIGN CONVENTION NOTE: NormalBurnVector's positive direction (see ManeuverCreator.cs)
             // is assumed to match Cross(r, v) here (the standard orbital angular-momentum
@@ -445,31 +523,93 @@ namespace K2D2.Landing
             if (maxPlaneTrimDv > 0 && bestIndex >= 0)
             {
                 const int trimSamples = 9;
-                double bestUTForTrim = bestUT;
-                double bestDvForTrim = bestDeltaV;
+                const int localTimeSamples = 13;
+                double untrimmedBestUT = bestUT;
+                // +/-3 of the original grid's own step size - narrow (cheap: 13 samples instead
+                // of another full-orbit 36), but wide enough that a trim-shifted optimal time a
+                // few sample-steps away from the untrimmed one is still well within range.
+                double localWindow = 6.0 * (searchDuration / (samples - 1));
+                double localStart = untrimmedBestUT - localWindow / 2.0;
 
-                for (int i = 0; i < trimSamples; i++)
+                for (int ti = 0; ti < trimSamples; ti++)
                 {
-                    double dvNormal = maxPlaneTrimDv * (2.0 * i / (trimSamples - 1) - 1.0); // -max .. +max
+                    double dvNormal = maxPlaneTrimDv * (2.0 * ti / (trimSamples - 1) - 1.0); // -max .. +max
                     if (dvNormal == 0)
                         continue; // already have the untrimmed result as the baseline in best*
 
-                    Vector3d r0 = orbit.GetRelativePositionAtUTZup(bestUTForTrim);
-                    Vector3d v0 = orbit.GetOrbitalVelocityAtUTZup(bestUTForTrim);
-                    Vector3d orbitNormal = Vector3d.Cross(r0, v0).normalized;
-                    Vector3d v1 = v0 + v0.normalized * bestDvForTrim + orbitNormal * dvNormal;
+                    double[] localErrors = new double[localTimeSamples];
+                    bool[] localValid = new bool[localTimeSamples];
+                    int localBestIndex = -1;
+                    double localBestUT = 0, localBestDv = 0, localBestLon = 0, localBestLat = 0,
+                        localBestErrorM = double.MaxValue, localBestImpactUT = 0;
 
-                    if (!PredictImpactLongitude(r0, v1, body, bestUTForTrim, out double lonT, out double latT, out double impactUTT))
+                    for (int i = 0; i < localTimeSamples; i++)
+                    {
+                        double candidateUT = localStart + localWindow * i / (localTimeSamples - 1);
+
+                        if (TryEvaluateCandidate(orbit, body, candidateUT, targetPeriapsisRadius,
+                                targetLatitudeDeg, targetLongitudeDeg, dvNormal,
+                                out double dv, out double lon, out double lat, out double errorM, out double impactUT))
+                        {
+                            localValid[i] = true;
+                            localErrors[i] = errorM;
+
+                            if (errorM < localBestErrorM)
+                            {
+                                localBestErrorM = errorM;
+                                localBestIndex = i;
+                                localBestUT = candidateUT;
+                                localBestDv = dv;
+                                localBestLon = lon;
+                                localBestLat = lat;
+                                localBestImpactUT = impactUT;
+                            }
+                        }
+                    }
+
+                    if (localBestIndex < 0)
                         continue;
 
-                    double errorT = LandingPilot.HaversineDistanceMeters(latT, lonT, targetLatitudeDeg, targetLongitudeDeg, body.radius);
-                    if (errorT < bestErrorM)
+                    // Same parabola-vertex refinement as the untrimmed pass above, just against
+                    // this trim value's own local samples.
+                    if (localBestIndex > 0 && localBestIndex < localTimeSamples - 1
+                        && localValid[localBestIndex - 1] && localValid[localBestIndex + 1])
                     {
-                        bestErrorM = errorT;
+                        double h = localWindow / (localTimeSamples - 1);
+                        double y0 = localErrors[localBestIndex - 1];
+                        double y1 = localErrors[localBestIndex];
+                        double y2 = localErrors[localBestIndex + 1];
+                        double denom = y0 - 2 * y1 + y2;
+
+                        if (denom > 1e-9)
+                        {
+                            double offset = Math.Clamp(0.5 * (y0 - y2) / denom, -1.0, 1.0);
+                            double refinedUT = localBestUT + offset * h;
+
+                            if (TryEvaluateCandidate(orbit, body, refinedUT, targetPeriapsisRadius,
+                                    targetLatitudeDeg, targetLongitudeDeg, dvNormal,
+                                    out double dvR, out double lonR, out double latR, out double errorR, out double impactUTR)
+                                    && errorR < localBestErrorM)
+                            {
+                                localBestErrorM = errorR;
+                                localBestUT = refinedUT;
+                                localBestDv = dvR;
+                                localBestLon = lonR;
+                                localBestLat = latR;
+                                localBestImpactUT = impactUTR;
+                            }
+                        }
+                    }
+
+                    if (localBestErrorM < bestErrorM)
+                    {
+                        bestErrorM = localBestErrorM;
+                        bestUT = localBestUT;
+                        bestDeltaV = localBestDv;
                         bestNormalDeltaV = dvNormal;
-                        bestLon = lonT;
-                        bestLat = latT;
-                        bestImpactUT = impactUTT;
+                        bestLon = localBestLon;
+                        bestLat = localBestLat;
+                        bestImpactUT = localBestImpactUT;
                     }
                 }
             }

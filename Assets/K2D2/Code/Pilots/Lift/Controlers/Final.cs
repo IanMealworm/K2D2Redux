@@ -144,6 +144,16 @@ namespace K2D2.Lift
                 case Mode.Burn:
                     status_line = "Circularize burn complete";
                     finished = true;
+
+                    // Auto-delete the circularize node once its burn is done - per Reese, nothing
+                    // else needs it after this point, and leaving it on the plan meant it just sat
+                    // there (harmlessly, but visibly) for the rest of the flight. Same RemoveNode
+                    // helper as the Node tab's own auto-delete, not RemoveAllNodes - this is the
+                    // only node FinalCircularize itself ever creates, so removing just this one is
+                    // enough and doesn't assume anything about the rest of the plan.
+                    maneuver_creator.Update();
+                    maneuver_creator.RemoveNode(node);
+
                     lift.EndLiftPilot(true, "Circularized - ascent complete");
                     break;
             }

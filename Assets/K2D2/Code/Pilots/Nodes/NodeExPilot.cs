@@ -1,8 +1,10 @@
 using K2D2.Controller;
 using K2D2.KSPService;
+using K2D2.Landing;
 using KSP.Messages;
 using KSP.Sim;
 using KSP.Sim.Maneuver;
+using KSP2FlightAssistant.MathLibrary;
 using KTools;
 
 // using KTools.UI;
@@ -27,6 +29,10 @@ namespace K2D2.Node
         TurnTo turn;
         WarpTo warp;
         BurnManeuver burn;
+
+        // Used both for auto-deleting execute_node once its burn is done (see nextMode()) and for
+        // the two "Circularize at AP"/"Circularize at PE" quick-create buttons below.
+        ManeuverCreator maneuver_creator = new ManeuverCreator();
 
         //  ExecuteController current_pilot = null;
         KSPVessel current_vessel;
@@ -145,6 +151,14 @@ namespace K2D2.Node
             }
             if (mode == Mode.Burn)
             {
+                // Auto-delete the node once its burn is done - per Reese, there's nothing left to
+                // do with it, and leaving it on the plan meant it just sat there after every run.
+                // RemoveNode (not RemoveAllNodes) - a multi-node Flight Plan might have more queued
+                // up behind this one, and checkManeuver() below will happily pick the next one up
+                // once this one's gone.
+                maneuver_creator.Update();
+                maneuver_creator.RemoveNode(execute_node);
+
                 Stop();
                 if (settings.pause_on_end.V)
                     TimeWarpTools.SetIsPaused(true);
@@ -169,9 +183,16 @@ namespace K2D2.Node
                 // every st.Warning()/st.Status() call in TurnTo.cs/BurnManeuvre.cs/WarpTo.cs below.
                 if (next_maneuver_node == null)
                 {
-                    st.Status("No Node Created");
+                    // Only worth showing while still true - a node plotted some other way since
+                    // (e.g. by hand on the map) makes the old refusal moot.
+                    if (circularize_error != null)
+                        st.Warning(circularize_error);
+                    else
+                        st.Status("No Node Created");
                     return;
                 }
+
+                circularize_error = null;
 
                 if (!valid_maneuver)
                 {
@@ -195,6 +216,11 @@ namespace K2D2.Node
             else
                 current_executor.updateUI(page.panel, st);
         }
+
+        // Set by CreateCircularizeNode when it refuses to create a node (unbound orbit - see
+        // that method) so UpdateUI can tell the player why nothing happened, instead of the
+        // button silently doing nothing. Cleared on the next successful call.
+        public string circularize_error = null;
 
         public bool valid_maneuver = false;
 
@@ -228,6 +254,128 @@ namespace K2D2.Node
 
             valid_maneuver = true;
             return true;
+        }
+
+        // "Circularize at AP"/"Circularize at PE" quick-create buttons (Node tab). Only creates
+        // the node - it doesn't drive Turn/Warp/Burn itself, the tab's existing Start button does
+        // that once a node exists (same as a node the player plotted by hand on the map).
+        //
+        // Deliberately NOT ManeuverCreator.CircularizeOrbitApoapsis()/CircularizeOrbitPeriapsis()
+        // above - those read orbit.Apoapsis/orbit.Periapsis off a "GetLastOrbit() as
+        // PatchedConicsOrbit" cast, the same cast that throws InvalidCastException for the
+        // actively-flown vessel under Redux (its orbit is a CurrentPatchedConicsOrbit - see
+        // ManeuverCreator.CreateManeuverNodeAtUT's own comment). Reuses the same state-vector-based
+        // math as Landing's Circularize.cs and Lift's FinalCircularize instead (proven in-game),
+        // just fed by LandingTargeting's reusable static helpers rather than duplicating that math
+        // a third time.
+        public void CreateCircularizeNode(bool atApoapsis)
+        {
+            var current_vessel = K2D2_Plugin.Instance.current_vessel;
+            if (current_vessel == null) return;
+
+            // Reset any other running pilot first - same as every other "start a pilot" path
+            // (isRunning's setter above, LiftPilot.isRunning). Without this, clicking this button
+            // while Lift or Landing was actively burning could wipe that pilot's own maneuver
+            // node out from under it via RemoveAllNodesThenCreate below (Reese's item 1 - the
+            // Lift circularize burns that came up short - is suspected, though not proven, to be
+            // this: the log timeline showed Node tab clicks a few minutes after Lift's own
+            // circularize node was created).
+            K2D2_Plugin.ResetControllers();
+
+            maneuver_creator.Update();
+
+            IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
+            var body = orbit.referenceBody;
+
+            double now = GeneralTools.Current_UT;
+            Vector3d r_now = orbit.GetRelativePositionAtUTZup(now);
+            Vector3d v_now = orbit.GetOrbitalVelocityAtUTZup(now);
+
+            LandingTargeting.OrbitalElementsFromStateVectors(r_now, v_now, body.gravParameter,
+                out double semiMajorAxis, out double apoapsisRadius, out double periapsisRadius);
+
+            // Unbound (hyperbolic/parabolic) orbit - e.g. still inbound on an SOI capture, before
+            // any capture burn has happened. semiMajorAxis comes out negative (or the whole thing
+            // NaN) in that case. Per Reese: Circularize at AP genuinely can't work here (a
+            // trajectory that never comes back has no apoapsis to speak of) - refuse that one
+            // cleanly instead of the NaN/garbage node the log showed. But Circularize at PE
+            // SHOULD work here - burning retrograde at periapsis to drop the far side back below
+            // escape velocity is exactly how a capture-into-orbit burn works, and periapsis
+            // itself is perfectly well-defined on a hyperbolic path (see
+            // OrbitalElementsFromStateVectors - periapsisRadius comes out correct/positive either
+            // way). That case is handled separately below rather than refused here.
+            bool unbound = double.IsNaN(semiMajorAxis) || semiMajorAxis <= 0;
+
+            if (atApoapsis && unbound)
+            {
+                circularize_error = "Can't circularize at AP - this trajectory doesn't come back (still on an escape/capture path). Try Circularize at PE instead.";
+                logger.LogInfo("[NodeExPilot] CreateCircularizeNode(AP): refused - " +
+                    $"unbound orbit (semiMajorAxis={semiMajorAxis:n1})");
+                return;
+            }
+
+            // Already past periapsis and still unbound means the trajectory is now outbound for
+            // good (a capture window that's already closed) - r_now . v_now (radial velocity,
+            // same sign convention as everywhere else in this class) is >= 0 once that's true.
+            // Nothing to circularize at PE either in that case - refuse instead of quietly timing
+            // a "burn right now" node against a periapsis that's already behind us.
+            if (!atApoapsis && unbound && Vector3d.Dot(r_now, v_now) >= 0)
+            {
+                circularize_error = "Can't circularize at PE - already past periapsis on this trajectory, it's now outbound for good.";
+                logger.LogInfo("[NodeExPilot] CreateCircularizeNode(PE): refused - " +
+                    $"unbound and already outbound (semiMajorAxis={semiMajorAxis:n1})");
+                return;
+            }
+
+            circularize_error = null;
+
+            // period is only a real, meaningful number for a bound orbit - TimeToNextApoapsis/
+            // TimeToNextPeriapsis below just need SOME positive search window to sweep across
+            // either way, so on an unbound orbit (PE case only, by this point - AP already
+            // returned above) fall back to SearchWindowFromStateVectors's synthetic one instead
+            // (see its own comment).
+            double period = unbound
+                ? LandingTargeting.SearchWindowFromStateVectors(r_now, v_now, body.gravParameter)
+                : LandingTargeting.OrbitalPeriodFromStateVectors(r_now, v_now, body.gravParameter);
+
+            double burn_UT, deltaV;
+            if (atApoapsis)
+            {
+                // Raise periapsis to meet the current apoapsis - burn at apoapsis.
+                double time_to_apoapsis = LandingTargeting.TimeToNextApoapsis(r_now, v_now, body.gravParameter, period);
+                burn_UT = now + time_to_apoapsis;
+
+                double v_apoapsis = VisVivaEquation.CalculateVelocity(apoapsisRadius, apoapsisRadius, periapsisRadius, body.gravParameter);
+                double v_circular = VisVivaEquation.CalculateVelocity(apoapsisRadius, apoapsisRadius, apoapsisRadius, body.gravParameter);
+                deltaV = v_circular - v_apoapsis;
+            }
+            else
+            {
+                // Lower apoapsis to meet the current periapsis - burn at periapsis. Works
+                // unchanged for the unbound/capture case too: VisVivaEquation.CalculateVelocity
+                // recovers the same (correctly negative, for a hyperbolic orbit) semi-major axis
+                // internally from (apoapsisRadius + periapsisRadius) / 2, so v_periapsis comes out
+                // as the real hyperbolic speed at that point - CalculateVelocity's job here is
+                // identical either way, it doesn't need to know the orbit is unbound at all.
+                // deltaV comes out negative here (periapsis speed on an eccentric or hyperbolic
+                // orbit is always higher than the circular speed at that same radius) -
+                // CreateManeuverNodeAtUT's ProgradeBurnVector handles a negative value fine, it
+                // just points retrograde.
+                double time_to_periapsis = LandingTargeting.TimeToNextPeriapsis(r_now, v_now, body.gravParameter, period);
+                burn_UT = now + time_to_periapsis;
+
+                double v_periapsis = VisVivaEquation.CalculateVelocity(periapsisRadius, apoapsisRadius, periapsisRadius, body.gravParameter);
+                double v_circular = VisVivaEquation.CalculateVelocity(periapsisRadius, periapsisRadius, periapsisRadius, body.gravParameter);
+                deltaV = v_circular - v_periapsis;
+            }
+
+            logger.LogInfo($"[NodeExPilot] CreateCircularizeNode({(atApoapsis ? "AP" : "PE")}): " +
+                $"now={now:n1} burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s");
+
+            maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
+            {
+                checkManeuver();
+            });
         }
 
         public override void Update()

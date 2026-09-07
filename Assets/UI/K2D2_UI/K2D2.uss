@@ -300,6 +300,32 @@ Label {
     translate: 1px 1px;
 }
 
+/* Node tab: Circularize at AP/PE quick-create buttons - same plain-Button pixel-bevel treatment
+   as Touch Down/Main Thrust Brake above (no nested .oab-button__inner/label, no .checked state -
+   one-shot actions, not toggles), but a size down from those (28px instead of 32px, 13px font
+   instead of 14px) per Reese - these sit above Start/Pause as a secondary, less prominent pair
+   rather than a primary mode button, so they read smaller on purpose rather than just being
+   another unstyled default button like they were before. */
+#circularize_ap, #circularize_pe {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    font-size: 13px;
+    height: 28px;
+    border-width: 2px 3px 4px 2px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#circularize_ap:hover, #circularize_pe:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#circularize_ap:active, #circularize_pe:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
 /* Attitude tab: Elevation's -/+ stepper (RepeatButton, held down to repeat-step - see
    AttitudeUI.cs's SetAction calls). These came from a stock RepeatButton preset ("unity-button
    fixed-button icon-right" in attitude.uxml) that rendered as a plain dark dashed-border button,

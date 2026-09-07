@@ -52,6 +52,55 @@ namespace K2D2.Landing
         // the old 100 ceiling was closer to limiting than protective.
         public ClampSetting<float> max_plane_trim_dv = new("land.max_plane_trim_dv", 20, 0, 200);
 
+        // How much altitude clearance the correction burn (see LandingPilot.compute_startBurn)
+        // should keep above start_touchdown_altitude, on top of whatever time the lateral
+        // correction itself needs. Reese's complaint: corrections were starting around 4km up,
+        // which felt tight against the 1500m default touchdown altitude, especially since a
+        // well-aimed deorbit burn (small miss) barely pushes the lateral-correction floor out at
+        // all. This is a separate, unconditional floor - it doesn't care how big the miss is, it
+        // just always wants this much room above the touchdown threshold.
+        //
+        // Fixed at its old slider's max (8000) instead of staying a player-adjustable setting -
+        // Reese always dragged this one to the top anyway, so there was never really a reason to
+        // give him less than the most margin available. Was a ClampSetting (0-8000, default 3000)
+        // with its own slider in the ADVANCED foldout; both are gone now.
+        public const float min_correction_altitude_margin = 8000;
+
+        // RCS fine correction (vacuum precision landing). Per Reese: the engine-steered
+        // correction above can get target_error_m down close (his example: ~1km), then a "fine"
+        // correction actually makes it WORSE, because closing the last bit needs the burn
+        // direction to keep adjusting and the vessel can't physically turn fast enough to keep up
+        // - by the time SAS gets the ship to the newly-aimed direction, the target's moved again.
+        // RCS sidesteps that entirely: it translates the vessel directly, without reorienting it
+        // at all, so there's no turn-rate lag to chase.
+        //
+        // Originally this only supplemented the engine's own heading correction rather than
+        // replacing it - kept that one running too, RCS just added a sideways nudge on top. In-game
+        // testing showed that was a big part of why precision landing burned so much more deltaV
+        // than a normal landing: tilting the actual braking burn sideways to fix heading is an
+        // inherently wasteful way to move sideways next to RCS doing it directly, and running both
+        // at once didn't save anything since the engine kept paying that cost regardless. Now,
+        // once active, RCS takes the heading-correction job over from the engine entirely (see
+        // TouchDown.RCSHandlingHeading) - the engine still brakes and still does its own arc
+        // extend/shorten correction (undershoot/overshoot), just not the left/right heading tilt -
+        // and hands heading back the moment target_error_m grows past the threshold again. Off by
+        // default and a player-facing toggle, since not every vessel carries RCS/monopropellant
+        // for this, and it's new and untested in-game, same as the rest of precision landing.
+        public Setting<bool> use_rcs_fine_correction = new("land.use_rcs_fine_correction", false);
+
+        // How close the miss needs to be before RCS takes over heading correction - deliberately a
+        // short-range "close the last bit efficiently" tool, not a replacement for the engine's own
+        // much larger working range (nor for the engine's braking or arc correction, which stay
+        // running throughout regardless of this threshold).
+        public ClampSetting<float> rcs_fine_correction_threshold_m = new("land.rcs_fine_correction_threshold_m", 1000, 100, 5000);
+
+        // How hard RCS pushes once active, as a fraction of full RCS authority (see TouchDown.
+        // ApplyRCSFineCorrection - this scales the translation input the same way Docking's own
+        // rcs_power setting scales FinalApproach's). Fades in from 0 as target_error_m approaches
+        // the threshold above up to this at target_error_m = 0, rather than snapping to full
+        // power the instant the threshold is crossed.
+        public ClampSetting<float> rcs_fine_correction_power = new("land.rcs_fine_correction_power", 0.5f, 0.05f, 1f);
+
         public void setupUI(LandingPilot pilot, VisualElement root)
         {
             // TARGET
@@ -89,11 +138,21 @@ namespace K2D2.Landing
             root.Q<K2Slider>("touch_down_speed").Bind(touch_down_speed);
             root.Q<K2Slider>("touch_down_max_angle").Bind(pilot.brake.touch_down_max_angle);
 
-            // PRECISION LANDING - closed-loop steering caps, see TouchDown.ComputeSteeredDirection
+            // PRECISION LANDING - closed-loop steering caps, see TouchDown.ComputeSteeredDirection.
+            // min_correction_altitude_margin and arc_correction_full_scale_m are no longer bound
+            // here - both are fixed values now (see their own comments), sliders removed from the
+            // uxml.
             root.Q<K2Slider>("max_plane_trim_dv").Bind(max_plane_trim_dv);
             root.Q<K2Slider>("steering_max_angle").Bind(pilot.brake.steering_max_angle);
             root.Q<K2Slider>("arc_extend_max_angle").Bind(pilot.brake.arc_extend_max_angle);
             root.Q<K2Slider>("arc_shorten_max_angle").Bind(pilot.brake.arc_shorten_max_angle);
+
+            // RCS fine correction - see TouchDown.ApplyRCSFineCorrection
+            root.Q<K2Toggle>("use_rcs_fine_correction").Bind(use_rcs_fine_correction);
+            var rcs_fine_correction_settings = root.Q<VisualElement>("rcs_fine_correction_settings");
+            use_rcs_fine_correction.listeners += v => rcs_fine_correction_settings.Show(v);
+            rcs_fine_correction_settings.Q<K2Slider>("rcs_fine_correction_threshold_m").Bind(rcs_fine_correction_threshold_m);
+            rcs_fine_correction_settings.Q<K2Slider>("rcs_fine_correction_power").Bind(rcs_fine_correction_power);
         }
 
         public float compute_limit_speed(float altitude)

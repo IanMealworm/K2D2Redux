@@ -386,6 +386,27 @@ namespace K2D2.KSPService
         }
 
         /// <summary>
+        /// Removes a single maneuver node from the plan, leaving every other node alone - unlike
+        /// RemoveAllNodes above, which assumes the whole plan belongs to whichever pilot is
+        /// calling it (true for Circularize/DeorbitBurn/FinalCircularize, which own the node they
+        /// create start to finish). Added for auto-deleting a node once it's been executed (Lift's
+        /// FinalCircularize, and the Node tab's own executor) without also wiping out anything
+        /// else the player - or a multi-node Flight Plan - might have queued up behind it. Same
+        /// ManeuverPlanComponent.RemoveNodes API as RemoveAllNodes, just handed a single-item list.
+        /// </summary>
+        public void RemoveNode(ManeuverNodeData node)
+        {
+            if (node == null)
+                return;
+
+            var maneuvers_component = _vesselComponent?.SimulationObject?.FindComponent<ManeuverPlanComponent>();
+            if (maneuvers_component == null)
+                return;
+
+            maneuvers_component.RemoveNodes(new List<ManeuverNodeData> { node });
+        }
+
+        /// <summary>
         /// Removes every node on the plan, then creates a fresh one via CreateManeuverNodeAtUT -
         /// but a fixed update later, not in the same call. First in-game test of the remove-then-
         /// create sequence (precision landing's Circularize handing off to DeorbitBurn): the old
