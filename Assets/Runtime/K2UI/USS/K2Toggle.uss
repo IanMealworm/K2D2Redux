@@ -92,3 +92,15 @@
     align-self: stretch;
     justify-content: space-between;
 }
+
+/* Long toggle labels ("Circularize Once Ascent Complete" on Lift, "Use RCS for Fine Correction"
+   on Landing) run past the switch at the default 16px/110px sizing above instead of wrapping
+   (Label doesn't wrap here), pushing the switch itself out where it can't be seen/clicked.
+   Trims just the toggles carrying this class instead of shrinking every toggle's label
+   project-wide - most labels are short enough that 16px was never a problem for them. Two
+   classes on the same combinator (".slide-toggle.long-label", not a bare ".long-label") so this
+   reliably outranks the ".slide-toggle > Label" rule above regardless of stylesheet order. */
+.slide-toggle.long-label > Label {
+    font-size: 12px;
+    min-width: 90px;
+}

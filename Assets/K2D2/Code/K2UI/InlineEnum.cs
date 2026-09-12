@@ -1,3 +1,4 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 using System.Collections.Generic;
 // using KTools;
@@ -5,38 +6,20 @@ using System;
 
 namespace K2UI
 {
-    public class InlineEnum : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). The old UxmlTraits.Init() always applied both "labels" and "value" from the bag,
+    // defaulting to "A;B;C"/0 when a tag omitted them (Dock.uxml's "final_mode" only specifies
+    // labels="Manual;Auto", relying on the value default) - the new attribute system only calls a
+    // setter for attributes actually present, so `labels = "A;B;C";` in the constructor
+    // reproduces that default explicitly (value's own field already defaults to 0, matching the
+    // old default, so no equivalent assignment is needed there).
+    [UxmlElement]
+    public partial class InlineEnum : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<InlineEnum, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get { yield break; }
-            }
-
-            private UxmlStringAttributeDescription m_Labels = new()
-            { name = "labels", defaultValue = "A;B;C" };
-
-            private UxmlIntAttributeDescription m_Value = new()
-            { name = "value", defaultValue = 0 };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new()
-            { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                InlineEnum inline_enum = (InlineEnum) ve;
-                inline_enum.labels = m_Labels.GetValueFromBag(bag, cc);
-                inline_enum.value = m_Value.GetValueFromBag(bag, cc);
-            }
-        }
-
         int _value;
+
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public int value
         {
             get { return _value; }
@@ -59,6 +42,9 @@ namespace K2UI
         }
 
         string _labels;
+
+        [CreateProperty]
+        [UxmlAttribute("labels")]
         public string labels
         {
             get { return _labels; }
@@ -73,6 +59,7 @@ namespace K2UI
         public InlineEnum()
         {
             AddToClassList("inline_enum");
+            labels = "A;B;C";
         }
 
         string[] labels_list = null;

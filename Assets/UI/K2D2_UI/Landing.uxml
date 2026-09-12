@@ -30,6 +30,15 @@
                  reports, not how the ship flies. -->
             <ui:VisualElement name="landing_mode_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px;">
                 <K2UI.K2Toggle label="Precision Landing" name="precision_landing" tooltip="Steer toward a chosen landing site instead of just braking straight down wherever the current course naturally lands (vacuum bodies only for now)" />
+                <!-- Orbit gate (see LandingUI.UpdateOrbitGate) - Precision Landing needs a starting
+                     orbit within Circularize.max_starting_altitude_m (100km), same ceiling
+                     Circularize.cs already refuses above once a run actually gets that far. This
+                     surfaces that same check up front instead of letting the player turn Precision
+                     Landing on from a high orbit and only find out it's rejected once Circularize
+                     runs. Hidden by default (style="display: none") - shown/updated every UI tick,
+                     independent of whether Precision Landing itself is on, since it's meant to
+                     explain WHY the toggle won't stay on. -->
+                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_orbit_gate" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
                 <ui:VisualElement name="target_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
                     <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
                     <ui:FloatField label="Target Latitude" value="0" name="target_latitude" />
@@ -109,7 +118,7 @@
                          the main burn sideways to fix heading was burning extra deltaV for
                          something RCS can do directly and without needing to turn the vessel at
                          all (no attitude-lag near the end of a close approach). Off by default. -->
-                    <K2UI.K2Toggle label="Use RCS for Fine Correction" name="use_rcs_fine_correction" tooltip="Once the miss has closed to within the threshold below, RCS takes over heading correction from the main engine (which keeps braking and keeps correcting the arc, just stops tilting sideways for heading) - RCS doesn't need to reorient the vessel, so it doesn't lag behind a fast-changing correction the way turning the whole ship does, and it's cheaper on deltaV than steering the main burn sideways. Needs RCS enabled and monopropellant on the vessel." />
+                    <K2UI.K2Toggle label="Use RCS for Fine Correction" name="use_rcs_fine_correction" class="long-label" tooltip="Once the miss has closed to within the threshold below, RCS takes over heading correction from the main engine (which keeps braking and keeps correcting the arc, just stops tilting sideways for heading) - RCS doesn't need to reorient the vessel, so it doesn't lag behind a fast-changing correction the way turning the whole ship does, and it's cheaper on deltaV than steering the main burn sideways. Needs RCS enabled and monopropellant on the vessel." />
                     <ui:VisualElement name="rcs_fine_correction_settings">
                         <K2UI.K2Slider label-on-top="true" print-value="true" min="100" value="1000" max="5000" name="rcs_fine_correction_threshold_m" label="RCS Threshold (m)" tooltip="Target error below which RCS fine correction kicks in - fades in from here down to 0." />
                         <K2UI.K2Slider label-on-top="true" print-value="true" min="0.05" value="0.5" max="1" name="rcs_fine_correction_power" label="RCS Power" tooltip="How hard RCS pushes toward the target once fully active (at target_error_m = 0)." />

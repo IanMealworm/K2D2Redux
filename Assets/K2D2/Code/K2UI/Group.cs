@@ -1,39 +1,26 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
-using System.Collections.Generic;
 
 
 namespace K2UI
 {
-    public class Group : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute]: Unity 6.6 removes UxmlFactory
+    // entirely, so every K2UI custom control is moving to the newer source-generated attribute
+    // system ahead of that (see NOTICE.md's UxmlElement migration entry for the full story). The
+    // old UxmlTraits.Init() always applied "text" from the bag - using its defaultValue of
+    // "Group Name" whenever a <K2UI.Group> tag didn't specify text="..." - so `text = "Group
+    // Name";` below in the constructor reproduces that same guarantee; the new attribute system
+    // only calls a property's setter for attributes actually present in the tag, so without this
+    // a bare Group would silently show no label at all instead of the old placeholder default.
+    // Arbitrary VisualElement children (the old uxmlChildElementsDescription override) need no
+    // equivalent here - that was only ever an editor-time authoring hint, not a runtime gate.
+    [UxmlElement]
+    public partial class Group : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<Group, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get
-                {
-                    yield return new UxmlChildElementDescription(typeof(VisualElement));
-                }
-            }
-            private UxmlStringAttributeDescription m_Text = new()
-            { name = "text", defaultValue = "Group Name" };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new()
-            { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                Group group = (Group) ve;
-                group.text = m_Text.GetValueFromBag(bag, cc);     
-            }
-        }
-
         string _text;
+
+        [CreateProperty]
+        [UxmlAttribute("text")]
         public string text
         {
             get { return _text; }
@@ -53,6 +40,7 @@ namespace K2UI
             label_el = new Label();
             label_el.AddToClassList("group_label");
             Add(label_el);
+            text = "Group Name";
         }
     }
 }

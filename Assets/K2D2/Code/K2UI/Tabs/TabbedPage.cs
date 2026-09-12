@@ -1,3 +1,4 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 using System.Collections.Generic;
 using KTools;
@@ -6,47 +7,27 @@ using KTools;
 namespace K2UI.Tabs
 {
     /// <summary>
-    /// TabbedPage is the main class to use tabs feature. 
-    /// 
+    /// TabbedPage is the main class to use tabs feature.
+    ///
     /// It create a tabsBar that will accept tabbed buttons
-    /// 
+    ///
     /// It change the content in #Content element depending on the current Tab
-    /// 
+    ///
     /// Adds TabButton to the Element they will be finally added in the #TabBar
     /// </summary>
-    public class TabbedPage : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). SelectedTabName's own field default ("") already matches the old bag default, and
+    // K2D2_Window.uxml's only <K2UI.Tabs.TabbedPage> tag sets selected-tab-Name="controls"
+    // explicitly anyway, so no extra behavior-preserving fix is needed here. Arbitrary
+    // VisualElement children (the old uxmlChildElementsDescription override) need no equivalent -
+    // that was only ever an editor-time authoring hint, not a runtime gate.
+    [UxmlElement]
+    public partial class TabbedPage : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<TabbedPage, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {    
-                get
-                {
-                    // we can add only tabButton here
-                    yield return new UxmlChildElementDescription(typeof(VisualElement));
-                }
-            }
-
-            UxmlStringAttributeDescription m_SelectedTabName =
-                new() { name = "selected-tab-Name", defaultValue = "" };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as TabbedPage;
-
-                ate.SelectedTabName = m_SelectedTabName.GetValueFromBag(bag, cc);
-            }
-        }
-
         string _selected_tab_name = "";
+
+        [CreateProperty]
+        [UxmlAttribute("selected-tab-Name")]
         public string SelectedTabName
         {
             get {return _selected_tab_name;}

@@ -1,28 +1,18 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 using System;
- 
+
 
 namespace K2UI
 {
-    public class Console : Label
+    // UxmlFactory/UxmlTraits -> [UxmlElement] (see Group.cs's class comment for why). Console
+    // exposes no attributes beyond the standard "name" (which is what the old Init() override
+    // existed only to re-apply), and node_infos_el = panel.Q<Console>("node_infos") keeps working
+    // exactly the same way since UI Toolkit itself handles "name" for every element type now.
+    [UxmlElement]
+    public partial class Console : Label
     {
         public static new readonly string ussClassName = "console";
-
-        public new class UxmlFactory : UxmlFactory<Console, UxmlTraits> { }
-
-        // Needs its own Init() override now, purely to re-apply "name" - this Unity version's base
-        // VisualElement/TextElement.UxmlTraits.Init() no longer sets it for legacy controls, and
-        // K2D2's UI code (e.g. node_infos_el = panel.Q<Console>("node_infos")) relies on it.
-        public new class UxmlTraits : TextElement.UxmlTraits
-        {
-            private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-            }
-        }
 
         public Console() : base()
         {
@@ -45,10 +35,16 @@ namespace K2UI
         }
     }
 
-    public class StatusLine : Label
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). The old UxmlTraits.Init() always applied "level" from the bag, defaulting to
+    // Level.Normal - which every single <K2UI.StatusLine> tag in the project relies on, since none
+    // of them specify level="..." at all (they only ever set it later from C#, e.g. Set(text,
+    // level)). Without setting it explicitly here, a fresh StatusLine would be missing its
+    // "k2-status-line--normal" USS class entirely rather than having it applied - `level =
+    // Level.Normal;` in the constructor reproduces the old guarantee.
+    [UxmlElement]
+    public partial class StatusLine : Label
     {
-        public new class UxmlFactory : UxmlFactory<StatusLine, UxmlTraits> { }
-
         public enum Level
         {
             Normal,
@@ -64,6 +60,9 @@ namespace K2UI
         }
 
         Level _level = Level.Normal;
+
+        [CreateProperty]
+        [UxmlAttribute("level")]
         public Level level
         {
             get { return _level; }
@@ -80,32 +79,14 @@ namespace K2UI
 
         public void Set(string text, Level level)
         {
-            this.text = text; 
+            this.text = text;
             this.level = level;
             this.Show(true);
         }
 
-        public new class UxmlTraits : TextElement.UxmlTraits
-        {
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            private UxmlEnumAttributeDescription<Level> m_level = new()
-            {
-                name = "level"
-            };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                StatusLine textElement = (StatusLine)ve;
-                textElement.level = m_level.GetValueFromBag(bag, cc);
-            }
-        }
-
         public StatusLine() : base()
         {
+            level = Level.Normal;
             AddToClassList(uss_name);
         }
     }

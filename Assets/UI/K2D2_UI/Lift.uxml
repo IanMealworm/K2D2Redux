@@ -30,6 +30,20 @@
                 </ui:VisualElement>
                 <K2UI.K2Compass name="heading" />
                 <ui:VisualElement name="graph" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); height: 162px; border-left-width: 1px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px; border-left-color: rgb(71, 75, 175); border-right-color: rgb(71, 75, 175); border-top-color: rgb(71, 75, 175); border-bottom-color: rgb(71, 75, 175); border-top-left-radius: 5px; border-bottom-left-radius: 5px; border-top-right-radius: 5px; border-bottom-right-radius: 5px;" />
+                <!-- Roll program: rolls the vessel to a chosen offset from however it spawned on
+                     the pad, once past a chosen altitude - part of the launch Profile alongside
+                     Heading above, per Reese, rather than tucked away in ADVANCED, since it's a
+                     per-launch choice like heading is. A rocket built without the spawn rotation
+                     in mind can come off the pad "funky" otherwise (see Ascent.cs's own comment
+                     for the full reasoning, and exactly what "roll" means here - relative to
+                     launch orientation, not an absolute compass reading). First pass, not yet
+                     flight-tested. -->
+                <K2UI.K2Toggle label="Roll Program" name="roll_program" tooltip="Roll the vessel to a chosen offset from its launch orientation once it clears the altitude below" />
+                <ui:VisualElement name="roll_program_settings">
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.1" max="5" name="roll_program_altitude_km" label="Roll Program Altitude (km)" tooltip="Altitude at which the roll program executes" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="-180" value="0" max="180" name="roll_program_angle_deg" label="Roll Program Angle (°)" tooltip="How many degrees to roll from the vessel's launch orientation (not an absolute compass heading)" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="3" max="15" name="roll_program_rate_deg_s" label="Roll Program Rate (°/s)" tooltip="How fast the roll program is allowed to roll the vessel toward its target angle - lower is gentler but takes longer, higher settles faster but risks overshoot" />
+                </ui:VisualElement>
             </ui:Foldout>
             <K2UI.K2Slider name="max_throttle" label="Max Throttle" max="10" print-value="false" label-on-top="false" value="0" min="0.01" />
             <K2UI.ToggleButton name="run" label="Start" class="big" style="flex-grow: 1; margin-top: 10px; margin-bottom: 10px;" />
@@ -92,7 +106,7 @@
                          whole ascent-to-orbit sequence can just run straight through with no
                          manual step. Turning this off falls back to the old "pause and let the
                          player make their own node" flow via the toggle below. -->
-                    <K2UI.K2Toggle label="Circularize Once Ascent Complete" name="auto_circularize" tooltip="Automatically circularize once you clear the atmosphere, instead of pausing so you can create the node yourself" />
+                    <K2UI.K2Toggle label="Circularize Once Ascent Complete" name="auto_circularize" class="long-label" tooltip="Automatically circularize once you clear the atmosphere, instead of pausing so you can create the node yourself" />
                     <!-- Moved here from the old "Final" section below (now removed) - this is
                          where the pause actually fires now (see Coasting.cs), the moment the
                          vessel clears the atmosphere, instead of waiting for Adjust to finish its

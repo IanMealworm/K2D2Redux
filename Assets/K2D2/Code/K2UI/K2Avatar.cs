@@ -1,5 +1,4 @@
 using UnityEngine.UIElements;
-using System.Collections.Generic;
 
 namespace K2UI
 {
@@ -15,23 +14,12 @@ namespace K2UI
     /// SetRunning(false) turns them back off in the reverse order. Wire this to a pilot's own
     /// is_running_event (BaseController.cs) so it tracks autopilot on/off automatically.
     /// </summary>
-    public class K2Avatar : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement] (see Group.cs's class comment for why). K2Avatar
+    // exposes no attributes beyond VisualElement's own standard ones (including "name"), which UI
+    // Toolkit itself already handles - nothing else to convert here.
+    [UxmlElement]
+    public partial class K2Avatar : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2Avatar, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here
-            // (same pattern as every other K2UI custom control in this project).
-            private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-            }
-        }
-
         const string avatar_uss = "k2-avatar";
         const string icon_uss = "k2-avatar-icon";
         const string light_uss = "k2-avatar-light";

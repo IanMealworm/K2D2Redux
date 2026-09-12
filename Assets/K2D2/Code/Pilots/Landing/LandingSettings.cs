@@ -109,18 +109,29 @@ namespace K2D2.Landing
             // Precision-only steering sliders (see PRECISION LANDING below) - shown/hidden
             // alongside target_settings, since neither means anything with precision landing off.
             var precision_settings = root.Q<VisualElement>("PrecisionLanding");
-            precision_landing.listeners += v =>
+            // .listen(), not .listeners += - the difference is that .listen() also fires once
+            // immediately with the CURRENT value when it's registered, not just on later changes.
+            // This used to be .listeners +=, which only ever ran on a change - so with
+            // precision_landing off by default, target_settings/PrecisionLanding just kept
+            // whatever visibility the uxml gave them at rest (visible) until the player toggled
+            // precision landing on and back off once, at which point it finally got hidden
+            // correctly. Reese hit this as "the waypoint/lat/lon fields are showing on a fresh
+            // open even though Precision Landing is off."
+            precision_landing.listen(v =>
             {
                 target_settings.Show(v);
                 precision_settings.Show(v);
-            };
+            });
             target_settings.Q<FloatField>("target_latitude").Bind(target_latitude);
             target_settings.Q<FloatField>("target_longitude").Bind(target_longitude);
 
             // WARP
             root.Q<K2Toggle>("auto_warp").Bind(auto_warp);
-            var warp_settings = root.Q<VisualElement>("warp_settings");    
-            auto_warp.listeners += v => warp_settings.Show(v); 
+            var warp_settings = root.Q<VisualElement>("warp_settings");
+            // Same .listen() fix as precision_landing above - auto_warp defaults to true so this
+            // one never actually showed the bug, but it's the same latent pattern, fixed for
+            // consistency (and in case the default ever changes).
+            auto_warp.listen(v => warp_settings.Show(v));
   
             warp_settings.Q<IntegerField>("rotation_warp_duration").Bind(rotation_warp_duration);
             warp_settings.Q<K2Slider>("max_rotation").Bind(max_rotation);
@@ -150,7 +161,10 @@ namespace K2D2.Landing
             // RCS fine correction - see TouchDown.ApplyRCSFineCorrection
             root.Q<K2Toggle>("use_rcs_fine_correction").Bind(use_rcs_fine_correction);
             var rcs_fine_correction_settings = root.Q<VisualElement>("rcs_fine_correction_settings");
-            use_rcs_fine_correction.listeners += v => rcs_fine_correction_settings.Show(v);
+            // Same .listen() fix as precision_landing above - this one WOULD have shown the exact
+            // same bug (use_rcs_fine_correction also defaults to false), just less obviously since
+            // it's nested inside the collapsed ADVANCED foldout instead of sitting in plain view.
+            use_rcs_fine_correction.listen(v => rcs_fine_correction_settings.Show(v));
             rcs_fine_correction_settings.Q<K2Slider>("rcs_fine_correction_threshold_m").Bind(rcs_fine_correction_threshold_m);
             rcs_fine_correction_settings.Q<K2Slider>("rcs_fine_correction_power").Bind(rcs_fine_correction_power);
         }

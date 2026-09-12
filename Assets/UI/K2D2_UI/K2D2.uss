@@ -302,17 +302,17 @@ Label {
 
 /* Node tab: Circularize at AP/PE quick-create buttons - same plain-Button pixel-bevel treatment
    as Touch Down/Main Thrust Brake above (no nested .oab-button__inner/label, no .checked state -
-   one-shot actions, not toggles), but a size down from those (28px instead of 32px, 13px font
-   instead of 14px) per Reese - these sit above Start/Pause as a secondary, less prominent pair
-   rather than a primary mode button, so they read smaller on purpose rather than just being
-   another unstyled default button like they were before. */
+   one-shot actions, not toggles). Sized down once already (28px/13px instead of the stock
+   32px/14px default) per Reese, then a second pass smaller still (22px/11px, border trimmed to
+   match) - these sit above Start/Pause as a secondary, less prominent pair rather than a primary
+   mode button, so they should read clearly smaller, not just slightly smaller. */
 #circularize_ap, #circularize_pe {
     background-color: rgb(225, 227, 233);
     background-image: none;
     color: rgb(34, 38, 46);
-    font-size: 13px;
-    height: 28px;
-    border-width: 2px 3px 4px 2px;
+    font-size: 11px;
+    height: 22px;
+    border-width: 1px 2px 3px 1px;
     border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
     border-radius: 3px;
 }

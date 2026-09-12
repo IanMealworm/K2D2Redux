@@ -78,7 +78,14 @@ namespace K2D2.Lift
                     {
                         // stop
                         if (current_vessel != null)
+                        {
                             current_vessel.SetThrottle(0);
+                            // Roll program (see Ascent.cs) drives this as a raw control axis input,
+                            // not through SAS - if the pilot gets stopped mid-correction, release it
+                            // here too so a stray roll command doesn't keep firing after the
+                            // autopilot itself has stopped.
+                            current_vessel.Roll = 0;
+                        }
 
                         current_subpilot = null;
                     }

@@ -1,86 +1,40 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
-using System.Collections.Generic;
 using KTools;
 using K2D2;
 
 namespace K2UI
 {
-    public class K2Slider : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). Two things needed care beyond the mechanical rename:
+    //
+    // 1. The old UxmlTraits.Init() always applied every attribute from the bag, falling back to
+    //    its own defaultValue for any one a tag omitted - the new attribute system only calls a
+    //    setter for attributes actually present. attitude.uxml's "elevation_slider" is a
+    //    completely bare <K2UI.K2Slider name="elevation_slider" /> with none of these set at all,
+    //    so it depends entirely on these defaults matching the old bag defaults exactly. Fixed by
+    //    setting main_slider's lowValue/highValue explicitly in the constructor (0/1, matching the
+    //    old min/max defaults) instead of trusting Slider's own built-in defaults, and by
+    //    correcting _labelOnTop's own field initializer below, which was `true` - the OPPOSITE of
+    //    the old bag default of `false`.
+    // 2. The old Init() unconditionally called SliderValueChanged()/setLabels() once at the very
+    //    end, regardless of which attributes were present, guaranteeing a fully consistent visual
+    //    state (fill bar position, value label visibility, min/max row visibility) even for a
+    //    bare tag like elevation_slider. Reproduced via an AttachToPanelEvent hook in the
+    //    constructor - the same "run my setup once actually attached" idiom ExFoldoutGroup.cs
+    //    already uses - rather than relying on some individual attribute happening to be present.
+    [UxmlElement]
+    public partial class K2Slider : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2Slider, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get { yield break; }
-            }
-
-            private UxmlStringAttributeDescription m_Label = new()
-            { name = "label", defaultValue = "" };
-
-            private UxmlBoolAttributeDescription m_labelOnTop = new()
-            { name = "label-on-top", defaultValue = false };
-
-            private UxmlBoolAttributeDescription m_printValue = new()
-            { name = "print-value", defaultValue = false };
-
-            private UxmlStringAttributeDescription m_MinMaxLabel = new()
-            { name = "min-max-label", defaultValue = "" };
-
-            private UxmlFloatAttributeDescription m_Value = new()
-            { name = "value", defaultValue = 0f };
-
-            private UxmlFloatAttributeDescription m_Min = new()
-            {
-                name = "min",
-                defaultValue = 0f
-            };
-
-            private UxmlFloatAttributeDescription m_Max = new()
-            {
-                name = "max",
-                defaultValue = 1f
-            };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new()
-            { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                K2Slider k2_slider = (K2Slider)ve;
-                Slider main_slider = k2_slider.main_slider;
-
-                k2_slider.value = m_Value.GetValueFromBag(bag, cc);
-                k2_slider.printValue = m_printValue.GetValueFromBag(bag, cc);
-                k2_slider.labelOnTop = m_labelOnTop.GetValueFromBag(bag, cc);
-                k2_slider.minMaxLabel = m_MinMaxLabel.GetValueFromBag(bag, cc);
-
-                k2_slider.Label = m_Label.GetValueFromBag(bag, cc);
-
-                k2_slider.Min = m_Min.GetValueFromBag(bag, cc);
-                k2_slider.Max = m_Max.GetValueFromBag(bag, cc);
-
-                main_slider.direction = SliderDirection.Horizontal;//m_Direction.GetValueFromBag(bag, cc);
-                main_slider.pageSize = 0;//m_PageSize.GetValueFromBag(bag, cc);
-                main_slider.showInputField = false;//m_ShowInputField.GetValueFromBag(bag, cc);
-                main_slider.inverted = false;//m_Inverted.GetValueFromBag(bag, cc);
-
-                k2_slider.SliderValueChanged();
-                k2_slider.setLabels();
-            }
-        }
-
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public float value
         {
             get { return main_slider.value; }
-            set { 
+            set {
                 if (value == main_slider.value) return;
-                main_slider.value = value; 
+                main_slider.value = value;
                 listeners?.Invoke(value);
             }
         }
@@ -89,7 +43,10 @@ namespace K2UI
 
         public event OnChanged listeners;
 
-        string _label;
+        string _label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string Label
         {
             get { return _label; }
@@ -100,7 +57,10 @@ namespace K2UI
         }
 
         bool _printValue = false;
-        bool printValue
+
+        [CreateProperty]
+        [UxmlAttribute("print-value")]
+        public bool printValue
         {
             get { return _printValue; }
             set
@@ -126,8 +86,16 @@ namespace K2UI
             }
         }
 
-        bool _labelOnTop = true;
-        bool labelOnTop
+        // Was `= true` - the OPPOSITE of the old UxmlTraits' own "label-on-top" defaultValue of
+        // false. Harmless before, since Init() always overwrote it via GetValueFromBag(bag, cc)
+        // regardless of whether the tag specified label-on-top - but the new attribute system only
+        // calls this setter when the tag actually has one, so this field's own default now matters
+        // for real (see class comment / elevation_slider).
+        bool _labelOnTop = false;
+
+        [CreateProperty]
+        [UxmlAttribute("label-on-top")]
+        public bool labelOnTop
         {
             get { return _labelOnTop; }
             set
@@ -138,6 +106,9 @@ namespace K2UI
         }
 
         string _min_max_label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("min-max-label")]
         public string minMaxLabel
         {
             get { return _min_max_label; }
@@ -148,11 +119,16 @@ namespace K2UI
             }
         }
 
+        [CreateProperty]
+        [UxmlAttribute("min")]
         public float Min
         {
             get { return main_slider.lowValue; }
             set { main_slider.lowValue = value; }
         }
+
+        [CreateProperty]
+        [UxmlAttribute("max")]
         public float Max
         {
             get { return main_slider.highValue; }
@@ -198,6 +174,14 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new Slider() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
+            // Explicit, matching the old bag defaults exactly (min=0/max=1) rather than trusting
+            // Slider's own built-in lowValue/highValue defaults - see class comment.
+            main_slider.lowValue = 0f;
+            main_slider.highValue = 1f;
+            main_slider.direction = SliderDirection.Horizontal;
+            main_slider.pageSize = 0;
+            main_slider.showInputField = false;
+            main_slider.inverted = false;
             Add(main_slider);
             dragger = main_slider.Q<VisualElement>("unity-dragger");
             tracker = main_slider.Q<VisualElement>("unity-tracker");
@@ -246,6 +230,15 @@ namespace K2UI
             // can't be hit by whatever this was.
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
+
+            // Reproduces the old UxmlTraits.Init()'s unconditional trailing
+            // SliderValueChanged()/setLabels() calls - guarantees a fully consistent visual state
+            // (fill bar position, value label, min/max row) even for a fully bare tag like
+            // attitude.uxml's "elevation_slider", which sets none of the attributes above. Runs
+            // once the element is actually attached, by which point any UXML attributes on this
+            // tag have already been applied - same idiom ExFoldoutGroup.cs uses for its own
+            // post-attribute setup.
+            RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
         // Matches the look the CSS background-image was going for: a thin horizontal dashed line,

@@ -1,35 +1,27 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
 using KTools;
 
 namespace K2UI
 {
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // the full reasoning). `label` is inherited from BaseField<bool> so it can't be attributed
+    // directly (attributes only apply to members declared on this class) - wrapped below via a
+    // `Label` property that forwards to it. The old UxmlTraits.Init() applied "label" from the bag
+    // unconditionally, and the constructor already sets label="Toggle" matching that same old bag
+    // default, so no behavior fix was needed here (unlike ToggleButton.cs's pause button).
+    //
     // Derives from BaseField<bool> base class. Represents a container for its input part.
-    public class K2Toggle : BaseField<bool>
+    [UxmlElement]
+    public partial class K2Toggle : BaseField<bool>
     {
-        public new class UxmlFactory : UxmlFactory<K2Toggle, UxmlTraits> { }
-
-        // Needs its own Init() override now, purely to re-apply "name" - this Unity version's base
-        // UxmlTraits.Init() no longer sets it for legacy controls.
-        public new class UxmlTraits : BaseFieldTraits<bool, UxmlBoolAttributeDescription>
+        [CreateProperty]
+        [UxmlAttribute("label")]
+        public string Label
         {
-            private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            // Same fix as ToggleButton.cs's UxmlTraits: base.Init() on BaseFieldTraits doesn't apply
-            // a UXML "label" attribute to K2Toggle's own `label` property (BaseField<T> exposes it,
-            // but nothing here was ever reading the bag for it) - every K2Toggle in the project was
-            // silently falling back to the constructor's hardcoded "Toggle" default regardless of what
-            // label="..." said in UXML (auto_warp, rotate_during_burn, start_mode_precise/constant/
-            // half_duration all affected). Declaring and applying it here, mirroring ToggleButton.cs's
-            // m_String/Init() pattern exactly, is the fix.
-            private UxmlStringAttributeDescription m_Label = new() { name = "label", defaultValue = "Toggle" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                ((K2Toggle)ve).label = m_Label.GetValueFromBag(bag, cc);
-            }
+            get => label;
+            set => label = value;
         }
 
         // In the spirit of the BEM standard, the SlideToggle has its own block class and two element classes. It also

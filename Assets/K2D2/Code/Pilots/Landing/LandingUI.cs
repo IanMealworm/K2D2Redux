@@ -32,6 +32,11 @@ namespace K2D2.Landing
         // the selected label back in its ChangeEvent - not an index or the underlying record.
         Dictionary<string, ReduxWaypoint> waypoint_choices = new();
 
+        // Precision Landing orbit gate (see UpdateOrbitGate below) - reuses Circularize's own
+        // 100km ceiling (Circularize.max_starting_altitude_m) rather than a separate number, so
+        // this and the actual in-run refusal in Circularize.cs can never drift apart.
+        Label orbit_gate_label;
+
         public override bool onInit()
         {
             landing_infos = panel.Q<VisualElement>("landing_infos");
@@ -80,6 +85,23 @@ namespace K2D2.Landing
 
             pilot.settings.setupUI(pilot, panel);
             addResetButton(panel.Q<Foldout>("advanced_foldout"), "land");
+
+            // Precision Landing orbit gate - see UpdateOrbitGate's own comment. Reverts the toggle
+            // the instant someone tries to turn it on from too high an orbit, rather than letting
+            // it sit on and only get refused once Circularize.cs actually runs.
+            orbit_gate_label = panel.Q<Label>("precision_landing_orbit_gate");
+            pilot.settings.precision_landing.listeners += v =>
+            {
+                if (!v) return;
+
+                var check = Circularize.CheckOrbit(out double apoapsisAlt_m, out double periapsisAlt_m);
+                if (check != Circularize.OrbitCheck.TooHigh)
+                    return;
+
+                pilot.logger.LogInfo($"[LandingUI] Precision Landing refused - orbit too high " +
+                    $"(Ap {apoapsisAlt_m:n0}m / Pe {periapsisAlt_m:n0}m, max {Circularize.max_starting_altitude_m:n0}m).");
+                pilot.settings.precision_landing.V = false;
+            };
 
             return true;
         }
@@ -156,6 +178,43 @@ namespace K2D2.Landing
             collision_value.text = pilot.collision_detected ? "Detected" : "None detected";
         }
 
+        // Precision Landing orbit gate. The status_bar console/status lines get wiped and
+        // rebuilt every single UI tick (see status_bar.Reset() below), so a one-shot message from
+        // the precision_landing toggle listener (onInit above) would only ever be visible for a
+        // single frame - not something Reese could actually read. This runs every tick instead,
+        // independent of isRunning/mode, and just keeps a small persistent label under the toggle
+        // in sync with the same Circularize.CheckOrbit() the toggle listener already gates on.
+        void UpdateOrbitGate()
+        {
+            // Guard Circularize.CheckOrbit() isn't itself null-safe against VesselComponent being
+            // null - fine for its one existing caller (Circularize.Start(), which only ever runs
+            // mid-landing-sequence, i.e. definitely in active flight), but this runs unconditionally
+            // every UI tick regardless of game state, so it needs its own check here (same
+            // null-conditional convention buildWaypointList() above already uses).
+            if (pilot.current_vessel?.VesselComponent == null)
+            {
+                orbit_gate_label.Show(false);
+                return;
+            }
+
+            var check = Circularize.CheckOrbit(out double apoapsisAlt_m, out double periapsisAlt_m);
+            bool too_high = check == Circularize.OrbitCheck.TooHigh;
+
+            orbit_gate_label.Show(too_high);
+            if (!too_high)
+                return;
+
+            orbit_gate_label.text = $"Needs a starting orbit within {Circularize.max_starting_altitude_m / 1000:n0}km " +
+                $"(currently Ap {apoapsisAlt_m / 1000:n0}km / Pe {periapsisAlt_m / 1000:n0}km) - circularize lower first.";
+
+            // Covers the case where the orbit was fine when Precision Landing was turned on, but
+            // isn't anymore (e.g. the player boosted back out to a higher orbit) - same refusal
+            // the toggle listener applies on the way in, just re-checked continuously instead of
+            // only at the moment of the click.
+            if (pilot.settings.precision_landing.V)
+                pilot.settings.precision_landing.V = false;
+        }
+
         public void updateContext()
         {
             landing_infos.Clear();
@@ -201,6 +260,7 @@ namespace K2D2.Landing
             updateCollisionStatus();
             updateContext();
             buildWaypointList();
+            UpdateOrbitGate();
 
             status_bar.Reset();
 

@@ -1,40 +1,26 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 using KTools;
 
 namespace K2UI
 {
-    public class ToggleButton : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). The old UxmlTraits.Init() always applied "label" from the bag, defaulting to "Toggle
+    // Button" when a tag didn't specify one (node.uxml's "pause" ToggleButton relies on exactly
+    // this - it has no label="..." at all) - the new attribute system only calls a setter for
+    // attributes actually present in the tag, so `label = "Toggle Button";` in the constructor
+    // below reproduces that same default explicitly.
+    [UxmlElement]
+    public partial class ToggleButton : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<ToggleButton, UxmlTraits> { }
-
-        // Add the two custom UXML attributes.
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            UxmlStringAttributeDescription m_String =
-                new() { name = "label", defaultValue = "Toggle Button" };
-            UxmlBoolAttributeDescription m_Bool =
-                new() { name = "value", defaultValue = false };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as ToggleButton;
-
-                ate.label = m_String.GetValueFromBag(bag, cc);
-                ate.Value = m_Bool.GetValueFromBag(bag, cc);
-            }
-        }
-
         Label label_el;
 
-        // Must expose your element class to a { get; set; } property that has the same name 
+        // Must expose your element class to a { get; set; } property that has the same name
         // as the name you set in your UXML attribute description with the camel case format
         public string _label;
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string label
         {
             get { return _label; }
@@ -45,6 +31,9 @@ namespace K2UI
             }
         }
         bool _value;
+
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public bool Value
         {
             get { return _value; }
@@ -81,6 +70,7 @@ namespace K2UI
         {
             label_el = new Label();
             Add(label_el);
+            label = "Toggle Button";
 
             // Style the control overall.
             AddToClassList(ussClassName);

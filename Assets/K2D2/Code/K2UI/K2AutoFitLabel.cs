@@ -1,29 +1,15 @@
 namespace K2UI
 {
-    using System.Collections.Generic;
     using UnityEngine;
     using UnityEngine.UIElements;
 
-    public class K2AutoFitLabel : Label
+    // UxmlFactory/UxmlTraits -> [UxmlElement] (see Group.cs's class comment for why).
+    // K2AutoFitLabel exposes no attributes beyond Label's own standard ones (including "name"),
+    // which UI Toolkit itself already handles - nothing else to convert here. Not currently
+    // referenced from any UXML tag in the project either way.
+    [UxmlElement]
+    public partial class K2AutoFitLabel : Label
     {
-        [UnityEngine.Scripting.Preserve]
-        public new class UxmlFactory : UxmlFactory<K2AutoFitLabel, UxmlTraits> { }
-
-        [UnityEngine.Scripting.Preserve]
-        public new class UxmlTraits : Label.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription { get { yield break; } }
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement visualElement, IUxmlAttributes attributes, CreationContext creationContext)
-            {
-                base.Init(visualElement, attributes, creationContext);
-                visualElement.name = m_Name.GetValueFromBag(attributes, creationContext);
-            }
-        }
-
         public K2AutoFitLabel()
         {
             RegisterCallback<AttachToPanelEvent>(OnAttachToPanel);

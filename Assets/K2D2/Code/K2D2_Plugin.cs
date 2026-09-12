@@ -87,12 +87,13 @@ namespace K2D2
             // commented out (not deleted) so reverting is a one-line job if Addressables doesn't pan out
             // in testing; k2d2_ui.bundle itself is left untouched on disk either way.
 
-            // Manually register K2UI's custom controls' UxmlFactory instances with Unity's internal
-            // VisualElementFactoryRegistry - see KTools/K2UIFactoryRegistration.cs for the full story
-            // on why this is needed (Unity's automatic factory discovery doesn't pick up custom
-            // controls shipped in a BepInEx-loaded mod DLL). Must run before any UXML referencing
-            // K2UI's custom elements is loaded/cloned, so it happens first thing here.
-            KTools.K2UIFactoryRegistration.RegisterAll();
+            // K2UIFactoryRegistration.RegisterAll() used to go here - a reflection-based workaround
+            // that manually registered every K2UI custom control's legacy UxmlFactory with Unity's
+            // internal VisualElementFactoryRegistry, needed because Unity's automatic factory scan
+            // never recognized a BepInEx-loaded mod DLL as a "user assembly". That whole class is
+            // gone now: every K2UI control moved to [UxmlElement]/[UxmlAttribute] (Unity 6.6 removes
+            // UxmlFactory entirely, so this was happening either way), and the newer attribute-based
+            // registration is handled by Redux itself for mod assemblies - no manual step needed.
 
             var k2D2PilotsMgr = new K2D2PilotsMgr();
             SettingsFile.Init(this, SettingsPath);
