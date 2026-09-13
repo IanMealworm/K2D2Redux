@@ -10,29 +10,21 @@ using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    // Precision landing's new precondition phase, run before DeorbitBurn. DeorbitBurn's own
-    // targeting math (ComputeDeorbitDeltaV in LandingTargeting.cs) treats the burn point as an
-    // apsis of the current orbit - exactly true everywhere on a circular orbit, only exactly true
-    // at the real apsides on an eccentric one. Rather than teaching that search to cope with an
-    // arbitrary starting orbit shape, this does what a human pilot would: circularize first, then
-    // deorbit - same reasoning Reese put it as "NASA doesn't go from a bad orbit straight to a
-    // precision landing attempt."
+    // Precision landing's precondition phase, run before DeorbitBurn. DeorbitBurn's own targeting
+    // math (ComputeDeorbitDeltaV in LandingTargeting.cs) treats the burn point as an apsis of the
+    // current orbit - exactly true everywhere on a circular orbit, only exactly true at the real
+    // apsides on an eccentric one. Rather than teaching that search to cope with an arbitrary
+    // starting orbit shape, this circularizes first, then deorbits.
     //
-    // Mirrors DeorbitBurn's own structure and reasoning for not reusing NodeExPilot (its own
-    // Turn/Warp/Burn instances, so driving this doesn't reset the whole Landing pilot via
-    // K2D2_Plugin.ResetControllers()), and reuses DeorbitBurn's proven
-    // ManeuverCreator.CreateManeuverNodeAtUT node-creation path rather than
-    // ManeuverCreator.CircularizeOrbitApoapsis()'s older CreateManeuverNode_Co path - that path
-    // does the same (PatchedConicsOrbit) cast that threw InvalidCastException elsewhere in this
-    // codebase for the actively-flown vessel under Redux (CurrentPatchedConicsOrbit, not
-    // PatchedConicsOrbit), and nothing in ManeuverCreator besides CreateManeuverNodeAtUT has
-    // actually been proven to work under Redux yet (see that method's own comment). The vis-viva
-    // circularize-at-apoapsis math itself IS reused as-is from CircularizeOrbitApoapsis - that
-    // part was always sound, just fed by state vectors here instead of a PatchedConicsOrbit's own
-    // Apoapsis/Periapsis properties (see LandingTargeting.OrbitalElementsFromStateVectors).
-    //
-    // New and untested in-game, same as the rest of precision landing - needs a real flight
-    // before being trusted, same caveats as DeorbitBurn.
+    // Mirrors DeorbitBurn's own structure: its own Turn/Warp/Burn instances rather than
+    // NodeExPilot, so driving this doesn't reset the whole Landing pilot via
+    // K2D2_Plugin.ResetControllers(). Uses ManeuverCreator.CreateManeuverNodeAtUT for node
+    // creation rather than ManeuverCreator.CircularizeOrbitApoapsis()'s older
+    // CreateManeuverNode_Co path - that path does the same PatchedConicsOrbit cast that throws
+    // InvalidCastException for the actively-flown vessel under Redux (CurrentPatchedConicsOrbit,
+    // not PatchedConicsOrbit). The vis-viva circularize-at-apoapsis math itself is reused as-is
+    // from CircularizeOrbitApoapsis, just fed by state vectors instead of a PatchedConicsOrbit's
+    // own Apoapsis/Periapsis properties (see LandingTargeting.OrbitalElementsFromStateVectors).
     public class Circularize : ExecuteController
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Circularize");
@@ -50,12 +42,11 @@ namespace K2D2.Landing
 
         public Circularize() { sub_contollers.Add(current_executor); }
 
-        // Thresholds agreed with Reese. Skip circularizing outright if apoapsis/periapsis are
-        // already within this of each other - not worth spending propellant/time closing a gap
-        // this small. Refuse to even attempt circularize-then-deorbit above the altitude ceiling:
-        // circularizing from something that high would still take forever and reproduce the same
-        // long-coast search-convergence/calibration problems the deorbit burn already choked on
-        // in testing, even with the circularize math itself being correct.
+        // Skip circularizing outright if apoapsis/periapsis are already within this of each other
+        // - not worth spending propellant/time closing a gap this small. Refuse to even attempt
+        // circularize-then-deorbit above the altitude ceiling: circularizing from something that
+        // high would still take a long time and reproduce the same long-coast search-convergence/
+        // calibration problems the deorbit burn runs into at high altitude.
         public const double circular_tolerance_m = 1500;
         public const double max_starting_altitude_m = 100000;
 
@@ -145,13 +136,13 @@ namespace K2D2.Landing
                 $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s");
 
             maneuver_creator.Update();
-            // Defensive - clear any node already on the plan (e.g. one the player created by hand,
-            // or a leftover from an aborted previous run) before adding ours. AddNodeToVessel only
-            // ever appends (see CreateManeuverNodeAtUT's own comment), so skipping this risks the
-            // same "two nodes, vessel points at the wrong one" bug found in DeorbitBurn. Uses the
+            // Clear any node already on the plan (e.g. one the player created by hand, or a
+            // leftover from an aborted previous run) before adding ours. AddNodeToVessel only ever
+            // appends (see CreateManeuverNodeAtUT's own comment), so skipping this risks two
+            // nodes on the plan with the vessel pointed at the wrong one. Uses the
             // remove-then-create-a-frame-later helper (see ManeuverCreator.cs) rather than doing
-            // both in the same call - DeorbitBurn's first in-game test showed the same-frame
-            // version can leave the new node broken even though the removal itself works.
+            // both in the same call - removing and creating in the same frame can leave the new
+            // node broken even though the removal itself works.
             status_line = $"Circularizing: {deltaV:n1} m/s";
             maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
             {

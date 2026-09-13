@@ -14,39 +14,36 @@ namespace K2D2.Landing
     // Precision landing's second phase, run right after DeorbitBurn finishes and before the
     // normal Pause -> QuickWarp -> RotationWarp -> Waiting -> Brake -> TouchDown sequence starts.
     //
-    // Per Reese: the deorbit burn's own targeting has to commit to a burn based on a PREDICTION
-    // (where FindBestDeorbitBurn's search thinks the resulting trajectory will land), and in
-    // testing that prediction was still landing 27-28km off target even with plane trim maxed
-    // out - which meant the descent-phase steering (TouchDown.ComputeSteeredDirection) was doing
-    // all the real work, and doing it late, close to the ground, where there's the least room
-    // (time, altitude, fuel budget) left to fix things. Reese's ask: do the heavy correcting soon
-    // after the deorbit burn instead, while there's still plenty of altitude and time left, so
-    // the descent only has to mop up whatever small residual is left.
+    // The deorbit burn's targeting has to commit to a burn based on a PREDICTION (where
+    // FindBestDeorbitBurn's search thinks the resulting trajectory will land), so any error in
+    // that prediction, or in flying the burn itself, otherwise falls entirely on the descent-phase
+    // steering (TouchDown.ComputeSteeredDirection) to fix late, close to the ground, where there's
+    // the least room (time, altitude, fuel budget) left to correct. This phase does that
+    // correcting soon after the deorbit burn instead, while there's still plenty of altitude and
+    // time, so the descent only has to mop up whatever small residual is left.
     //
-    // This phase re-runs the EXACT SAME search DeorbitBurn already uses (LandingTargeting.
+    // Re-runs the exact same search DeorbitBurn already uses (LandingTargeting.
     // FindBestDeorbitBurn) - not new math - but against the REAL, already-flown post-deorbit-burn
-    // orbit instead of a pre-burn prediction, and over a short, near-term window instead of a
-    // full orbit. Since periapsis is already set close to the target depth by the deorbit burn,
+    // orbit instead of a pre-burn prediction, over a short, near-term window instead of a full
+    // orbit. Since periapsis is already set close to the target depth by the deorbit burn,
     // ComputeDeorbitDeltaV's prograde/retrograde component for these candidates should come out
     // small - this is mostly the plane-trim component doing real work a second time, now against
-    // whatever the deorbit burn actually achieved (including its own execution error) rather than
-    // a prediction of it. If the deorbit burn already nailed it, this phase finds nothing useful
-    // to do and just falls straight through to Pause (see the "nothing meaningful to correct"
-    // branch in Start() below) - it should never make things worse, only sometimes do nothing.
+    // whatever the deorbit burn actually achieved (including its own execution error). If the
+    // deorbit burn already nailed it, this phase finds nothing useful to do and falls straight
+    // through to Pause (see the "nothing meaningful to correct" branch in Start() below) - it
+    // should never make things worse, only sometimes do nothing.
     //
     // NOT a substitute for starting Brake earlier - checkDirection() in TouchDown.cs deliberately
     // holds the engine off (SetThrottle(0), no steering at all) until the vessel's actual velocity
     // is already predominantly downward (see its "Waiting for speed Down" branch), specifically to
-    // avoid thrusting into a climb on a low-gravity body (the Minmus overshoot bug this same
-    // session already fixed once). Right after a deorbit burn the vessel is still mostly
-    // horizontal/outbound for a good stretch, so entering Brake early would just idle doing
-    // nothing until the same natural falling point Brake already starts near today - it wouldn't
-    // actually buy any extra correction time. A real, separate, deliberately-sized burn (this
-    // phase) is what actually spends dV early instead of late.
+    // avoid thrusting into a climb on a low-gravity body. Right after a deorbit burn the vessel is
+    // still mostly horizontal/outbound for a good stretch, so entering Brake early would just idle
+    // doing nothing until the same natural falling point Brake already starts near today - it
+    // wouldn't buy any extra correction time. A real, separately-sized burn (this phase) is what
+    // actually spends dV early instead of late.
     //
-    // Mirrors DeorbitBurn.cs's own structure and its reasons almost exactly (own Turn/Warp/Burn
-    // instances rather than NodeExPilot, for the same K2D2_Plugin.ResetControllers() reason - see
-    // DeorbitBurn's comment) - new and untested in-game, same caveat.
+    // Mirrors DeorbitBurn.cs's own structure (own Turn/Warp/Burn instances rather than
+    // NodeExPilot, for the same K2D2_Plugin.ResetControllers() reason - see DeorbitBurn's comment).
     public class MidCourseCorrection : ExecuteController
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.MidCourseCorrection");

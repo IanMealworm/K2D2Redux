@@ -19,17 +19,31 @@
                 <ui:Label text="None detected" name="collision_value" class="advanced-info-row-value" />
             </ui:VisualElement>
 
-            <!-- Landing mode - promoted up from a buried ADVANCED setting (per Reese: this needs
-                 to be an obvious choice before pressing Brake, not something discovered later in a
-                 dropdown) since it's really "which of two landing behaviors do you want," not a
-                 fine-tuning knob. Off (default) = brake straight down wherever the current course
+            <!-- Landing mode - Atmo/Vacuum profile split (see LandingSettings.cs's class comment
+                 for the full reasoning): precision landing only exists on the Vacuum profile right
+                 now (LandingPilot.cs's atmosphere guard refuses to even start it on an atmospheric
+                 body), so instead of one shared group with a gate that reverts the toggle, there
+                 are now two full sibling groups here - only one shown at a time
+                 (LandingUI.UpdateProfilePanels, based on LandingProfile.IsAtmospheric, same pattern
+                 as advanced_foldout's own atmo/vac panel switch below). -->
+
+            <!-- Atmo panel: no controls at all yet - just a short explanation of why, so it's
+                 obvious this isn't a bug/missing feature rather than something silently broken. -->
+            <ui:VisualElement name="landing_mode_group_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px; display: none;">
+                <ui:Label tabindex="-1" text="Precision landing isn't available on atmospheric bodies yet - Brake/Touch Down still work as usual." display-tooltip-when-elided="true" name="atmo_precision_note" style="color: rgb(180, 180, 180); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+            </ui:VisualElement>
+
+            <!-- Vacuum panel - promoted up from a buried ADVANCED setting to an obvious choice
+                 made before pressing Brake, since it's really "which of two landing behaviors do
+                 you want," not a fine-tuning knob. Off (default) = brake straight down wherever
+                 the current course
                  naturally lands, same as always. On = shows the target picker below - a waypoint
                  dropdown (reads whatever's placed in Redux's own Waypoints window, see
                  ReduxWaypoints.cs) or manual lat/lon. Steering toward that target isn't wired up
                  yet - see LandingPilot.cs - so right now this only changes what Target Error
                  reports, not how the ship flies. -->
-            <ui:VisualElement name="landing_mode_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px;">
-                <K2UI.K2Toggle label="Precision Landing" name="precision_landing" tooltip="Steer toward a chosen landing site instead of just braking straight down wherever the current course naturally lands (vacuum bodies only for now)" />
+            <ui:VisualElement name="landing_mode_group_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px;">
+                <K2UI.K2Toggle label="Precision Landing" name="precision_landing_vac" tooltip="Steer toward a chosen landing site instead of just braking straight down wherever the current course naturally lands (vacuum bodies only)" />
                 <!-- Orbit gate (see LandingUI.UpdateOrbitGate) - Precision Landing needs a starting
                      orbit within Circularize.max_starting_altitude_m (100km), same ceiling
                      Circularize.cs already refuses above once a run actually gets that far. This
@@ -38,11 +52,11 @@
                      runs. Hidden by default (style="display: none") - shown/updated every UI tick,
                      independent of whether Precision Landing itself is on, since it's meant to
                      explain WHY the toggle won't stay on. -->
-                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_orbit_gate" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
-                <ui:VisualElement name="target_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
-                    <ui:FloatField label="Target Latitude" value="0" name="target_latitude" />
-                    <ui:FloatField label="Target Longitude" value="0" name="target_longitude" />
+                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_orbit_gate_vac" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+                <ui:VisualElement name="target_settings_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop_vac" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
+                    <ui:FloatField label="Target Latitude" value="0" name="target_latitude_vac" />
+                    <ui:FloatField label="Target Longitude" value="0" name="target_longitude_vac" />
                 </ui:VisualElement>
             </ui:VisualElement>
 
@@ -93,55 +107,91 @@
                  K2Page.Init()'s Q<VisualElement>("settings") lookup expects to find it, but it no
                  longer carries any real controls - the Reset button now lives at the bottom of
                  this ADVANCED foldout instead (see LandingUI.cs's addResetButton call). -->
+            <!-- Atmo/Vacuum profile split (see LandingSettings.cs's class comment): two full
+                 sibling panels below, only one shown at a time (LandingUI.UpdateProfilePanels,
+                 based on LandingProfile.IsAtmospheric) - never rebound after onInit(), since
+                 K2Page.onInit() only ever runs once per game session and a bound K2Slider/K2Toggle
+                 stays wired to whichever Setting object it was given at that moment (see
+                 LandingSettings.cs's own comment for why this ruled out one shared panel with a
+                 dynamically-swapped settings object). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
-                <!-- Moved to the top of ADVANCED per Reese - these are the settings you actually
-                     want to reach for while flying a precision landing, so they shouldn't be
-                     buried below Warp/Brake/Touch Down. Only meaningful while Precision Landing is
-                     on (LandingSettings.setupUI shows/hides this alongside target_settings above) -
-                     these are the closed-loop steering caps from TouchDown.ComputeSteeredDirection,
-                     exposed so they can be tuned live in-game instead of needing a code change +
-                     rebuild per test. -->
-                <ui:VisualElement name="PrecisionLanding">
-                    <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="40" max="80" name="steering_max_angle" label="Max Steering Angle °" tooltip="How far off retrograde the burn can tilt sideways to correct a left/right miss. Wider catches a bigger miss (or a slightly mismatched orbital plane) but costs more fuel - it never touches the vertical/braking component." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="80" max="90" name="arc_extend_max_angle" label="Max Extend Angle °" tooltip="How far the burn can tilt toward straight up to stretch the landing arc when undershooting. Only ever adds vertical braking margin, so it's safe to run high." />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="45" name="arc_shorten_max_angle" label="Max Shorten Angle °" tooltip="How far the burn can tilt toward horizontal to cut the landing arc short when overshooting. Spends vertical braking margin, so keep this one conservative." />
-                    <!-- Arc Correction Full-Scale and Min Correction Altitude Margin sliders removed -
-                         both are fixed values now (TouchDown.arc_correction_full_scale_m = 50,
-                         LandingSettings.min_correction_altitude_margin = 8000, its old slider's max)
-                         instead of player-adjustable, per Reese. -->
-                    <!-- RCS fine correction - see TouchDown.ApplyRCSFineCorrection/
-                         RCSHandlingHeading. Takes the heading-correction job over from the engine
-                         entirely once the miss is inside the threshold (engine keeps braking and
-                         keeps doing its own arc extend/shorten correction regardless) - tilting
-                         the main burn sideways to fix heading was burning extra deltaV for
-                         something RCS can do directly and without needing to turn the vessel at
-                         all (no attitude-lag near the end of a close approach). Off by default. -->
-                    <K2UI.K2Toggle label="Use RCS for Fine Correction" name="use_rcs_fine_correction" class="long-label" tooltip="Once the miss has closed to within the threshold below, RCS takes over heading correction from the main engine (which keeps braking and keeps correcting the arc, just stops tilting sideways for heading) - RCS doesn't need to reorient the vessel, so it doesn't lag behind a fast-changing correction the way turning the whole ship does, and it's cheaper on deltaV than steering the main burn sideways. Needs RCS enabled and monopropellant on the vessel." />
-                    <ui:VisualElement name="rcs_fine_correction_settings">
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="100" value="1000" max="5000" name="rcs_fine_correction_threshold_m" label="RCS Threshold (m)" tooltip="Target error below which RCS fine correction kicks in - fades in from here down to 0." />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.05" value="0.5" max="1" name="rcs_fine_correction_power" label="RCS Power" tooltip="How hard RCS pushes toward the target once fully active (at target_error_m = 0)." />
+                <!-- ATMO PANEL - reduced: just Warp/Brake/Touch Down's general-purpose tunables.
+                     No PRECISION LANDING section at all - see landing_mode_group_atmo above. -->
+                <ui:VisualElement name="atmo_settings_panel" style="display: none;">
+                    <ui:VisualElement name="Warp_atmo">
+                        <ui:Label text="// WARP" class="k2-section-header" />
+                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_atmo" tooltip="Warp time before burn" />
+                        <ui:VisualElement name="warp_settings_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                            <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration_atmo" tooltip="During Rotation Warp, Attitude is checked" />
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_atmo" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement name="Brake_atmo">
+                        <ui:Label text="// BRAKE" class="k2-section-header" />
+                        <K2UI.K2Slider name="burn_before_atmo" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="TouchDown_atmo">
+                        <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
+                        <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude_atmo" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_atmo" label="Max Angle" tooltip="Max Angle for Final touch Down" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_atmo" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_atmo" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
                     </ui:VisualElement>
                 </ui:VisualElement>
-                <ui:VisualElement name="Warp">
-                    <ui:Label text="// WARP" class="k2-section-header" />
-                    <K2UI.K2Toggle label="Auto Warp" name="auto_warp" tooltip="Warp time before burn" />
-                    <ui:VisualElement name="warp_settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                        <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration" tooltip="During Rotation Warp, Attitude is checked" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
+
+                <!-- VACUUM PANEL - full: PRECISION LANDING plus Warp/Brake/Touch Down. -->
+                <ui:VisualElement name="vac_settings_panel">
+                    <!-- Placed at the top of ADVANCED - these are the settings you actually want
+                         to reach for while flying a precision landing, so they shouldn't be
+                         buried below Warp/Brake/Touch Down. Only meaningful while
+                         Precision Landing is on (LandingSettings.setupUI shows/hides this alongside
+                         target_settings_vac above) - these are the closed-loop steering caps from
+                         TouchDown.ComputeSteeredDirection, exposed so they can be tuned live
+                         in-game instead of needing a code change + rebuild per test. -->
+                    <ui:VisualElement name="PrecisionLanding_vac">
+                        <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_vac" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="40" max="80" name="steering_max_angle_vac" label="Max Steering Angle °" tooltip="How far off retrograde the burn can tilt sideways to correct a left/right miss. Wider catches a bigger miss (or a slightly mismatched orbital plane) but costs more fuel - it never touches the vertical/braking component." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="80" max="90" name="arc_extend_max_angle_vac" label="Max Extend Angle °" tooltip="How far the burn can tilt toward straight up to stretch the landing arc when undershooting. Only ever adds vertical braking margin, so it's safe to run high." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="45" name="arc_shorten_max_angle_vac" label="Max Shorten Angle °" tooltip="How far the burn can tilt toward horizontal to cut the landing arc short when overshooting. Spends vertical braking margin, so keep this one conservative." />
+                        <!-- Arc Correction Full-Scale and Min Correction Altitude Margin sliders
+                             removed - both are fixed values now
+                             (TouchDown.arc_correction_full_scale_m = 50,
+                             LandingSettings.min_correction_altitude_margin = 8000, its old
+                             slider's max) instead of player-adjustable. -->
+                        <!-- RCS fine correction - see TouchDown.ApplyRCSFineCorrection/
+                             RCSHandlingHeading. Takes the heading-correction job over from the
+                             engine entirely once the miss is inside the threshold (engine keeps
+                             braking and keeps doing its own arc extend/shorten correction
+                             regardless) - tilting the main burn sideways to fix heading was
+                             burning extra deltaV for something RCS can do directly and without
+                             needing to turn the vessel at all (no attitude-lag near the end of a
+                             close approach). Off by default. -->
+                        <K2UI.K2Toggle label="Use RCS for Fine Correction" name="use_rcs_fine_correction_vac" class="long-label" tooltip="Once the miss has closed to within the threshold below, RCS takes over heading correction from the main engine (which keeps braking and keeps correcting the arc, just stops tilting sideways for heading) - RCS doesn't need to reorient the vessel, so it doesn't lag behind a fast-changing correction the way turning the whole ship does, and it's cheaper on deltaV than steering the main burn sideways. Needs RCS enabled and monopropellant on the vessel." />
+                        <ui:VisualElement name="rcs_fine_correction_settings_vac">
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="100" value="1000" max="5000" name="rcs_fine_correction_threshold_m_vac" label="RCS Threshold (m)" tooltip="Target error below which RCS fine correction kicks in - fades in from here down to 0." />
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0.05" value="0.5" max="1" name="rcs_fine_correction_power_vac" label="RCS Power" tooltip="How hard RCS pushes toward the target once fully active (at target_error_m = 0)." />
+                        </ui:VisualElement>
                     </ui:VisualElement>
-                </ui:VisualElement>
-                <ui:VisualElement name="Brake">
-                    <ui:Label text="// BRAKE" class="k2-section-header" />
-                    <K2UI.K2Slider name="burn_before" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
-                </ui:VisualElement>
-                <ui:VisualElement name="TouchDown">
-                    <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
-                    <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle" label="Max Angle" tooltip="Max Angle for Final touch Down" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
+                    <ui:VisualElement name="Warp_vac">
+                        <ui:Label text="// WARP" class="k2-section-header" />
+                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_vac" tooltip="Warp time before burn" />
+                        <ui:VisualElement name="warp_settings_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                            <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration_vac" tooltip="During Rotation Warp, Attitude is checked" />
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_vac" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement name="Brake_vac">
+                        <ui:Label text="// BRAKE" class="k2-section-header" />
+                        <K2UI.K2Slider name="burn_before_vac" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="TouchDown_vac">
+                        <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
+                        <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude_vac" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_vac" label="Max Angle" tooltip="Max Angle for Final touch Down" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_vac" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_vac" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
+                    </ui:VisualElement>
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>

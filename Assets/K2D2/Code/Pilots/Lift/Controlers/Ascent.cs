@@ -40,122 +40,37 @@ namespace K2D2.Lift
         float heading_correction = 0;
         float h_speed_heading = 0;
 
-        // ROLL PROGRAM (see LiftSettings.roll_program* for the player-facing settings). Corrects
-        // for whatever roll the vessel happened to spawn with on the pad - KSP doesn't guarantee a
-        // rocket lands there lined up with its own design intent, and an asymmetric build (e.g.
-        // off-center fins, a grid-fin cluster, a lopsided RCS quad) can make the ascent "funky" if
-        // nothing ever rolls it into the orientation it was actually built for.
+        // ROLL PROGRAM (see LiftSettings.roll_program* for the player-facing settings). Corrects the
+        // vessel's roll relative to its OWN launch orientation - not an absolute compass/navball
+        // heading - since an asymmetric build can spawn on the pad rolled away from the orientation
+        // it was designed for.
         //
-        // FIRST VERSION of this feature drove roll with a raw current_vessel.Roll axis write, same
-        // mechanism RCS fine correction uses for translation. Reese tested it and it did nothing -
-        // "I was able to roll the rocket with keyboard inputs. The autopilot didnt do anything with
-        // roll." Root cause, found by reading the decompiled VesselSAS.cs Reese pulled straight out
-        // of his IDE: SAS.SetTargetOrientation(Vector, bool) - the only overload this codebase has
-        // ever called (TouchDown.cs, AttitudePilot.cs, here, DockingTurnTo.cs) - clears SAS's
-        // "persistent target rotation" flag, which leaves roll in a free/damped mode.
-        // VesselSAS.ControlUpdate() writes FlightCtrlState.roll unconditionally every physics tick
-        // regardless of that flag, so it was silently overwriting any raw roll-axis command the
-        // instant after it was set. RCS translation (X/Y/Z) never has this problem because SAS
-        // doesn't touch that channel at all, which is why the same raw-write approach works fine for
-        // TouchDown's RCS fine correction but not for rotation.
+        // Roll is driven through SAS.LockRotation + lockedMode = true rather than
+        // SetPersistentTargetOrientation: the latter's roll formula
+        // (ComputePersistentTargetRollResponse in VesselSAS.cs) is a fixed-gain P+D loop with no
+        // auto-tuning, while lockedMode routes all three axes through the same auto-tuned PID
+        // (PidLockedRoll) already used for pitch/yaw. ComputeRollTargetRotation below builds a full
+        // orientation (nose and dorsal/roll-reference pinned at once, via RotationFromNoseAndDorsal)
+        // since neither FromToRotation nor LookRotation can pin two axes in a single call.
         //
-        // REAL FIX: SAS has a second overload, SetPersistentTargetOrientation(Vector, Rotation,
-        // bool), that actually engages SAS's own roll control loop (ComputePersistentTargetRollDelta
-        // / ComputePersistentTargetRollResponse in VesselSAS.cs) instead of leaving roll free/damped.
-        // That loop reads local Vector3.up as "nose" and local Vector3.forward as the dorsal/roll-
-        // reference axis it measures roll around - both pulled off the Rotation we hand it and
-        // compared against the vessel's own current orientation - see ComputeRollTargetRotation
-        // below for how that target Rotation actually gets built. This is the SAME nose convention
-        // Nodes/TurnTo.cs already uses successfully for current_vessel.GetRotation() (Vector3.up) -
-        // NOT the Vector3.down convention TouchDown.cs uses for that same rotation source, which is
-        // specific to TouchDown's tail-first landing-burn framing and doesn't apply here.
+        // The target ramps toward the configured angle at a limited rate (ramped_roll_target_deg,
+        // settings.roll_program_rate_deg_s) instead of being commanded instantly - SAS's roll
+        // response saturates on any large instantaneous error, which overshoots and oscillates. The
+        // lockedMode target is only held while the program is actively ramping
+        // (roll_program_started && !roll_program_done); control reverts to plain
+        // SetTargetOrientation once settled, matching stock free/damped roll behavior.
         //
-        // Still measured relative to the vessel's OWN launch orientation (captured once in Start(),
-        // below), not an absolute compass/navball reading - a relative target ("roll this many
-        // degrees from however you spawned") is exactly what Reese described needing, and sidesteps
-        // ever having to reconcile this with TouchDown's differing nose-axis convention.
+        // Roll traveled since launch (accumulated_roll_deg) is integrated tick-to-tick from the
+        // dorsal reference's rotation delta (IntegrateRoll), rather than compared against a rotation
+        // captured once at launch: Rotation.Reframed's target coordinate system is a per-position,
+        // local-horizon-style frame, so reframing a rotation captured many ticks (and positions)
+        // earlier and comparing it to the current one does not produce a valid delta. Reframing and
+        // using the result immediately, same tick, is the pattern used elsewhere in this codebase
+        // (TouchDown, TurnTo, DockingTurnTo) and the only one confirmed to work here.
         //
-        // SLOW ROLL RAMP: the first version of the SAS-driven fix handed VesselSAS the full target
-        // angle the instant the roll program engaged. Reese tested it - "a very hard nudge and then
-        // the rocket wouldn't stop rolling", i.e. it overshot and oscillated instead of settling.
-        // VesselSAS.ComputePersistentTargetRollResponse (see VesselSAS.cs) is a simple P+D formula
-        // with gain 1.0 on the error IN RADIANS and no ramping of its own - it saturates to full
-        // (+/-1) roll input for any error past about 57°, so handing it a big instantaneous error
-        // gives a full-power kick that easily overshoots, and the damping term alone isn't enough to
-        // arrest that much built-up spin, so it overshoots back the other way too, repeatedly. Fix:
-        // instead of commanding roll_program_angle_deg directly, ramp a separate runtime target
-        // (ramped_roll_target_deg) toward it a few degrees at a time (UpdateRollProgram, below), so
-        // the error SAS actually sees stays small.
-        //
-        // STOP HOLDING ONCE DONE: even with the ramp above, Reese still saw it "wouldn't stop
-        // rolling" - smoother start, but never actually settling. Part of the problem was recomputing
-        // and re-committing a roll target EVERY tick for the rest of the whole ascent (fixed below by
-        // only actively holding a target while roll_program_started && !roll_program_done, handing
-        // roll back to plain SetTargetOrientation - free/damped, same as ascent's always behaved
-        // without this feature - the moment it's actually settled).
-        //
-        // LOCKEDMODE INSTEAD OF SetPersistentTargetOrientation: even after that, and after slowing
-        // the ramp down further, it STILL wouldn't settle - and Reese found the key clue: turning the
-        // K2D2 autopilot off entirely let it stop on its own ("the SRBs stop the roll when the
-        // autopilot is shut off"). That means our own active commanding was what was sustaining the
-        // roll, not some external disturbance we weren't fighting hard enough. Rereading VesselSAS.cs:
-        // ComputePersistentTargetRollResponse (the function behind SetPersistentTargetOrientation's
-        // roll axis) is a simple fixed-gain P+D formula (1.0 / 0.45) that never gets the per-vessel
-        // auto-tuning (AutoTuneScalar, dynamic-pressure Ki scaling) the game applies to pitch and yaw
-        // - it looks like a lightly-used fallback path, not the one the game actually leans on for
-        // real attitude holding. Roll's WELL-tuned path is PidLockedRoll, the same auto-tuned PID
-        // class pitch and yaw already use successfully everywhere else in this codebase - but that
-        // class only ever gets exercised when SAS.lockedMode is true (VesselSAS.ControlUpdate computes
-        // ALL THREE axes off a single target Rotation via GetRotationDelta()'s Euler decomposition in
-        // that mode, instead of the crude roll-only formula). So the roll program now builds a FULL
-        // orientation (see ComputeRollTargetRotation's RotationFromNoseAndDorsal helper - it pins both
-        // the nose axis AND the roll/dorsal axis at once, which neither FromToRotation nor
-        // LookRotation can do in a single call) and drives it via SAS.LockRotation + lockedMode = true
-        // instead. Nose gets pinned exactly, so ascent's actual pitch/yaw steering shouldn't notice
-        // the difference - only roll goes through the better-tuned control path now.
-        //
-        // THE ACTUAL ROOT CAUSE (found after LOCKEDMODE alone still didn't fix it) - five different
-        // fixes were tried here, each patching a different layer of the same underlying approach
-        // ("capture the vessel's orientation once at launch, compare it against the current
-        // orientation later via Rotation.Reframed into a common frame"): capture timing
-        // (launch_rotation_valid), a suspected live/mutating GetRotation() reference
-        // (FreezeRotation, extracting nose/dorsal as plain Vector3d before storing), and gathering
-        // diagnostics along the way. All five produced the EXACT SAME symptom: "Roll (from launch)"
-        // and a raw Nose·LaunchFwd dot product both pinned at their launch-time values through a
-        // 1 km to 10 km ascent with a real, large pitch/heading change (Pitch Target 90 -> 71.47,
-        // Surface Heading 175.75 -> 94.79) - while a SEPARATE diagnostic (Nose·Up, comparing the
-        // CURRENT nose against gravity alone, no launch reference involved) proved GetRotation()
-        // itself is live and correctly updating (it moved from ~+1 to -0.7092 over that same
-        // climb). So the live data is fine; something about comparing it against an EARLIER
-        // snapshot, via Reframed, isn't.
-        //
-        // Pulling the decompiled source for Rotation.Reframed showed why:
-        //   public static Rotation Reframed(Rotation rotation, ICoordinateSystem newReferenceFrame)
-        //   { if (newReferenceFrame != null) return new Rotation(newReferenceFrame,
-        //     newReferenceFrame.ToLocalRotation(rotation)); return rotation; }
-        // It delegates to ToLocalRotation on the COORDINATE SYSTEM ITSELF, whose implementation we
-        // don't have visibility into. gravityForPos's coordinate system is necessarily a
-        // per-position, local-horizon-style frame (that's the only way "up" is meaningful at the
-        // vessel's current location), and every other place this codebase calls Reframed
-        // (TouchDown, TurnTo, DockingTurnTo) reframes something and uses it IMMEDIATELY, same tick -
-        // nowhere else ever asks it to reframe a rotation captured many ticks earlier, at a
-        // different position along a curved trajectory, and compare it against today. That's a
-        // genuinely novel usage pattern this one feature introduced, and exactly where a hidden
-        // per-position assumption inside ToLocalRotation could produce a self-consistent-looking
-        // but physically wrong answer.
-        //
-        // Rather than chase ToLocalRotation's internals through another cycle of decompiling,
-        // roll is now INTEGRATED instead of compared. VesselSAS's own decompiled source
-        // (ComputePersistentTargetRollResponse) uses attitudeAngularVelocity.y directly as the
-        // roll-axis angular rate, in body-local terms, with NO reframing at all - accumulated_roll_deg
-        // below just sums that same .y component every tick from launch onward. This only ever
-        // touches SAME-TICK data (current angular velocity), so it can't be affected by whatever
-        // ToLocalRotation does with a historical rotation. The SAS target (ComputeRollTargetRotation)
-        // is rebuilt the same way: instead of rotating a frozen LAUNCH dorsal reference by the full
-        // ramped angle, it rotates the CURRENT dorsal reference (same-tick GetRotation(), reframed
-        // and used immediately - the ONLY pattern ever empirically proven to work in this codebase)
-        // by however much MORE roll is still needed (ramped target minus what's already
-        // accumulated) - mathematically equivalent, but never looks at an earlier tick's rotation.
+        // GetAngularSpeed()'s reported units are not plain radians/second, so roll rate
+        // (debug_roll_rate_deg_s) is derived from the same tick-to-tick angle delta instead of that
+        // API.
         bool roll_program_started = false;
         bool roll_program_done = false;
         double accumulated_roll_deg = 0; // total roll (deg) since launch, integrated tick-to-tick - see IntegrateRoll
@@ -167,12 +82,9 @@ namespace K2D2.Lift
         float ramped_roll_target_deg = 0; // current runtime roll target SAS is being fed, ramps toward settings.roll_program_angle_deg.V
 
         const float RollProgramCompletionErrorDeg = 2f;   // "close enough" once error drops under this...
-        const float RollProgramCompletionOmega = 3f;      // ...AND the vessel has actually stopped spinning (deg/s, roll axis only - debug_roll_rate_deg_s, not GetAngularSpeed()'s unclear units)
-        // How fast ramped_roll_target_deg is allowed to move used to be a hardcoded constant here
-        // (RollProgramMaxRateDegPerSec, 3 deg/s) - now player-adjustable via
-        // settings.roll_program_rate_deg_s (see LiftSettings.cs), since different vessels can
-        // likely tolerate different ramp speeds before SAS starts overshooting (see class-level
-        // "SLOW ROLL RAMP" comment on why this is ramped at all).
+        const float RollProgramCompletionOmega = 3f;      // ...AND the vessel has stopped spinning (deg/s, roll axis only - debug_roll_rate_deg_s, not GetAngularSpeed())
+        // Ramp rate is player-adjustable (settings.roll_program_rate_deg_s, see LiftSettings.cs)
+        // since different vessels can tolerate different ramp speeds before SAS overshoots.
 
         public override void Start()
         {
@@ -193,26 +105,15 @@ namespace K2D2.Lift
             ramped_roll_target_deg = 0;
         }
 
-        // Integrates roll (rotation around the nose axis) since launch by measuring, tick-to-tick,
-        // how far the dorsal reference actually rotated between the PREVIOUS tick's orientation and
-        // THIS tick's - see the class-level comment for why comparing against a captured-at-launch
-        // rotation didn't work. This replaced an interim version that instead integrated
-        // GetAngularSpeed()'s raw .y component: that version got the DIRECTION right (after negating
-        // it, since VesselSAS's own decompiled attitudeAngularVelocity.y sign didn't match this
-        // file's Cross(nose,dorsal)*Sin rotation convention) but was wildly off on MAGNITUDE - a full
-        // real 360 degree roll only registered as ~3.4 degrees, meaning GetAngularSpeed()'s units
-        // aren't plain radians/second the way VesselSAS's internal formula implied. Rather than guess
-        // at whatever unit it actually is, this measures rotation directly: the SAME Cross/Dot signed-
-        // angle technique already used throughout this file (and TouchDown.ComputeSteeredDirection),
-        // applied to two rotations that are only ONE TICK apart. That keeps the sign convention
-        // self-consistent with ComputeRollTargetRotation's Rodrigues formula by construction (both are
-        // the same right-hand-rule convention around the nose axis - no more separately-guessed sign
-        // flip needed), and keeps any Reframed-into-a-moving-frame staleness (see class comment)
-        // bounded to a single tick's worth of drift instead of accumulating across the whole flight.
-        // Runs continuously from Start() onward (not just while the roll program is actively engaged),
-        // so accumulated_roll_deg reflects real roll drift even before the roll program's trigger
-        // altitude, matching UpdateRollProgram's "start the ramp from wherever the vessel actually is"
-        // initialization below.
+        // Integrates roll around the nose axis since launch by measuring, tick-to-tick, how far the
+        // dorsal reference actually rotated between the previous tick's orientation and this tick's
+        // (see the class comment for why comparing against a launch-time snapshot doesn't work).
+        // Uses the same Cross/Dot signed-angle technique as ComputeRollTargetRotation and
+        // TouchDown.ComputeSteeredDirection, applied to two rotations one tick apart, so the sign
+        // convention stays consistent by construction and any Reframed staleness is bounded to a
+        // single tick. Runs continuously from Start() onward, not just while the roll program is
+        // engaged, so accumulated_roll_deg reflects real drift even before the program's trigger
+        // altitude.
         void IntegrateRoll()
         {
             if (current_vessel.VesselComponent == null)
@@ -255,18 +156,11 @@ namespace K2D2.Lift
             if (current_vessel.VesselComponent == null)
                 return;
 
-            // FOURTEENTH follow-up fix (see NOTICE.md): the comment this replaced said the cast to the
-            // concrete PatchedConicsOrbit was "VERIFIED" - that was true for orbits in general, but not
-            // for the actively-flown vessel. IL/metadata inspection of Assembly-CSharp.dll showed
-            // KSP.Sim.impl.PatchedConicsOrbit is NOT the only class implementing KSP.Sim.IKeplerPatch -
-            // Redux.Ecs.Components.CurrentPatchedConicsOrbit also implements it, as a completely
-            // unrelated sibling class (both extend System.Object directly, neither derives from the
-            // other). Redux's ECS layer hands back a CurrentPatchedConicsOrbit for the vessel currently
-            // being simulated/flown - exactly this vessel, exactly while the Lift autopilot is running -
-            // so the hard cast below threw InvalidCastException on every single Update(), which is why
-            // the Lift autopilot didn't work at all. Apoapsis and referenceBody are both members of the
-            // IOrbit interface (which IKeplerPatch extends), so no concrete cast is needed - just read
-            // them straight off the interface VesselComponent.Orbit already returns.
+            // Reads Apoapsis/referenceBody through the IKeplerPatch/IOrbit interface rather than
+            // casting to the concrete PatchedConicsOrbit type: Redux's ECS layer hands back
+            // Redux.Ecs.Components.CurrentPatchedConicsOrbit for the actively-flown vessel, an
+            // unrelated sibling class that also implements IKeplerPatch, so a hard cast throws
+            // InvalidCastException for exactly the vessel this autopilot is flying.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             ap_km = (float)(orbit.Apoapsis - orbit.referenceBody.radius) / 1000;
             current_altitude_km = (float)(current_vessel.GetSeaAltitude() / 1000);
@@ -324,12 +218,9 @@ namespace K2D2.Lift
 
             if (settings.roll_program.V && roll_program_started && !roll_program_done)
             {
-                // Roll program actively ramping toward its target - lock onto a FULL orientation (see
-                // class comment on LOCKEDMODE) so SAS drives roll via its well-tuned PidLockedRoll
-                // path instead of the crude persistent-target-rotation formula. Only done here, not
-                // for the whole rest of the ascent (see "STOP HOLDING ONCE DONE") - once
-                // roll_program_done, this falls through to the plain branch below just like the
-                // feature being off.
+                // Roll program actively ramping toward its target - lock onto a full orientation (see
+                // class comment) so SAS drives roll via the auto-tuned PidLockedRoll path. Only held
+                // while ramping; once roll_program_done this falls through to the plain branch below.
                 Rotation target_rotation = ComputeRollTargetRotation(direction, up);
                 autopilot.SAS.LockRotation(target_rotation);
                 autopilot.SAS.lockedMode = true;
@@ -343,23 +234,20 @@ namespace K2D2.Lift
             }
         }
 
-        // Builds the FULL orientation handed to SAS.LockRotation for the roll program - unlike the
-        // old SetPersistentTargetOrientation approach (see class comment), lockedMode needs BOTH axes
-        // pinned at once: local Y (VesselSAS's "nose") pointing at nose_target, and local Z (VesselSAS's
-        // dorsal/roll-reference) pointing at the desired roll direction. Neither FromToRotation nor
-        // LookRotation can pin two axes in one call, so RotationFromNoseAndDorsal below builds it
-        // directly from an orthonormal basis instead.
+        // Builds the full orientation handed to SAS.LockRotation for the roll program: lockedMode
+        // needs both axes pinned at once - local Y (SAS's "nose") at nose_target, local Z (SAS's
+        // dorsal/roll-reference) at the desired roll direction. Neither FromToRotation nor
+        // LookRotation can pin two axes in one call, so RotationFromNoseAndDorsal builds it directly
+        // from an orthonormal basis.
         Rotation ComputeRollTargetRotation(Vector3d nose_target, Vector up)
         {
-            // Same-tick reframe only - current_vessel.GetRotation() is called and used right here,
-            // never stored across ticks, which is the ONLY Reframed usage pattern this codebase has
-            // ever empirically proven correct (see the class-level comment on why a captured-at-an-
-            // earlier-tick rotation was the problem, not this).
+            // Same-tick reframe: GetRotation() is read and used immediately, never stored across
+            // ticks (see class comment on why comparing against an earlier-tick rotation fails).
             Rotation cur_rotation = Rotation.Reframed(current_vessel.GetRotation(), up.coordinateSystem);
 
-            // Current dorsal/roll-reference axis, same Vector3.forward convention SAS itself uses
-            // (see class comment) - NOT the Vector3.down TouchDown.cs uses for this same
-            // GetRotation() source.
+            // Current dorsal/roll-reference axis - Vector3.forward, matching SAS's own convention.
+            // (TouchDown.cs uses Vector3.down for this same rotation source, for its tail-first
+            // landing-burn framing; that doesn't apply here.)
             Vector3d current_dorsal = (cur_rotation.localRotation * Vector3.forward).normalized;
 
             // Flatten against the TARGET nose direction (not the vessel's own current nose) so the
@@ -380,14 +268,11 @@ namespace K2D2.Lift
             }
             current_dorsal_flat = current_dorsal_flat.normalized;
 
-            // Rotate that flattened reference around the nose axis by however much MORE roll is
-            // still needed - the ramped target minus what's already accumulated since launch
-            // (accumulated_roll_deg, integrated in IntegrateRoll) - which is mathematically
-            // equivalent to rotating a frozen launch reference by the full ramped angle, but only
-            // ever touches THIS tick's current dorsal. Rodrigues' rotation formula, same Cos/Cross/
-            // Sin pattern TouchDown.ComputeSteeredDirection already uses for its own pitch/heading
-            // rotation. current_dorsal_flat is already perpendicular to nose_target by construction,
-            // so the "parallel component" term of the full formula drops out.
+            // Rotate the flattened dorsal reference around the nose axis by the remaining roll
+            // needed (ramped target minus accumulated_roll_deg). Rodrigues' rotation formula, same
+            // Cos/Cross/Sin pattern as TouchDown.ComputeSteeredDirection. current_dorsal_flat is
+            // already perpendicular to nose_target, so the formula's parallel-component term drops
+            // out.
             double remaining_roll_deg = ramped_roll_target_deg - accumulated_roll_deg;
             double roll_rad = remaining_roll_deg * (System.Math.PI / 180.0);
             Vector3d desired_dorsal_dir = current_dorsal_flat * System.Math.Cos(roll_rad)
@@ -397,12 +282,11 @@ namespace K2D2.Lift
             return new Rotation(up.coordinateSystem, target_local_rotation);
         }
 
-        // Builds a rotation whose local Y axis (VesselSAS's "nose") points exactly at nose_ex and
-        // whose local Z axis (VesselSAS's dorsal/roll-reference) points exactly at dorsal_ez (assumed
-        // already close to perpendicular to nose_ex - re-orthogonalized below just in case). This is
-        // a standard rotation-matrix-to-quaternion conversion (Shepperd's method) built from plain
-        // arithmetic only, deliberately NOT using QuaternionD.FromToRotation or LookRotation - neither
-        // of those can pin two axes in a single call, which lockedMode needs (see class comment).
+        // Builds a rotation whose local Y axis ("nose") points at nose_ex and local Z axis
+        // (dorsal/roll-reference) points at dorsal_ez (re-orthogonalized below in case the inputs
+        // aren't exactly perpendicular). Standard rotation-matrix-to-quaternion conversion
+        // (Shepperd's method) rather than QuaternionD.FromToRotation/LookRotation, since neither can
+        // pin two axes in one call.
         static QuaternionD RotationFromNoseAndDorsal(Vector3d nose_ex, Vector3d dorsal_ez)
         {
             Vector3d ey = nose_ex.normalized;
@@ -475,9 +359,9 @@ namespace K2D2.Lift
                 heading_correction = -45;
         }
 
-        // Tracks whether the roll program has reached its trigger altitude yet, and keeps the LIFT
-        // INFO telemetry rows honest. applyDirection() (above) is what actually drives roll now, via
-        // SAS.SetPersistentTargetOrientation - this no longer writes any control input itself.
+        // Tracks whether the roll program has reached its trigger altitude, and advances the ramped
+        // target toward the configured angle. Only updates state; applyDirection() actually commands
+        // SAS.
         void UpdateRollProgram()
         {
             if (!settings.roll_program.V)
@@ -523,11 +407,8 @@ namespace K2D2.Lift
                 ramped_roll_target_deg += Mathf.Sign(remaining) * max_step;
         }
 
-        // Purely informational - reads how far the vessel has actually rolled from its launch
-        // orientation (accumulated_roll_deg, integrated continuously in IntegrateRoll - see the
-        // class-level comment for why this replaced comparing a captured launch Rotation against
-        // the current one) for the LIFT INFO table, and decides whether the roll program has
-        // actually settled.
+        // Reads accumulated roll (accumulated_roll_deg, integrated in IntegrateRoll) for the LIFT
+        // INFO table, and decides whether the roll program has settled.
         void UpdateRollTelemetry()
         {
             debug_roll_delta_deg = accumulated_roll_deg;
@@ -535,13 +416,8 @@ namespace K2D2.Lift
             float roll_error_deg = GeneralTools.diffAngle(settings.roll_program_angle_deg.V, (float)accumulated_roll_deg);
             debug_roll_error_deg = roll_error_deg;
 
-            // Was current_vessel.GetAngularSpeed().vector.magnitude < RollProgramCompletionOmega
-            // (threshold in assumed rad/s) - now that IntegrateRoll's ~105x calibration mismatch has
-            // shown GetAngularSpeed()'s units aren't plain rad/s, that check couldn't be trusted
-            // either (it would likely have been satisfied even while genuinely still spinning at a
-            // real few degrees/second, since the API under-reports by the same ~100x). Uses
-            // debug_roll_rate_deg_s instead - the SAME tick-to-tick measurement IntegrateRoll already
-            // computes and that this file's own math trusts for everything else.
+            // Uses debug_roll_rate_deg_s (IntegrateRoll's tick-to-tick measurement) rather than
+            // GetAngularSpeed(), whose reported units are not plain rad/s here.
             roll_program_done = Mathf.Abs(roll_error_deg) < RollProgramCompletionErrorDeg && Mathf.Abs((float)debug_roll_rate_deg_s) < RollProgramCompletionOmega;
         }
 

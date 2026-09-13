@@ -14,19 +14,12 @@ namespace K2D2.UI
     /// </summary>
     public class K2D2Window : MonoBehaviour
     {
-        // The PanelRenderer component of the window game object.
-        // CORRECTED during Redux port verification: this used to look for a UIDocument component here
-        // (GetComponent<UIDocument>()) - the SpaceWarp1-era way of getting a UI Toolkit window's root
-        // element. The current UitkForKsp2.API.Window.Create(...) call in K2D2_Plugin.cs returns a
-        // PanelRenderer instead (UIDocument's successor), which doesn't expose .rootVisualElement the same
-        // way - so GetComponent<UIDocument>() was silently returning null, and the very next line
-        // (_window.rootVisualElement[0]) threw a NullReferenceException inside OnEnable before any control
-        // got wired up. That's exactly "the app bar icon shows but nothing pops up when I press it" - the
-        // toggle callback then also no-ops on the still-null _rootElement. The real way to get a
-        // PanelRenderer's root VisualElement is RegisterUIReloadCallback, which fires once immediately
-        // (the UI is already loaded synchronously by the time Create returns) and again on any later live
-        // UI reload - the same lesson KerbalAutopilot's MainAppWindow.cs already learned for this exact
-        // Redux API (see its Initialize() comment for the fuller explanation).
+        // The PanelRenderer component of the window game object. UitkForKsp2.API.Window.Create(...)
+        // in K2D2_Plugin.cs returns a PanelRenderer (UIDocument's successor under Redux), which
+        // doesn't expose .rootVisualElement directly - the root VisualElement is obtained via
+        // RegisterUIReloadCallback instead, which fires once immediately (the UI is already loaded
+        // synchronously by the time Create returns) and again on any later live UI reload. Same
+        // pattern KerbalAutopilot's MainAppWindow.cs uses for this Redux API.
         private PanelRenderer _panel;
 
         // The elements of the window that we need to access
@@ -84,22 +77,12 @@ namespace K2D2.UI
 
         /// <summary>
         /// Runs when the window is first created, and every time the window is re-enabled. Gets the
-        /// PanelRenderer and registers for its UI-ready callback - see the _panel field's comment for why
-        /// this can't just read a rootVisualElement directly here the way the pre-port code did.
+        /// PanelRenderer and registers for its UI-ready callback - see the _panel field's comment.
         ///
-        /// DIAGNOSTIC LOGGING added during Redux port verification: after the UIDocument->PanelRenderer fix
-        /// above, the app-bar icon still didn't open the window, with nothing K2D2-related ever appearing in
-        /// the Editor console. Root cause candidate: Unity catches and swallows exceptions thrown inside
-        /// MonoBehaviour lifecycle methods like OnEnable (it logs them, but doesn't propagate them or stop
-        /// the caller) - so if anything in OnUiReload below throws (e.g. a Q<T>() lookup returning null
-        /// because a UXML element name doesn't match, which is plausible given the CS0618 UxmlTraits
-        /// deprecation warnings on K2UI's custom controls under Unity 6), the window would silently fail to
-        /// finish wiring with no obvious error, which matches the reported symptom exactly. Verified via IL
-        /// inspection of UitkForKsp2.API.Window.Create that the window's GameObject IS fully activated
-        /// (SetActive(true)) before Create returns, and RegisterUIReloadCallback's own IL confirms it invokes
-        /// the callback immediately if the root element is already built and attached to a panel at
-        /// registration time - so the mechanism itself should fire; these logs exist to catch the case where
-        /// it fires but a lookup inside OnUiReload then fails.
+        /// Unity swallows exceptions thrown inside MonoBehaviour lifecycle methods like OnEnable (it
+        /// logs them but doesn't propagate them or stop the caller), so a failed Q&lt;T&gt;() lookup
+        /// inside OnUiReload below (e.g. a UXML element name mismatch) would otherwise fail silently
+        /// with no obvious error. The logging below exists to surface exactly which lookup failed.
         /// </summary>
         private void OnEnable()
         {
@@ -117,15 +100,13 @@ namespace K2D2.UI
 
             _panel.RegisterUIReloadCallback(OnUiReload);
 
-            // If OnUiReload didn't fire synchronously as part of the Register call above (it should, per the
-            // IL analysis in the class doc comment, but this confirms it one way or the other rather than
-            // silently assuming), say so explicitly instead of leaving it to be inferred from "nothing
-            // happened."
+            // RegisterUIReloadCallback should invoke OnUiReload synchronously here; log explicitly
+            // if it didn't, rather than leaving it to be inferred from nothing happening.
             if (_rootElement == null)
             {
                 L.Log("K2D2Window.OnEnable: RegisterUIReloadCallback did not invoke OnUiReload immediately " +
                       "(_rootElement is still null right after registering). Waiting for a later UI reload " +
-                      "to fire it instead - if the window still never opens, this is the lead to chase.");
+                      "to fire it instead.");
             }
         }
 
@@ -150,11 +131,11 @@ namespace K2D2.UI
             if (_bound) return;
             _bound = true;
 
-            // From here down: every Q<T>() lookup is explicitly null-checked and logged by name before use,
-            // rather than trusting it and letting a bad lookup throw an NRE that Unity would otherwise
-            // swallow silently (see the OnEnable doc comment above for why that's exactly the failure mode
-            // this is guarding against). If the window still doesn't open after this change, whichever
-            // element name gets logged here as missing is the next thing to check against K2D2_Window.uxml.
+            // From here down: every Q<T>() lookup is explicitly null-checked and logged by name before
+            // use, rather than trusting it and letting a bad lookup throw an NRE that Unity would
+            // otherwise swallow silently (see the OnEnable doc comment above). If the window fails to
+            // wire up, whichever element name gets logged here as missing is the one to check against
+            // K2D2_Window.uxml.
 
             // Get the close button from the window
             var closeButton = _rootElement.Q<Button>("close-button");
@@ -271,18 +252,11 @@ namespace K2D2.UI
             // tab_page isn't wired up until OnUiReload has run - guard rather than NRE on an early frame.
             tab_page?.Update();
 
-            // Confirmed via Ksp2-2.log from Reese's stuck-resize repro: PointerUpEvent and
-            // PointerCaptureOutEvent both simply never reached the resize handle for that gesture
-            // (hasCapture had already gone False, yet neither event's log line ever printed) - so
-            // ResizeManipulator was left with no event that could ever tell it the drag had ended,
-            // and kept treating every later mouse move as more resizing. Rather than chase why this
-            // game's UI Toolkit embedding drops those specific events, Tick() sidesteps the event
-            // pipeline entirely: it reads the real OS mouse button state every frame and force-ends
-            // the gesture the moment it's no longer actually held, regardless of what UI Toolkit
-            // did or didn't deliver. This is the same reason DragManipulator hasn't been reported
-            // stuck - dragging the whole window is a much easier target to keep the cursor over, so
-            // it's presumably hit this same dropped-event failure far less often, not because it's
-            // immune to it.
+            // PointerUpEvent/PointerCaptureOutEvent can fail to reach the resize handle in this
+            // game's UI Toolkit embedding, which would leave ResizeManipulator with no event to end
+            // the drag and treating every later mouse move as more resizing. Tick() sidesteps the
+            // event pipeline: it reads the real OS mouse button state every frame and force-ends
+            // the gesture the moment it's no longer held, regardless of what UI Toolkit delivers.
             _resizeManipulator?.Tick();
         }
     }

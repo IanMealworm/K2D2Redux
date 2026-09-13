@@ -29,6 +29,35 @@ namespace KTools
             Instance.Load(main, file_path);
         }
 
+        // Named registry for additional, independent settings files beyond the one main
+        // k2d2_settings.json every other setting already shares (see Instance/Init above) - added
+        // for Landing's Atmo/Vacuum profile split (LandingSettings.cs), which genuinely needs two
+        // more physical files so tuning one profile can never touch the other's saved values.
+        // GetOrCreate is idempotent - safe to call every time a Setting<T>/ClampSetting<T> that
+        // wants this file is constructed, same as Instance already is.
+        static Dictionary<string, SettingsFile> _named_instances = new();
+
+        static public SettingsFile GetOrCreate(string name, MonoBehaviour main, string file_path)
+        {
+            if (_named_instances.TryGetValue(name, out var existing))
+                return existing;
+
+            var instance = new SettingsFile();
+            instance.Load(main, file_path);
+            _named_instances[name] = instance;
+            return instance;
+        }
+
+        // Plain lookup, for code that just needs whatever named file was already set up
+        // elsewhere (see K2D2_Plugin.OnInitialized()) and doesn't have a MonoBehaviour/path handy
+        // to create one itself - e.g. LandingPilot's constructor, which runs after OnInitialized
+        // has already called GetOrCreate for "land_atmo"/"land_vac". Null if nothing registered
+        // that name yet - callers should only use this for a name they know was already created.
+        static public SettingsFile Get(string name)
+        {
+            return _named_instances.TryGetValue(name, out var existing) ? existing : null;
+        }
+
         public List<IResettable> reset_register = new();
 
         public void Reset(string chapter = null)
@@ -40,6 +69,42 @@ namespace KTools
             needSave = true;
         }
         bool needSave = false;
+
+        // One-time migration support - added for Landing's Atmo/Vacuum profile split (see
+        // K2D2_Plugin.OnInitialized(), which calls this right after creating land_vac). Copies
+        // every RAW string value whose key starts with keyPrefix from `source` into THIS file,
+        // but only for keys this file doesn't already have - so whatever's already been tuned
+        // here (e.g. by the player, on a later launch) never gets clobbered by an old value from
+        // `source`. Works directly on the raw string dictionary rather than the typed Get<T>/
+        // GetBool/GetFloat/etc. helpers above - those all WRITE a default value back into their
+        // own file the moment a key is missing (see e.g. GetBool's own comment), which would have
+        // meant reading from `source` here could accidentally plant a fresh default key back into
+        // it; this only ever reads `source.data`, never touches it.
+        //
+        // Naturally self-limiting without needing a separate "already migrated" flag: once a key
+        // has been copied (or has simply been written normally through the usual Setting<T> path)
+        // into this file, it's no longer "missing" here, so copying the same prefix again on a
+        // later launch is a no-op for that key. Returns how many keys were actually copied, purely
+        // so the caller can log something useful.
+        public int CopyMissingKeys(SettingsFile source, string keyPrefix)
+        {
+            int copied = 0;
+            foreach (var kv in source.data)
+            {
+                if (!kv.Key.StartsWith(keyPrefix))
+                    continue;
+                if (data.ContainsKey(kv.Key))
+                    continue;
+
+                data[kv.Key] = kv.Value;
+                copied++;
+            }
+
+            if (copied > 0)
+                needSave = true;
+
+            return copied;
+        }
 
         protected string file_path = "";
         Dictionary<string, string> data = new Dictionary<string, string>();

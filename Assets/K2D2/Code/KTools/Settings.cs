@@ -9,17 +9,23 @@ namespace KTools
     {
         public string path;
         TEnum default_value;
-        public EnumSetting(string path, TEnum default_value)
+        // Which physical settings file this setting reads/writes - defaults to the mod's single
+        // shared file (SettingsFile.Instance) so every existing call site that doesn't pass this
+        // is completely unaffected. Only settings that need to live in their own separate file
+        // (see LandingSettings.cs's Atmo/Vacuum profile split) pass a different one.
+        readonly SettingsFile file;
+        public EnumSetting(string path, TEnum default_value, SettingsFile file = null)
         {
             this.path = path;
             this.default_value = default_value;
-            if (SettingsFile.Instance.loaded)
+            this.file = file ?? SettingsFile.Instance;
+            if (this.file.loaded)
                 loadValue();
             else
-                SettingsFile.Instance.onloaded_event += loadValue;
+                this.file.onloaded_event += loadValue;
 
-            if (!string.IsNullOrEmpty(path))    
-                SettingsFile.Instance.reset_register.Add(this);
+            if (!string.IsNullOrEmpty(path))
+                this.file.reset_register.Add(this);
         }
 
         public void Reset(string path = null)
@@ -27,13 +33,13 @@ namespace KTools
             if (path != null)
                 if (!this.path.StartsWith(path))
                     return;
-                
+
             this.V = default_value;
         }
 
         void loadValue()
         {
-            _value = SettingsFile.Instance.GetEnum<TEnum>(path, default_value);
+            _value = file.GetEnum<TEnum>(path, default_value);
         }
 
         TEnum _value;
@@ -48,7 +54,7 @@ namespace KTools
                 _value = value;
                 listeners?.Invoke(this.V);
 
-                SettingsFile.Instance.SetEnum<TEnum>(path, _value);
+                file.SetEnum<TEnum>(path, _value);
             }
         }
 
@@ -75,32 +81,37 @@ namespace KTools
     {
         public string key;
         T default_value;
+        // Same idea as EnumSetting's own `file` field above - defaults to the shared singleton so
+        // every existing caller is unaffected; only settings needing a separate physical file
+        // (see LandingSettings.cs) pass a different one.
+        protected readonly SettingsFile file;
 
-        public Setting(string path, T default_value)
+        public Setting(string path, T default_value, SettingsFile file = null)
         {
             this.key = path;
-            this.default_value = default_value; 
-            if (SettingsFile.Instance.loaded)
+            this.default_value = default_value;
+            this.file = file ?? SettingsFile.Instance;
+            if (this.file.loaded)
                 loadValue();
             else
-                SettingsFile.Instance.onloaded_event += loadValue;
+                this.file.onloaded_event += loadValue;
 
-            if (!string.IsNullOrEmpty(path))    
-                SettingsFile.Instance.reset_register.Add(this);
+            if (!string.IsNullOrEmpty(path))
+                this.file.reset_register.Add(this);
         }
 
         public void Reset(string path = null)
-        {   
+        {
             if (path != null)
                 if (!this.key.StartsWith(path))
                     return;
-                    
+
             this.V = default_value;
         }
 
         void loadValue()
         {
-            _value = SettingsFile.Instance.Get<T>(key, default_value);
+            _value = file.Get<T>(key, default_value);
             // if (path == "lift.end_ascent_pc")
             //     Debug.Log("load value" + _value);
         }
@@ -114,14 +125,14 @@ namespace KTools
                 if (value.Equals(_value))
                     return;
 
-                if (!string.IsNullOrEmpty(key))    
-                    if (!SettingsFile.Instance.Set<T>(key, value))
+                if (!string.IsNullOrEmpty(key))
+                    if (!file.Set<T>(key, value))
                         return;
 
                 _value = value;
                 // if (path == "lift.end_ascent_pc")
                 //     Debug.Log("set value" + _value);
-                listeners?.Invoke(this.V); 
+                listeners?.Invoke(this.V);
             }
         }
 
@@ -160,10 +171,10 @@ namespace KTools
             }
         }
         
-        public ClampSetting(string path, T default_value, T min, T max): base(path, default_value)
+        public ClampSetting(string path, T default_value, T min, T max, SettingsFile file = null): base(path, default_value, file)
         {
             this._min = min;
-            this._max = max;  
+            this._max = max;
             V = Extensions.Clamp(V, min, max);
         }
 

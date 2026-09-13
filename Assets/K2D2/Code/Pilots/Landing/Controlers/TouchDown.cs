@@ -16,78 +16,114 @@ namespace K2D2.Landing
     /// apply the wanted speed in the good direction
     public class TouchDown : ExecuteController
     {
-        // Wasn't needed before RCS fine correction - the commented-out logger.LogMessage a few
-        // lines down in the constructor was dead code, never an actual field. Added specifically
-        // so ApplyRCSFineCorrection/ClearRCSFineCorrection below can leave a real log trail (see
-        // their own comments - item 4, Reese couldn't tell if RCS ever engaged).
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.TouchDown");
 
         public bool gravity_compensation;
         public float max_speed = 0;
 
-        public ClampSetting<float> touch_down_max_angle = new("land.touch_down_max_angle", 30,  0, 45);
+        // Atmo/Vacuum profile split (see LandingSettings.cs's class comment) - TouchDown's own 5
+        // tunables get the same treatment: two full copies (atmo/vac, each its own independent
+        // ClampSetting<float> against its own SettingsFile), selected via the pass-through
+        // properties below every existing call site in this class already reads by the same names
+        // (touch_down_max_angle.V, steering_max_angle.V, etc.). Only LandingUI.cs's binding
+        // (SetupFullUI/SetupBasicUI below) needs to reach into `atmo`/`vac` directly instead of
+        // through these properties, since one-time UI binding must not follow the current profile.
+        class TouchDownSettings
+        {
+            public ClampSetting<float> touch_down_max_angle;
 
-        // Closed-loop lateral correction (precision landing): how far off pure retrograde the
-        // burn direction is allowed to tilt, at full strength (i.e. anywhere in Brake, well above
-        // start_touchdown_altitude - see ComputeSteeredDirection's taper). 0 disables steering
-        // entirely. Unlike the arc correction below, this one never touches the vertical
-        // component at all (see checkDirection/ComputeSteeredDirection), so a wide angle here
-        // costs fuel efficiency, not crash safety - raised well past the old 45deg cap so Reese
-        // can test how much cross-track/plane-mismatch error (his target: up to ~35km) this can
-        // absorb on its own before a player genuinely needs to fix their orbital plane by hand.
-        public ClampSetting<float> steering_max_angle = new("land.steering_max_angle", 40, 0, 80);
+            // Closed-loop lateral correction (precision landing): how far off pure retrograde the
+            // burn direction is allowed to tilt, at full strength (anywhere in Brake, well above
+            // start_touchdown_altitude - see ComputeSteeredDirection's taper). 0 disables steering
+            // entirely. Unlike the arc correction below, this one never touches the vertical
+            // component at all, so a wide angle here costs fuel efficiency, not crash safety.
+            public ClampSetting<float> steering_max_angle;
 
-        // Along-track (arc length) correction caps - see ComputeSteeredDirection. Two separate
-        // settings, not one, because the two directions carry very different risk: tilting toward
-        // straight up (extending the arc on an undershoot) only ever ADDS vertical braking
-        // margin, so Reese wants it allowed to go quite far (default 80°, i.e. let it get as
-        // close to pure-vertical as the situation actually calls for). Tilting toward horizontal
-        // (shortening the arc on an overshoot) SPENDS vertical braking margin, so it stays on a
-        // much shorter leash (default 10°). Both are additionally hard-clamped in
-        // ComputeSteeredDirection so neither one can ever rotate PAST straight up or PAST pure
-        // horizontal, no matter how large these settings are set to.
-        public ClampSetting<float> arc_extend_max_angle = new("land.arc_extend_max_angle", 80, 0, 90);
-        public ClampSetting<float> arc_shorten_max_angle = new("land.arc_shorten_max_angle", 10, 0, 45);
+            // Along-track (arc length) correction caps - see ComputeSteeredDirection. Two separate
+            // settings, not one, because the two directions carry very different risk: tilting
+            // toward straight up (extending the arc on an undershoot) only ever ADDS vertical
+            // braking margin, so it's allowed to go quite far (default 80°, close to
+            // pure-vertical). Tilting toward horizontal (shortening the arc on an overshoot)
+            // SPENDS vertical braking margin, so it stays on a much shorter leash (default 10°).
+            // Both are additionally hard-clamped in ComputeSteeredDirection so neither can ever
+            // rotate PAST straight up or PAST pure horizontal, no matter how large these settings
+            // are set to.
+            public ClampSetting<float> arc_extend_max_angle;
+            public ClampSetting<float> arc_shorten_max_angle;
+
+            // How fast the ENGINE THROTTLE ITSELF is allowed to change, in fraction/second (5 = 0
+            // to full in 0.2s). No player-facing slider in either profile - still split per-profile
+            // for consistency, since a future atmospheric descent profile may want a different
+            // ramp rate than vacuum's.
+            public ClampSetting<float> max_throttle_rate_per_sec;
+
+            public TouchDownSettings(SettingsFile file)
+            {
+                touch_down_max_angle = new("land.touch_down_max_angle", 30, 0, 45, file);
+                steering_max_angle = new("land.steering_max_angle", 40, 0, 80, file);
+                arc_extend_max_angle = new("land.arc_extend_max_angle", 80, 0, 90, file);
+                arc_shorten_max_angle = new("land.arc_shorten_max_angle", 10, 0, 45, file);
+                max_throttle_rate_per_sec = new("land.max_throttle_rate_per_sec", 5, 1, 20, file);
+            }
+        }
+
+        TouchDownSettings atmo;
+        TouchDownSettings vac;
+
+        public ClampSetting<float> touch_down_max_angle =>
+            LandingProfile.IsAtmospheric ? atmo.touch_down_max_angle : vac.touch_down_max_angle;
+        public ClampSetting<float> steering_max_angle =>
+            LandingProfile.IsAtmospheric ? atmo.steering_max_angle : vac.steering_max_angle;
+        public ClampSetting<float> arc_extend_max_angle =>
+            LandingProfile.IsAtmospheric ? atmo.arc_extend_max_angle : vac.arc_extend_max_angle;
+        public ClampSetting<float> arc_shorten_max_angle =>
+            LandingProfile.IsAtmospheric ? atmo.arc_shorten_max_angle : vac.arc_shorten_max_angle;
+        public ClampSetting<float> max_throttle_rate_per_sec =>
+            LandingProfile.IsAtmospheric ? atmo.max_throttle_rate_per_sec : vac.max_throttle_rate_per_sec;
+
+        // Full binding (Vacuum panel) - touch_down_max_angle plus the PRECISION LANDING steering/
+        // arc caps, since those only apply to vacuum precision landing today. Called once, ever,
+        // from LandingUI.onInit() against the vac_settings_panel root - see LandingSettings.cs's
+        // class comment for why this can't just go through the touch_down_max_angle/etc.
+        // properties above (those follow the CURRENT profile, which one-time UI binding must not).
+        public void SetupFullUI(VisualElement root)
+        {
+            root.Q<K2Slider>("touch_down_max_angle_vac").Bind(vac.touch_down_max_angle);
+            root.Q<K2Slider>("steering_max_angle_vac").Bind(vac.steering_max_angle);
+            root.Q<K2Slider>("arc_extend_max_angle_vac").Bind(vac.arc_extend_max_angle);
+            root.Q<K2Slider>("arc_shorten_max_angle_vac").Bind(vac.arc_shorten_max_angle);
+        }
+
+        // Reduced binding (Atmo panel) - just touch_down_max_angle, the one general-purpose
+        // tunable of the five that isn't precision-landing-specific. steering/arc caps and
+        // max_throttle_rate_per_sec have no control on either panel.
+        public void SetupBasicUI(VisualElement root)
+        {
+            root.Q<K2Slider>("touch_down_max_angle_atmo").Bind(atmo.touch_down_max_angle);
+        }
 
         // How large the actual along-track distance error (see along_track_error_m below) needs
         // to be before the arc correction is allowed to use its FULL angle cap above. Below this,
-        // the commanded pitch tapers down toward 0 as the error shrinks. Added because
-        // ComputeSteeredDirection used to size the pitch angle off along_cos alone - the cosine of
-        // the angle between "which way the target is" and "which way we're travelling" - which is
-        // just a direction, not a distance: a 600m miss that happens to sit almost dead ahead gives
-        // along_cos ~1, the same as a 20km miss dead ahead, so it commanded nearly the FULL max
-        // angle either way. In-game that meant small, already-in-range misses were getting shoved
-        // way past the target by an overcorrection sized for a miss 10-30x bigger, which then took
-        // another big correction to undo - burning way more dV than the miss ever justified
-        // (Reese: 580 m/s nominal Mun landing ballooning toward 1200 m/s). Scaling the pitch by the
-        // real along-track distance instead - full authority only once the miss actually reaches
-        // this many meters - keeps small errors getting small (i.e. proportional) corrections.
+        // the commanded pitch tapers down toward 0 as the error shrinks. Needed because sizing the
+        // pitch angle off along_cos alone - the cosine of the angle between "which way the target
+        // is" and "which way we're travelling" - only encodes direction, not distance: a small
+        // miss that happens to sit almost dead ahead gives along_cos ~1, the same as a much larger
+        // miss dead ahead, so it would command nearly the full max angle either way, overcorrecting
+        // small, already-in-range misses. Scaling the pitch by the real along-track distance
+        // instead - full authority only once the miss actually reaches this many meters - keeps
+        // small errors getting small (proportional) corrections.
         //
-        // Default raised 2000 -> 5000 after the first real test with this fix landed consistently
-        // SHORT (undershoot - came down before reaching the target). Root cause: the deorbit burn
-        // plus mid-course correction typically still leave a multi-km along-track residual (one
-        // real test log showed ~2.2km remaining with only 4 seconds left before impact) for
-        // TouchDown's own steering to close. At the old 2000m full-scale, that residual was already
-        // inside the taper band for most of the descent, so extend was easing off proportionally
-        // well before it actually had time to finish the correction. 5000m kept a multi-km miss
-        // at full authority through most of Brake, only tapering down once it's actually closed to
-        // a few hundred meters - much closer to the real ~200m precision target.
-        //
-        // Then Reese's next test flipped that finding: turning this DOWN toward the floor made the
-        // target error smaller, turning it UP gave a consistent ~1.5km miss. That's a real tension,
-        // not a contradiction - a single linear threshold can't both (a) taper a small (~600m)
-        // error down enough to avoid the original bang-bang overcorrection this setting exists to
-        // fix, and (b) hold full authority long enough to close a typical multi-km post-deorbit
-        // residual. Rather than keep hunting for a slider value that split that difference, fixed
-        // at 50 (near the old floor) and paired with the parabolic reshaping below on
-        // along_track_magnitude_frac - the curve itself, not just where it caps out, is what's
-        // supposed to keep a 600m error small while still letting a multi-km one ramp up hard.
-        // No longer a player-adjustable ClampSetting - slider removed from the uxml.
+        // Fixed at 50 (rather than a wider player-adjustable range) and paired with the parabolic
+        // reshaping below on along_track_magnitude_frac: a single linear threshold can't both taper
+        // a small error down enough to avoid overcorrection AND hold full authority long enough to
+        // close a typical multi-km post-deorbit residual - the curve shape, not just where it caps
+        // out, is what keeps a small error small while still letting a large one ramp up hard. No
+        // longer a player-adjustable ClampSetting - slider removed from the uxml.
         const float arc_correction_full_scale_m = 50f;
 
         // How fast the commanded correction angle itself is allowed to change, in degrees/second -
-        // see ComputeSteeredDirection's use of it for why (without this, the correction hunted
-        // side to side instead of settling). Not exposed as a tunable setting yet - first pass.
+        // without this the correction hunts side to side instead of settling. Not exposed as a
+        // tunable setting yet - first pass.
         const float max_correction_rate_deg_per_sec = 8f;
         float smoothed_correction_deg = 0;
         float smoothed_arc_deg = 0;
@@ -96,11 +132,11 @@ namespace K2D2.Landing
         // ComputeSteeredDirection - captured here so ApplyRCSFineCorrection (RCS fine correction,
         // see its own comment) can reuse it instead of recomputing the same thing a second time.
         // This is the CROSS-TRACK-ONLY component of the direction toward the target (perpendicular
-        // to the direction of travel), not the raw direction toward the target - per Reese, RCS's
-        // job is specifically the side-to-side miss, not the along-track (arc) miss the main
-        // engine's own extend/shorten correction already handles; pushing toward the raw target
-        // direction would have RCS also fighting along-track, duplicating/fighting the engine's
-        // own job there. See cross_track_error_m below for the matching scalar distance.
+        // to the direction of travel), not the raw direction toward the target - RCS's job is
+        // specifically the side-to-side miss, not the along-track (arc) miss the main engine's own
+        // extend/shorten correction already handles; pushing toward the raw target direction would
+        // have RCS also fighting along-track, duplicating/fighting the engine's own job there. See
+        // cross_track_error_m below for the matching scalar distance.
         // Reset to zero at the top of ComputeSteeredDirection and only set once it's actually
         // computed, so a stale value from a previous tick can't leak through one of that method's
         // several early-return ("nothing to steer" / degenerate) cases.
@@ -109,11 +145,11 @@ namespace K2D2.Landing
         // Cross-track (side-to-side) component of the miss, in meters - the part of the total
         // target_error_m that's perpendicular to the vessel's direction of travel, split out from
         // the along-track (ahead/behind) component the arc correction handles. RCSHandlingHeading
-        // and the RCS growth-tracking bailout gate on THIS, not the raw total target_error_m -
-        // per Reese, a big total miss that's mostly along-track (which the engine's own arc
-        // correction is already working on) shouldn't hold RCS back from fixing whatever
-        // side-to-side component already exists in parallel. Same reset discipline as
-        // steered_target_horiz_dir above - 0 until ComputeSteeredDirection actually computes it.
+        // and the RCS growth-tracking bailout gate on THIS, not the raw total target_error_m - a
+        // big total miss that's mostly along-track (which the engine's own arc correction is
+        // already working on) shouldn't hold RCS back from fixing whatever side-to-side component
+        // already exists in parallel. Same reset discipline as steered_target_horiz_dir above - 0
+        // until ComputeSteeredDirection actually computes it.
         double cross_track_error_m = 0;
 
         // Along-track (ahead/behind) component of the miss, in meters - the part of the total
@@ -126,22 +162,20 @@ namespace K2D2.Landing
         double along_track_error_m = 0;
 
         // Debug-only snapshot of the extend correction's vertical-speed safety gate (see its own
-        // comment in ComputeSteeredDirection) - exposed in the info table so it can actually be
-        // watched live on the next Minmus test instead of having to pull the log afterward.
+        // comment in ComputeSteeredDirection) - exposed in the info table so it can be watched
+        // live during a flight instead of having to pull the log afterward.
         float debug_vertical_speed_up = 0;
         float debug_descent_margin_factor = 1;
-        // Same idea, for the along-track proportional-scaling fix above - lets Reese watch on the
-        // next test whether small misses are actually getting small corrections now.
+        // Same idea, for the along-track proportional-scaling fix above - lets a player watch
+        // during a flight whether small misses are actually getting small corrections.
         float debug_along_track_magnitude_frac = 0;
 
-        // How fast the ENGINE THROTTLE ITSELF is allowed to change, in fraction/second (5 = 0 to
-        // full in 0.2s). compute_Throttle() below recomputes wanted_throttle fresh every frame
-        // from delta_speed, and every time the Pause<->Brake cycle (see LandingPilot.Update())
-        // restarts a burn, that jumps straight from 0 to whatever's needed - looked like the
-        // throttle "blipping to 100%" in Reese's test. This doesn't touch how much total dV gets
-        // used, just smooths the ramp - fast enough that it shouldn't cost any real stopping
+        // compute_Throttle() below recomputes wanted_throttle fresh every frame from delta_speed,
+        // and every time the Pause<->Brake cycle (see LandingPilot.Update()) restarts a burn, that
+        // jumps straight from 0 to whatever's needed, which reads as the throttle blipping to 100%.
+        // max_throttle_rate_per_sec (see TouchDownSettings above) doesn't touch how much total dV
+        // gets used, just smooths the ramp - fast enough that it shouldn't cost any real stopping
         // distance in an actual emergency, just the sudden all-or-nothing snap.
-        public ClampSetting<float> max_throttle_rate_per_sec = new("land.max_throttle_rate_per_sec", 5, 1, 20);
         float smoothed_throttle = 0;
 
         KSPVessel current_vessel;
@@ -159,12 +193,33 @@ namespace K2D2.Landing
         // isn't one today, but keeping the null-check cheap insurance rather than assuming).
         LandingPilot landing;
 
-        public TouchDown(LandingPilot landing = null)
+        public TouchDown(LandingPilot landing, SettingsFile atmo_file, SettingsFile vac_file)
         {
             this.landing = landing;
+            atmo = new TouchDownSettings(atmo_file);
+            vac = new TouchDownSettings(vac_file);
             sub_contollers.Add(burn_dV);
             // logger.LogMessage("LandingController !");
             current_vessel = K2D2_Plugin.Instance.current_vessel;
+        }
+
+        // Not currently called anywhere - Brake/TouchDown deliberately never call this, since
+        // they're meant to feel like one continuous burn sharing state across that transition (see
+        // LandingPilot.Update()'s Mode.Brake comment). Kept as a real, working reset path for any
+        // future phase that hands off to TouchDown partway through a descent at a different
+        // altitude/velocity each time, needing a real reset rather than carrying over stale
+        // smoothed/RCS state.
+        public override void Start()
+        {
+            finished = false;
+            smoothed_throttle = 0;
+            smoothed_arc_deg = 0;
+            smoothed_correction_deg = 0;
+            steered_target_horiz_dir = Vector3d.zero;
+            cross_track_error_m = 0;
+            along_track_error_m = 0;
+            ResetRcsGrowthTracking();
+            ClearRCSFineCorrection();
         }
 
         public void computeGravityRatio()
@@ -248,7 +303,7 @@ namespace K2D2.Landing
             // instead of just killing velocity in whatever direction it happens to be pointing -
             // see ComputeSteeredDirection's own comment for the reasoning and the math. Runs during
             // both Brake and TouchDown (this class is the shared executor for both, see
-            // LandingPilot.setMode) - deliberately so, since Brake (high altitude/speed) is where
+            // LandingPilot.setMode) deliberately, since Brake (high altitude/speed) is where
             // there's actually enough room to close a large miss; the taper inside
             // ComputeSteeredDirection is what keeps TouchDown itself safely close to pure vertical.
             Vector3d aim_dir = retro_dir.vector;
@@ -320,28 +375,25 @@ namespace K2D2.Landing
         //  - ALONG-TRACK (short/long, i.e. dead ahead or behind): a heading rotation can't fix
         //    this - if the target is nearly dead ahead or dead behind, the angle between "where
         //    we're heading" and "where the target is" is already near 0 or 180, so the heading
-        //    correction naturally computes almost nothing to do. This is exactly what showed up
-        //    in-game as "swayed side to side, not much correction was done" on a 20km+ miss -
-        //    most of that miss was along-track, and the old code literally had no mechanism for
-        //    it. Fixed the way Reese described it: tilt the burn's VERTICAL/HORIZONTAL split.
-        //    Tilting more toward straight up leaves more of the current horizontal speed
-        //    uncancelled, so the vessel coasts farther before it has to come down - extends the
-        //    arc, for undershooting. Tilting more toward horizontal fights horizontal speed
-        //    harder and vertical fall speed less, so it comes down sooner - shortens the arc, for
-        //    overshooting.
+        //    correction naturally computes almost nothing to do, even on a large along-track miss.
+        //    Fixed instead by tilting the burn's VERTICAL/HORIZONTAL split: tilting more toward
+        //    straight up leaves more of the current horizontal speed uncancelled, so the vessel
+        //    coasts farther before it has to come down - extends the arc, for undershooting.
+        //    Tilting more toward horizontal fights horizontal speed harder and vertical fall speed
+        //    less, so it comes down sooner - shortens the arc, for overshooting.
         //
         // Both are clamped by their own max-angle setting, both of those caps are scaled down by
         // altitude the same way (full strength throughout Brake, tapering to zero across
         // TouchDown so the final approach stays close to pure vertical retrograde), and both are
-        // rate-limited per frame (see max_correction_rate_deg_per_sec) for the same reason: a
-        // value recomputed fresh and snapped to every frame chases noise in
-        // predicted_landing_lat/lon instead of settling.
+        // rate-limited per frame (see max_correction_rate_deg_per_sec) so a value recomputed fresh
+        // and snapped to every frame doesn't chase noise in predicted_landing_lat/lon instead of
+        // settling.
         //
-        // The "shorten the arc" (overshoot, more-horizontal) direction has a much tighter cap
-        // than "extend" (see arc_shorten_max_angle / arc_extend_max_angle above) - extending only
-        // ever ADDS vertical braking margin, shortening SPENDS it. Both are also hard-clamped
-        // below so neither can ever rotate past straight up or past pure horizontal, regardless
-        // of the setting value. "Land even if it's off, not crash chasing precision" per Reese.
+        // The "shorten the arc" (overshoot, more-horizontal) direction has a much tighter cap than
+        // "extend" (see arc_shorten_max_angle / arc_extend_max_angle above) - extending only ever
+        // ADDS vertical braking margin, shortening SPENDS it. Both are also hard-clamped below so
+        // neither can ever rotate past straight up or past pure horizontal, regardless of the
+        // setting value - landing off-target beats crashing while chasing precision.
         //
         // Target direction is derived with a flat-Earth small-angle approximation (fine at the
         // scales here - tens of km on bodies with radii in the hundreds of km) directly in the
@@ -408,7 +460,7 @@ namespace K2D2.Landing
             // component of the total scalar miss (landing.target_error_m), same decomposition
             // idea as cross_track_error_m just below. This is what actually sizes the pitch
             // correction below now - see arc_correction_full_scale_m's own comment for why
-            // along_cos alone (a direction, not a distance) was the bug.
+            // along_cos alone (a direction, not a distance) was insufficient.
             along_track_error_m = landing.target_error_m * along_cos;
 
             // Cross-track (side-to-side) split-out - see cross_track_error_m/steered_target_horiz_dir's
@@ -443,19 +495,16 @@ namespace K2D2.Landing
             float max_pitch_up_deg = (float)Math.Min(arc_extend_max_angle.V * taper, angle_from_up);
             float max_pitch_horizontal_deg = (float)Math.Min(arc_shorten_max_angle.V * taper, angle_from_horiz);
 
-            // Reese's Minmus overshoots: "right overhead" then "goes up again" right after Brake
-            // starts. Root cause traced to checkDirection() above - it's a pre-existing guard (not
-            // touched this session) that goes fully idle (SetThrottle(0), no steering at all)
-            // the instant the vessel's real velocity picks up ANY upward component, on the
-            // assumption that just means "still climbing toward apoapsis before the natural fall
-            // starts, coast and wait". That's a fine assumption for a plain retrograde burn, but
-            // this extend correction actively commands thrust tilted toward straight up - on a
-            // near-zero-gravity body like Minmus there's almost nothing fighting that, so a
-            // sustained high-throttle burn pitched up doesn't just slow the fall like it would on
-            // Mun, it can push real vertical speed past zero into an actual climb. The instant it
-            // does, checkDirection() kills the engine entirely and the vessel coasts - now with no
-            // thrust and no steering - on whatever velocity it had at that moment, sailing over the
-            // target while it "goes up", matching exactly what was described.
+            // Extend safety gate: checkDirection() above goes fully idle (SetThrottle(0), no
+            // steering at all) the instant the vessel's real velocity picks up ANY upward
+            // component, on the assumption that just means "still climbing toward apoapsis before
+            // the natural fall starts, coast and wait." That's a fine assumption for a plain
+            // retrograde burn, but this extend correction actively commands thrust tilted toward
+            // straight up - on a near-zero-gravity body there's almost nothing fighting that, so a
+            // sustained high-throttle burn pitched up doesn't just slow the fall like it would on a
+            // higher-gravity body, it can push real vertical speed past zero into an actual climb.
+            // The instant it does, checkDirection() kills the engine entirely and the vessel coasts
+            // with no thrust and no steering, sailing past the target while it climbs.
             //
             // The geometric clamp above (angle_from_up) already stops the AIM direction from ever
             // pointing past straight up, but it says nothing about the vessel's ACTUAL vertical
@@ -466,11 +515,8 @@ namespace K2D2.Landing
             // everything to stop it.
             // Margin kept deliberately small - this only needs to catch the last stretch before
             // vertical speed actually crosses zero, not suppress extend through an entire gentle
-            // low-gravity descent (Minmus can sit at a low sink rate for a long time by nature,
-            // and that's exactly the undershoot case extend is supposed to help with). First-pass
-            // number, not tuned against a real flight yet - if extend still feels like it's barely
-            // doing anything on Minmus after this, this margin is too generous and should come down
-            // further; if it's still climbing, it needs to go up instead.
+            // low-gravity descent (a low-gravity body can sit at a low sink rate for a long time by
+            // nature, and that's exactly the undershoot case extend is supposed to help with).
             double vertical_speed_up = -Vector3d.Dot(retro_dir_vec.normalized, up_vec) * current_speed;
             const float vertical_margin_speed = 1.5f; // m/s of descent rate to fully trust the extend correction at
             float descent_margin_factor = Mathf.Clamp01((float)(-vertical_speed_up) / vertical_margin_speed);
@@ -484,14 +530,12 @@ namespace K2D2.Landing
             // own comment. Full authority (fraction 1) once the real distance reaches that
             // setting; below it, tapers down toward 0 as the miss shrinks toward 0.
             //
-            // Squared (parabolic), not linear - per Reese. A straight-line taper gives a
-            // half-scale error (e.g. 25m against a 50m full-scale) half the pitch authority, which
-            // is still a lot more correction than a 25m miss actually needs. Squaring the
-            // normalized ratio pulls the whole curve down below the line everywhere except the two
-            // ends (0 stays 0, full-scale still reaches 1), so small errors get proportionally
-            // gentler corrections than before and only the errors actually near full-scale get
-            // close to full authority - a closer match to "small miss, small correction" than the
-            // straight line was.
+            // Squared (parabolic), not linear: a straight-line taper gives a half-scale error
+            // (e.g. 25m against a 50m full-scale) half the pitch authority, still a lot more
+            // correction than a 25m miss actually needs. Squaring the normalized ratio pulls the
+            // whole curve down below the line everywhere except the two ends (0 stays 0,
+            // full-scale still reaches 1), so small errors get proportionally gentler corrections
+            // and only errors actually near full-scale get close to full authority.
             double along_track_norm = Mathf.Clamp01(
                 (float)(Math.Abs(along_track_error_m) / arc_correction_full_scale_m));
             double along_track_magnitude_frac = along_track_norm * along_track_norm;
@@ -543,37 +587,33 @@ namespace K2D2.Landing
 
             // Once RCS is handling the heading correction (see RCSHandlingHeading/
             // ApplyRCSFineCorrection below), the main engine yields that job entirely and the aim
-            // direction goes back to pure arc-corrected (no left/right tilt) - per Reese, tilting
-            // the BURN itself to fix heading is exactly what was burning extra deltaV on top of an
-            // already deltaV-heavy precision landing, and RCS can nudge sideways far more cheaply.
-            // The arc (extend/shorten) correction above is untouched either way - Reese still
-            // wants the engine doing that part.
+            // direction goes back to pure arc-corrected (no left/right tilt) - tilting the BURN
+            // itself to fix heading burns extra deltaV that RCS can nudge sideways far more
+            // cheaply. The arc (extend/shorten) correction above is untouched either way - the
+            // engine still does that part.
             //
-            // SNAPPED straight to 0 here, not eased through the usual rate limiter below - first
-            // pass let it relax out at the normal smoothed pace on the theory that
-            // checkDirection's "wait for vessel rotation" gate would notice the mismatch and cut
-            // the throttle on its own, but in-game testing showed that never actually happened:
-            // the fade was gradual enough that aim_dir never got far enough ahead of the vessel's
-            // actual facing to cross touch_down_max_angle, so the engine just kept burning through
-            // the whole transition, still partly tilted, exactly what this was supposed to avoid.
-            // Snapping instead gives checkDirection an immediate, unmistakable jump to react to -
-            // aim_dir drops the entire heading tilt in one frame, which reliably exceeds
-            // touch_down_max_angle against the vessel's still-tilted actual facing, so the
-            // throttle actually cuts to 0 and stays there until SAS finishes rotating back to the
-            // untilted (arc-only) direction, per Reese.
+            // SNAPPED straight to 0 here, not eased through the usual rate limiter below: letting
+            // it relax out at the normal smoothed pace relies on checkDirection's "wait for
+            // vessel rotation" gate noticing the mismatch and cutting the throttle on its own, but
+            // the fade is gradual enough that aim_dir never gets far enough ahead of the vessel's
+            // actual facing to cross touch_down_max_angle, so the engine keeps burning through the
+            // whole transition, still partly tilted. Snapping instead gives checkDirection an
+            // immediate, unmistakable jump to react to - aim_dir drops the entire heading tilt in
+            // one frame, which reliably exceeds touch_down_max_angle against the vessel's
+            // still-tilted actual facing, so the throttle actually cuts to 0 and stays there until
+            // SAS finishes rotating back to the untilted (arc-only) direction.
             bool rcsHandlingHeading = RCSHandlingHeading();
             if (rcsHandlingHeading)
                 correction_deg = 0;
 
             // Rate-limit how fast the COMMANDED angle itself is allowed to change, instead of
-            // snapping straight to a freshly-recomputed value every frame. Confirmed in-game
-            // without this: the correction visibly swayed side to side instead of settling on a
-            // steady tilt - target_horiz_dir shifts a little every frame as predicted_landing_lat/
-            // lon updates (partly *because* of the correction burn itself), which can flip which
-            // way "closer to target" points tick to tick, and re-aiming instantly every frame
-            // chases that noise instead of converging on it. Bypassed above (straight to 0, not
-            // rate-limited) specifically for the "RCS just took over heading" case - see its own
-            // comment for why.
+            // snapping straight to a freshly-recomputed value every frame. Without this the
+            // correction visibly sways side to side instead of settling - target_horiz_dir shifts
+            // a little every frame as predicted_landing_lat/lon updates (partly because of the
+            // correction burn itself), which can flip which way "closer to target" points tick to
+            // tick, and re-aiming instantly every frame chases that noise instead of converging on
+            // it. Bypassed above (straight to 0, not rate-limited) specifically for the "RCS just
+            // took over heading" case - see its own comment for why.
             if (rcsHandlingHeading)
             {
                 smoothed_correction_deg = 0;
@@ -596,46 +636,36 @@ namespace K2D2.Landing
             return (vertical2 + rotated_horiz_dir2 * horiz_mag2).normalized;
         }
 
-        // RCS fine correction (item 6). Once target_error_m has closed to within
+        // RCS fine correction. Once target_error_m has closed to within
         // rcs_fine_correction_threshold_m, this drives the vessel's RCS translation inputs
         // (current_vessel.X/Y/Z) directly toward the target, taking over the heading-correction
         // job from the main engine entirely (see RCSHandlingHeading/ComputeSteeredDirection's own
         // use of it) - the engine keeps braking and keeps doing the arc extend/shorten correction
-        // regardless, only the left/right heading tilt hands off to RCS. Originally this only
-        // supplemented the engine's own heading correction rather than replacing it, but in-game
-        // testing showed that design was a big part of why precision landing was burning so much
-        // more deltaV than a normal landing: tilting the actual braking burn sideways to fix
-        // heading is an inherently wasteful way to move sideways compared to RCS doing it
-        // directly, and running both at once didn't save anything since the engine was still
-        // paying that cost regardless of how little RCS also nudged. Unlike the engine's
+        // regardless, only the left/right heading tilt hands off to RCS. Tilting the actual braking
+        // burn sideways to fix heading is an inherently wasteful way to move sideways compared to
+        // RCS doing it directly, and running both at once wouldn't save anything since the engine
+        // would still pay that cost regardless of how little RCS also nudged. Unlike the engine's
         // correction, RCS doesn't need to reorient the vessel at all to act - it fires
-        // sideways/vertically relative to whatever way the ship is already pointed - so it
-        // doesn't have the turn-rate lag that was making the "fine" correction overshoot and make
+        // sideways/vertically relative to whatever way the ship is already pointed - so it doesn't
+        // have the turn-rate lag that would otherwise make a "fine" correction overshoot and make
         // target_error_m bigger instead of smaller.
         //
         // The world-to-vessel-local transform here (GetControlOwner().transform.coordinateSystem.
-        // ToLocalVector) is the same one Docking's FinalApproach.RCKillSpeed() already uses
-        // successfully to drive current_vessel.X/Y/Z from a world-space vector - reused as-is
-        // rather than guessed at fresh, since that's the only place in this codebase this
-        // particular transform has actually been proven against a real flight. Still new and
-        // untested for THIS use (landing, not docking) - first pass, needs a real flight before
-        // being trusted like the rest of precision landing does.
+        // ToLocalVector) is the same one Docking's FinalApproach.RCKillSpeed() uses to drive
+        // current_vessel.X/Y/Z from a world-space vector.
         // Tracks whether RCS was active last frame (for logging engage/disengage transitions -
         // see ApplyRCSFineCorrection/ClearRCSFineCorrection below) and throttles the
         // continuously-active log line so it doesn't spam once per frame.
         bool rcs_fine_active = false;
         int rcs_log_counter = 0;
 
-        // "RCS can't keep up" bailout - added after Reese's own test log showed RCS holding a
-        // strong, consistent push for over a minute (gain never dropped much below 0.7, with
-        // rcs_fine_correction_power maxed out) while the miss climbed the whole time anyway
-        // (~180m -> 340m+). That's not a bug in the correction math, it's this particular
-        // vessel's RCS just not having enough authority to win that fight once the engine's no
-        // longer helping with heading - and there's no reason to keep grinding at full RCS with
-        // nothing to show for it until the miss happens to cross the FULL threshold (a much
-        // bigger number) before handing back to the engine. Snapshot-based (samples error every
-        // RcsSnapshotIntervalSeconds rather than frame to frame) so ordinary per-frame jitter in
-        // target_error_m doesn't get mistaken for a real trend.
+        // "RCS can't keep up" bailout. If this particular vessel's RCS doesn't have enough
+        // authority to win the heading fight once the engine's no longer helping, the miss can
+        // grow steadily even with RCS holding full push - there's no reason to keep grinding at
+        // full RCS with nothing to show for it until the miss happens to cross the FULL threshold
+        // (a much bigger number) before handing back to the engine. Snapshot-based (samples error
+        // every RcsSnapshotIntervalSeconds rather than frame to frame) so ordinary per-frame
+        // jitter in target_error_m doesn't get mistaken for a real trend.
         float rcs_error_snapshot = -1f;
         float rcs_error_snapshot_timer = 0f;
         float rcs_growing_time = 0f;
@@ -647,23 +677,21 @@ namespace K2D2.Landing
         const float RcsSnapshotIntervalSeconds = 0.5f;
         const float RcsGrowingBailoutSeconds = 2.5f;
         // Minimum growth between consecutive snapshots to count toward the "growing" streak at
-        // all, in meters. Reese's own logs from a real landing showed this bailout firing 70
-        // times across two landings and clearing itself again within TENS OF MILLISECONDS almost
-        // every time ("I only saw the RCS fire for a split second... it never actually held on"),
-        // instead of the rare last-resort catch it was meant to be. Without a noise floor, any
-        // sample-to-sample increase at all - including ordinary jitter in cross_track_error_m's
-        // trig-based estimate, or a real but tiny back-and-forth wobble as RCS corrects - counted
-        // as "growing" and could accumulate toward the bailout. Requiring a real, meaningful
-        // increase per sample (not just >0) filters that noise out up front.
+        // all, in meters. Without a noise floor, any sample-to-sample increase at all - including
+        // ordinary jitter in cross_track_error_m's trig-based estimate, or a real but tiny
+        // back-and-forth wobble as RCS corrects - counts as "growing" and can accumulate toward
+        // the bailout, firing far too readily and clearing itself again within tens of
+        // milliseconds instead of acting as the rare last-resort catch it's meant to be.
+        // Requiring a real, meaningful increase per sample (not just >0) filters that noise out.
         const float RcsGrowthNoiseFloorM = 5f;
         // Once bailed out, stay handed off to the engine for AT LEAST this long, regardless of how
-        // quickly cross_track_error_m happens to dip back under the recovery cutoff below - see the
-        // same log evidence above. The old code re-checked recovery every single frame with no
-        // minimum hold at all, so a bailout triggered while already close to (or under) the
-        // recovery cutoff - which was most of them, since eligibility only requires being under the
-        // FULL threshold - cleared again on literally the next frame, handing heading back to RCS
-        // before the engine had done anything useful with it. A real minimum hold means a bailout
-        // actually accomplishes something instead of being a one-frame flicker.
+        // quickly cross_track_error_m happens to dip back under the recovery cutoff below.
+        // Re-checking recovery every single frame with no minimum hold at all means a bailout
+        // triggered while already close to (or under) the recovery cutoff - which is most of them,
+        // since eligibility only requires being under the FULL threshold - clears again on
+        // literally the next frame, handing heading back to RCS before the engine's done anything
+        // useful with it. A real minimum hold means a bailout actually accomplishes something
+        // instead of being a one-frame flicker.
         const float RcsBailoutMinHoldSeconds = 3f;
         // Once bailed out (and the minimum hold above has elapsed), stay with the engine until the
         // miss has shrunk to comfortably less than the threshold that re-admits RCS - not just
@@ -748,10 +776,10 @@ namespace K2D2.Landing
         // now" - shared by ComputeSteeredDirection (to zero out the engine's own heading tilt
         // while this is true) and ApplyRCSFineCorrection below (to know it should be pushing).
         // Once target_error_m grows back past the threshold, this goes false again and the engine
-        // resumes heading correction on its own - per Reese, exactly as it did before RCS existed.
-        // Also false while rcs_bailed_out is latched (see UpdateRcsGrowthTracking above) - the
-        // engine takes heading back early if RCS clearly isn't winning, not just once the miss
-        // grows all the way past the raw threshold.
+        // resumes heading correction on its own, exactly as it did before RCS existed. Also false
+        // while rcs_bailed_out is latched (see UpdateRcsGrowthTracking above) - the engine takes
+        // heading back early if RCS clearly isn't winning, not just once the miss grows all the
+        // way past the raw threshold.
         bool RCSHandlingHeading()
         {
             if (landing == null || !landing.settings.use_rcs_fine_correction.V)
@@ -781,15 +809,12 @@ namespace K2D2.Landing
 
             // Full strength across most of the active band, only tapering down in the last
             // rcsTaperFraction of it right near target_error_m = 0 (to avoid overshoot/oscillation
-            // chasing the last couple meters, the original reason this fades at all). This USED TO
-            // fade linearly across the WHOLE band (strength = 1 - error/threshold) - meaning the
-            // instant a miss grew back toward the threshold, the code commanded LESS RCS push, not
-            // more, right when more was actually needed. That's what Reese's own test log caught:
-            // RCS held on for over a minute while the miss climbed from ~180m to 340m+, because the
-            // fade curve was quietly throttling itself down the whole time the miss grew. Full
-            // strength now applies the moment RCS takes over and stays there unless the miss is
-            // already most of the way to zero - see the separate growth-tracking bailout above for
-            // the backstop if even full strength still isn't enough to hold the line.
+            // chasing the last couple meters). Fading linearly across the WHOLE band instead
+            // (strength = 1 - error/threshold) would mean the instant a miss grows back toward the
+            // threshold, less RCS push gets commanded, not more, right when more is actually
+            // needed - full strength applies the moment RCS takes over and stays there unless the
+            // miss is already most of the way to zero, with the separate growth-tracking bailout
+            // above as the backstop if even full strength still isn't enough to hold the line.
             const float rcsTaperFraction = 0.15f;
             float normalizedError = Mathf.Clamp01((float)(error / threshold));
             float strength = normalizedError < rcsTaperFraction
@@ -801,22 +826,18 @@ namespace K2D2.Landing
 
             var control_component = current_vessel.VesselComponent.GetControlOwner();
             // ToLocalVector returns a plain Vector3d here (not the coordinate-tagged Vector
-            // wrapper that Reframe/etc. use) - confirmed by the CS0029 this fixed, same as
-            // FinalApproach.cs's local_speed (a plain Vector3) getting assigned straight from
-            // this same ToLocalVector/TransformVector chain.
+            // wrapper that Reframe/etc. use), same as FinalApproach.cs's local_speed (a plain
+            // Vector3) getting assigned straight from this same ToLocalVector/TransformVector chain.
             Vector3d local_dir = control_component.transform.coordinateSystem.ToLocalVector(world_dir);
 
             current_vessel.X = (float)local_dir.x * gain;
             current_vessel.Y = (float)local_dir.y * gain;
             current_vessel.Z = (float)local_dir.z * gain;
 
-            // Diagnostic - added because this feature previously had zero persistent log output
-            // at all (only a live debug-UI row, gated on debug_mode and only visible while
-            // actively looking at the Landing tab). Reese couldn't tell whether RCS ever actually
-            // engaged during his brake-burn test (item 4). Logs immediately on the OFF->ON
-            // transition (so a brief engagement isn't missed) and then every ~60 frames
-            // (~1s) while it stays continuously active, rather than every single frame - same
-            // frame-count throttle idea as ResizeManipulator's existing pointer-move logging.
+            // Diagnostic - logs immediately on the OFF->ON transition (so a brief engagement isn't
+            // missed) and then every ~60 frames (~1s) while it stays continuously active, rather
+            // than every single frame - same frame-count throttle idea as ResizeManipulator's
+            // existing pointer-move logging.
             bool justEngaged = !rcs_fine_active;
             rcs_fine_active = true;
             rcs_log_counter++;
@@ -919,10 +940,10 @@ namespace K2D2.Landing
                     addRow("Arc Correction", $"{smoothed_arc_deg:n2}°");
                     addRow("Along-Track Error", $"{along_track_error_m:n1} m");
                     addRow("Arc Authority", $"{debug_along_track_magnitude_frac:n2}");
-                    // Watch this pair on Minmus specifically - Vertical Speed should stay negative
-                    // (descending) through Brake; if it's creeping toward/past 0, Extend Margin
-                    // should already be sliding toward 0 well before it gets there. If Vertical
-                    // Speed goes positive anyway, the margin (currently 1.5 m/s) is too small.
+                    // Vertical Speed should stay negative (descending) through Brake; if it's
+                    // creeping toward/past 0, Extend Margin should already be sliding toward 0
+                    // well before it gets there. If Vertical Speed goes positive anyway, the
+                    // margin (currently 1.5 m/s) is too small.
                     addRow("Vertical Speed (up+)", $"{debug_vertical_speed_up:n2} m/s");
                     addRow("Extend Margin", $"{debug_descent_margin_factor:n2}");
 
@@ -944,11 +965,11 @@ namespace K2D2.Landing
             // need to burn ?
 
             string txt = $" Max speed : {max_speed:n2} !!";
-            txt += $"\n delta speed  : {delta_speed:n2}  m/s";    
+            txt += $"\n delta speed  : {delta_speed:n2}  m/s";
 
             var level = delta_speed > 0 ? StatusLine.Level.Warning : StatusLine.Level.Normal;
             st.Status(txt, level );
-       
+
             if (burn_dV.burned_dV > 0)
                 st.Console($"dV consumed : {burn_dV.burned_dV:n2} m/s");
 
@@ -957,7 +978,7 @@ namespace K2D2.Landing
                 if (gravity_compensation)
                 {
                     st.Console($"gravity : {gravity:n2}");
-                    st.Console($"gravity_direction_factor : {gravity_direction_factor:n2}");   
+                    st.Console($"gravity_direction_factor : {gravity_direction_factor:n2}");
                 }
 
                 st.Console($"wanted_throttle : {wanted_throttle:n2}");
@@ -967,4 +988,3 @@ namespace K2D2.Landing
 
     }
 }
-

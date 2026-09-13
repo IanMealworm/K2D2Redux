@@ -9,34 +9,24 @@ namespace K2D2.UI
     /// <summary>
     /// A manipulator that lets a small drag-handle element resize a separate window element's
     /// HEIGHT ONLY, following the same pointer-capture pattern as DragManipulator (which moves a
-    /// window via transform.position). Reese asked for a stock-style bottom-right drag handle plus
-    /// a scrollable content area so the window doesn't outgrow the screen as more Advanced/
-    /// Experimental content gets added, then asked to restrict it to height-only once he saw it
-    /// working - width stays whatever K2D2_Window.uxml sets it to. The UXML side reuses Redux's own
-    /// stock ".window-resize-handle"/".window-resize-handle-icon" CSS classes and resize-handle.png
-    /// asset (KerbalUI.uss), since Redux ships that styling but no working C# behavior anywhere in
-    /// the package - confirmed via grep across uitkforksp2.controls before writing this.
+    /// window via transform.position). Width stays whatever K2D2_Window.uxml sets it to. The UXML
+    /// side reuses Redux's own stock ".window-resize-handle"/".window-resize-handle-icon" CSS
+    /// classes and resize-handle.png asset (KerbalUI.uss), since Redux ships that styling but no
+    /// working C# behavior for it anywhere in the package.
     ///
-    /// Two real bugs were found and fixed via Reese's Ksp2-2.log (grepped for "ResizeManipulator:"):
+    /// Two game-embedding quirks this works around:
     ///
-    /// 1. Releasing the mouse button over this small handle does not reliably deliver EITHER
-    ///    PointerUpEvent or PointerCaptureOutEvent back to it in this game's embedding - confirmed
-    ///    by a log line showing hasCapture had already flipped to False with neither event ever
-    ///    having printed for that gesture. That left the manipulator with no event to tell it the
-    ///    drag had ended, so it kept treating later mouse moves as more resizing. Fixed by Tick()
-    ///    (called every frame from K2D2Window.Update()), which polls the real OS mouse button state
-    ///    directly instead of trusting the event pipeline, ending the gesture within a frame of the
-    ///    button actually coming up regardless of what events do or don't arrive.
+    /// 1. Releasing the mouse button over this small handle does not reliably deliver either
+    ///    PointerUpEvent or PointerCaptureOutEvent back to it, leaving the manipulator with no
+    ///    event to signal that the drag ended - it would otherwise keep treating later mouse moves
+    ///    as more resizing. Tick() (called every frame from K2D2Window.Update()) works around this
+    ///    by polling the real OS mouse button state directly, ending the gesture within a frame of
+    ///    the button coming up regardless of what events do or don't arrive.
     ///
-    /// 2. Once #1 was fixed, the log immediately surfaced a second bug that #1's fix had been
-    ///    masking: every time a resize gesture ended, saving the chosen size threw
-    ///    "InvalidCastException: UnityEngine.Vector2 not implemented" from
-    ///    KTools.SettingsFile.Set[T] - that generic method only special-cases string/bool/int/
-    ///    float/double/Color/Vector3, not Vector2 (confirmed by reading SettingsFile.cs directly).
-    ///    Every single resize-end was silently throwing and never actually persisting. Now that
-    ///    this only tracks height, it persists as a plain Setting&lt;float&gt; instead, which
-    ///    SettingsFile already supports natively - this fixes the crash and matches the new
-    ///    height-only scope at the same time.
+    /// 2. KTools.SettingsFile.Set[T] only special-cases string/bool/int/float/double/Color/Vector3,
+    ///    not Vector2, so persisting a Vector2 size threw InvalidCastException on every resize end.
+    ///    Since this only tracks height, it persists as a plain Setting&lt;float&gt; instead, which
+    ///    SettingsFile already supports natively.
     /// </summary>
     public class ResizeManipulator : IManipulator
     {
@@ -56,9 +46,8 @@ namespace K2D2.UI
         /// </summary>
         public bool IsEnabled { get; set; } = true;
 
-        // Sensible placeholder bounds - Reese should tune these once he can see it in-game. Below
-        // MinHeight the window would start clipping its own header/toolbar; above MaxHeight it
-        // stops being a compact overlay panel.
+        // Placeholder bounds, tunable to taste. Below MinHeight the window would start clipping
+        // its own header/toolbar; above MaxHeight it stops being a compact overlay panel.
         public float MinHeight { get; set; } = 250;
         public float MaxHeight { get; set; } = 900;
 
@@ -80,11 +69,10 @@ namespace K2D2.UI
         // events; DragManipulator doesn't check this either, but it's cheap insurance here).
         private int _pointerId = -1;
 
-        // Debug instrumentation kept from the last round's investigation - cheap, and useful again
-        // if height-only resizing surfaces some new edge case tomorrow. Every line is prefixed
-        // "ResizeManipulator:" so it's easy to filter for in whatever log Reese is already reading
-        // L.Log output from. PointerMove is throttled (every 30th call while dragging) since it
-        // fires every frame and would otherwise flood the log.
+        // Debug instrumentation, cheap to keep in case resizing surfaces a new edge case. Every
+        // line is prefixed "ResizeManipulator:" so it's easy to filter for in the log. PointerMove
+        // is throttled (every 30th call while dragging) since it fires every frame and would
+        // otherwise flood the log.
         private int _moveLogCount;
 
         /// <summary>
@@ -101,9 +89,9 @@ namespace K2D2.UI
                 _target.RegisterCallback<PointerMoveEvent>(OnPointerMove);
                 _target.RegisterCallback<PointerUpEvent>(OnPointerUp);
 
-                // Safety net for when PointerCaptureOutEvent DOES fire (it doesn't always, per the
-                // class doc comment above, which is why Tick() exists too) - ending the gesture
-                // here as well costs nothing since EndInteraction() is safe to call redundantly.
+                // Safety net for when PointerCaptureOutEvent does fire (it doesn't always, per the
+                // class doc comment, which is why Tick() exists too) - ending the gesture here too
+                // costs nothing since EndInteraction() is safe to call redundantly.
                 _target.RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureOut);
             }
         }
@@ -125,10 +113,10 @@ namespace K2D2.UI
         }
 
         /// <summary>
-        /// Call once per frame (from K2D2Window.Update()). Watchdog for the confirmed case where
-        /// UI Toolkit never delivers PointerUp/PointerCaptureOut back to this handle: if we still
-        /// think a gesture is active but the real mouse button is no longer down, end it here
-        /// instead of waiting for an event that may never come.
+        /// Call once per frame (from K2D2Window.Update()). Watchdog for the case where UI Toolkit
+        /// never delivers PointerUp/PointerCaptureOut back to this handle: if we still think a
+        /// gesture is active but the real mouse button is no longer down, end it here instead of
+        /// waiting for an event that may never come.
         /// </summary>
         public void Tick()
         {
@@ -158,13 +146,9 @@ namespace K2D2.UI
 
             _resizeTarget.style.height = height;
 
-            // Confirmed via Ksp2-2.log: the new height is applied correctly (later gestures'
-            // startHeight always reflects it), but resolvedStyle/the actual on-screen render lags
-            // well behind the drag itself in this game's embedding - the resize only visibly
-            // "pops in" some time after the gesture ends instead of tracking the pointer live.
-            // Same family of issue as the dashed-slider-track bug (K2Slider.cs) - force a repaint
-            // immediately after every height change instead of waiting for this panel's own
-            // update cadence to get to it.
+            // resolvedStyle/the actual on-screen render lags behind style changes in this game's
+            // embedding, so force a repaint immediately after every height change instead of
+            // waiting for this panel's own update cadence (same issue as K2Slider's dashed track).
             _resizeTarget.MarkDirtyRepaint();
         }
 
@@ -195,15 +179,12 @@ namespace K2D2.UI
             L.Log($"ResizeManipulator: PointerDown id={evt.pointerId} y={_pointerStartY} " +
                   $"startHeight={_heightStart} hasCapture={_target.HasPointerCapture(evt.pointerId)}");
 
-            // The handle is a child of _rootElement, which DragManipulator is ALSO attached to for
-            // whole-window dragging - without this, the same PointerDownEvent bubbles straight up
-            // from the handle into DragManipulator's own handler on every resize gesture, which
-            // sets ITS IsDragging=true too. Neither manipulator then gives way for the rest of the
-            // gesture (nothing here previously stopped that bubble), so every drag on the handle
-            // was simultaneously resizing the window AND moving it - matching Reese's report that
-            // pulling the handle down "just moves the window" while the resize itself lands
-            // invisibly until later. Stopping propagation here (and in OnPointerMove/OnPointerUp
-            // below) keeps this gesture exclusive to the handle.
+            // The handle is a child of _rootElement, which DragManipulator is also attached to for
+            // whole-window dragging - without this, the same PointerDownEvent bubbles up from the
+            // handle into DragManipulator's own handler on every resize gesture, setting its
+            // IsDragging=true too, so a drag on the handle would simultaneously resize and move
+            // the window. Stopping propagation here (and in OnPointerMove/OnPointerUp below) keeps
+            // this gesture exclusive to the handle.
             evt.StopPropagation();
         }
 

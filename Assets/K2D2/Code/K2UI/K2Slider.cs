@@ -7,23 +7,16 @@ using K2D2;
 namespace K2UI
 {
     // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). Two things needed care beyond the mechanical rename:
-    //
-    // 1. The old UxmlTraits.Init() always applied every attribute from the bag, falling back to
-    //    its own defaultValue for any one a tag omitted - the new attribute system only calls a
-    //    setter for attributes actually present. attitude.uxml's "elevation_slider" is a
-    //    completely bare <K2UI.K2Slider name="elevation_slider" /> with none of these set at all,
-    //    so it depends entirely on these defaults matching the old bag defaults exactly. Fixed by
-    //    setting main_slider's lowValue/highValue explicitly in the constructor (0/1, matching the
-    //    old min/max defaults) instead of trusting Slider's own built-in defaults, and by
-    //    correcting _labelOnTop's own field initializer below, which was `true` - the OPPOSITE of
-    //    the old bag default of `false`.
-    // 2. The old Init() unconditionally called SliderValueChanged()/setLabels() once at the very
-    //    end, regardless of which attributes were present, guaranteeing a fully consistent visual
-    //    state (fill bar position, value label visibility, min/max row visibility) even for a
-    //    bare tag like elevation_slider. Reproduced via an AttachToPanelEvent hook in the
-    //    constructor - the same "run my setup once actually attached" idiom ExFoldoutGroup.cs
-    //    already uses - rather than relying on some individual attribute happening to be present.
+    // why). The new attribute system only calls a setter for attributes actually present in a tag,
+    // unlike the old bag-based Init() which always applied every attribute, falling back to its
+    // own defaultValue for anything omitted. attitude.uxml's "elevation_slider" is a bare
+    // <K2UI.K2Slider name="elevation_slider" /> with none of these attributes set, so this
+    // constructor sets main_slider's lowValue/highValue explicitly (0/1, matching the old bag
+    // defaults) instead of trusting Slider's own defaults, and _labelOnTop's field initializer is
+    // `false` to match the old bag default. An AttachToPanelEvent hook (same idiom as
+    // ExFoldoutGroup.cs) reproduces the old Init()'s unconditional trailing
+    // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even for a
+    // bare tag.
     [UxmlElement]
     public partial class K2Slider : VisualElement
     {
@@ -86,11 +79,9 @@ namespace K2UI
             }
         }
 
-        // Was `= true` - the OPPOSITE of the old UxmlTraits' own "label-on-top" defaultValue of
-        // false. Harmless before, since Init() always overwrote it via GetValueFromBag(bag, cc)
-        // regardless of whether the tag specified label-on-top - but the new attribute system only
-        // calls this setter when the tag actually has one, so this field's own default now matters
-        // for real (see class comment / elevation_slider).
+        // Default matches the old UxmlTraits "label-on-top" defaultValue - matters for tags that
+        // omit this attribute, since the new attribute system only calls the setter when present
+        // (see class comment / elevation_slider).
         bool _labelOnTop = false;
 
         [CreateProperty]
@@ -148,11 +139,10 @@ namespace K2UI
 
         Label label_element;
 
-        // Reese wants these rows to read like the game's own cockpit gauges: title text pinned
-        // left, the live value pinned right in the same amber/yellow as those gauges, instead of
-        // both baked into one "Label : value" string (which can only be one alignment/color for
-        // its whole length). label_row wraps both so a single Insert(0, ...) in setLabelPos still
-        // moves them together as before.
+        // Title text pinned left, live value pinned right in the game's cockpit-gauge amber,
+        // rather than both baked into one "Label : value" string (which can only be one
+        // alignment/color for its whole length). label_row wraps both so a single Insert(0, ...)
+        // in setLabelPos still moves them together.
         VisualElement label_row;
         Label value_label_element;
 
@@ -174,8 +164,8 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new Slider() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
-            // Explicit, matching the old bag defaults exactly (min=0/max=1) rather than trusting
-            // Slider's own built-in lowValue/highValue defaults - see class comment.
+            // Explicit, matching the old bag defaults (min=0/max=1) rather than trusting Slider's
+            // own built-in lowValue/highValue defaults - see class comment.
             main_slider.lowValue = 0f;
             main_slider.highValue = 1f;
             main_slider.direction = SliderDirection.Horizontal;
@@ -208,36 +198,18 @@ namespace K2UI
             main_slider.RegisterCallback<ChangeEvent<float>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
 
-            // Three theories tried and disproven via Reese's log before this one (search for
-            // "K2Slider dash diag" for the trail): (1) a display:none->visible transition losing
-            // the image - disproven by Max Throttle, which never goes through display:none;
-            // (2) the resolved background reference itself getting dropped on relayout - disproven
-            // directly, every logged relayout on every slider showed a correctly-resolved
-            // bg.sprite="dash"; (3) the tracker's own authored height rounding down to an invisible
-            // sub-pixel sliver, or the parent drag-container's overflow clipping it - both ruled
-            // out too: height read back as a clean 3, overflow was switched to visible, and every
-            // single slider still showed no dashes at all afterward.
-            //
-            // That last result is the real tell: resolvedStyle reported everything as it should be
-            // (correct sprite, correct size, Visible, opacity 1) and Reese still saw nothing. That
-            // means the actual GPU-side draw of this background-image is failing somewhere below
-            // what resolvedStyle can even see - not a sizing/visibility/clipping problem we can
-            // fix by tuning USS numbers further. Rather than keep guessing at properties of a
-            // background-image url() reference to a package-sourced sprite that's evidently not
-            // reliably paintable in this game's embedding, this drops that approach entirely and
-            // draws the dashes ourselves with generateVisualContent - plain rectangles via
-            // Painter2D, no texture/sprite/background-image resolution involved at all, so it
-            // can't be hit by whatever this was.
+            // The dashed track was originally a USS background-image (a package-sourced sprite),
+            // but that image reliably fails to paint in this game's UI Toolkit embedding even when
+            // resolvedStyle reports a correct sprite, size, and visibility - the failure is below
+            // what resolvedStyle can see. Drawn directly instead with generateVisualContent: plain
+            // rectangles via Painter2D, no texture/sprite/background-image resolution involved.
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
 
             // Reproduces the old UxmlTraits.Init()'s unconditional trailing
-            // SliderValueChanged()/setLabels() calls - guarantees a fully consistent visual state
-            // (fill bar position, value label, min/max row) even for a fully bare tag like
-            // attitude.uxml's "elevation_slider", which sets none of the attributes above. Runs
-            // once the element is actually attached, by which point any UXML attributes on this
-            // tag have already been applied - same idiom ExFoldoutGroup.cs uses for its own
-            // post-attribute setup.
+            // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even
+            // for a bare tag. Runs once attached, by which point any UXML attributes have already
+            // been applied - same idiom ExFoldoutGroup.cs uses.
             RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
@@ -245,11 +217,8 @@ namespace K2UI
         // tinted to the same blue-grey the retro pass uses elsewhere, tiled left-to-right at a
         // fixed dash/gap pitch regardless of this slider's actual width.
         static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
-        // Round-cap blobs from the first attempt turned out to be a stock KerbalUI.uss rule
-        // ghosting a second, lighter-blue dashed line behind ours (see #unity-tracker's
-        // background-image: none in K2Slider.uss for the full story) - the Butt line cap below
-        // was already the real fix for the rounded-end look, so these go back to Reese's original
-        // wider proportions now that the ghosting itself is what's actually being fixed.
+        // A stock KerbalUI.uss rule ghosts a second, lighter-blue dashed line behind this one
+        // unless #unity-tracker's background-image is set to none (see K2Slider.uss).
         const float dash_length = 8f;
         const float dash_gap = 6f;
 

@@ -151,11 +151,10 @@ namespace K2D2.Node
             }
             if (mode == Mode.Burn)
             {
-                // Auto-delete the node once its burn is done - per Reese, there's nothing left to
-                // do with it, and leaving it on the plan meant it just sat there after every run.
-                // RemoveNode (not RemoveAllNodes) - a multi-node Flight Plan might have more queued
-                // up behind this one, and checkManeuver() below will happily pick the next one up
-                // once this one's gone.
+                // Auto-delete the node once its burn is done - there's nothing left to do with it.
+                // RemoveNode, not RemoveAllNodes: a multi-node Flight Plan might have more queued
+                // up behind this one, and checkManeuver() below picks the next one up once this
+                // one's gone.
                 maneuver_creator.Update();
                 maneuver_creator.RemoveNode(execute_node);
 
@@ -207,10 +206,6 @@ namespace K2D2.Node
                     return;
                 }
 
-                // Previously this state (node plotted, valid, startable, but the pilot hasn't
-                // been started yet) fell through with nothing set at all - the only way to tell a
-                // node was ready to go was to open the "NODE INFO" dropdown. This is the "in your
-                // face" indicator Reese asked for.
                 st.Status("Ready to execute node!");
             }
             else
@@ -260,14 +255,13 @@ namespace K2D2.Node
         // the node - it doesn't drive Turn/Warp/Burn itself, the tab's existing Start button does
         // that once a node exists (same as a node the player plotted by hand on the map).
         //
-        // Deliberately NOT ManeuverCreator.CircularizeOrbitApoapsis()/CircularizeOrbitPeriapsis()
+        // Deliberately not ManeuverCreator.CircularizeOrbitApoapsis()/CircularizeOrbitPeriapsis()
         // above - those read orbit.Apoapsis/orbit.Periapsis off a "GetLastOrbit() as
-        // PatchedConicsOrbit" cast, the same cast that throws InvalidCastException for the
-        // actively-flown vessel under Redux (its orbit is a CurrentPatchedConicsOrbit - see
-        // ManeuverCreator.CreateManeuverNodeAtUT's own comment). Reuses the same state-vector-based
-        // math as Landing's Circularize.cs and Lift's FinalCircularize instead (proven in-game),
-        // just fed by LandingTargeting's reusable static helpers rather than duplicating that math
-        // a third time.
+        // PatchedConicsOrbit" cast, which throws InvalidCastException for the actively-flown vessel
+        // under Redux (its orbit is a CurrentPatchedConicsOrbit - see
+        // ManeuverCreator.CreateManeuverNodeAtUT's own comment). Uses the same state-vector-based
+        // math as Landing's Circularize.cs and Lift's FinalCircularize instead, fed by
+        // LandingTargeting's reusable static helpers rather than duplicating that math a third time.
         public void CreateCircularizeNode(bool atApoapsis)
         {
             var current_vessel = K2D2_Plugin.Instance.current_vessel;
@@ -275,11 +269,8 @@ namespace K2D2.Node
 
             // Reset any other running pilot first - same as every other "start a pilot" path
             // (isRunning's setter above, LiftPilot.isRunning). Without this, clicking this button
-            // while Lift or Landing was actively burning could wipe that pilot's own maneuver
-            // node out from under it via RemoveAllNodesThenCreate below (Reese's item 1 - the
-            // Lift circularize burns that came up short - is suspected, though not proven, to be
-            // this: the log timeline showed Node tab clicks a few minutes after Lift's own
-            // circularize node was created).
+            // while Lift or Landing was actively burning could wipe that pilot's own maneuver node
+            // out from under it via RemoveAllNodesThenCreate below.
             K2D2_Plugin.ResetControllers();
 
             maneuver_creator.Update();
@@ -295,15 +286,13 @@ namespace K2D2.Node
                 out double semiMajorAxis, out double apoapsisRadius, out double periapsisRadius);
 
             // Unbound (hyperbolic/parabolic) orbit - e.g. still inbound on an SOI capture, before
-            // any capture burn has happened. semiMajorAxis comes out negative (or the whole thing
-            // NaN) in that case. Per Reese: Circularize at AP genuinely can't work here (a
-            // trajectory that never comes back has no apoapsis to speak of) - refuse that one
-            // cleanly instead of the NaN/garbage node the log showed. But Circularize at PE
-            // SHOULD work here - burning retrograde at periapsis to drop the far side back below
-            // escape velocity is exactly how a capture-into-orbit burn works, and periapsis
-            // itself is perfectly well-defined on a hyperbolic path (see
-            // OrbitalElementsFromStateVectors - periapsisRadius comes out correct/positive either
-            // way). That case is handled separately below rather than refused here.
+            // any capture burn has happened. semiMajorAxis comes out negative (or NaN) in that
+            // case. Circularize at AP can't work here - a trajectory that never comes back has no
+            // apoapsis - so refuse cleanly rather than create a NaN/garbage node. Circularize at PE
+            // should still work: burning retrograde at periapsis to drop the far side back below
+            // escape velocity is exactly how a capture-into-orbit burn works, and periapsis is
+            // well-defined on a hyperbolic path (OrbitalElementsFromStateVectors returns a correct,
+            // positive periapsisRadius either way). That case is handled separately below.
             bool unbound = double.IsNaN(semiMajorAxis) || semiMajorAxis <= 0;
 
             if (atApoapsis && unbound)

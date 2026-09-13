@@ -32,8 +32,8 @@
                 <ui:VisualElement name="graph" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); height: 162px; border-left-width: 1px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px; border-left-color: rgb(71, 75, 175); border-right-color: rgb(71, 75, 175); border-top-color: rgb(71, 75, 175); border-bottom-color: rgb(71, 75, 175); border-top-left-radius: 5px; border-bottom-left-radius: 5px; border-top-right-radius: 5px; border-bottom-right-radius: 5px;" />
                 <!-- Roll program: rolls the vessel to a chosen offset from however it spawned on
                      the pad, once past a chosen altitude - part of the launch Profile alongside
-                     Heading above, per Reese, rather than tucked away in ADVANCED, since it's a
-                     per-launch choice like heading is. A rocket built without the spawn rotation
+                     Heading above rather than tucked away in ADVANCED, since it's a per-launch
+                     choice like heading is. A rocket built without the spawn rotation
                      in mind can come off the pad "funky" otherwise (see Ascent.cs's own comment
                      for the full reasoning, and exactly what "roll" means here - relative to
                      launch orientation, not an absolute compass reading). First pass, not yet

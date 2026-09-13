@@ -6,17 +6,13 @@ using KTools;
 namespace K2UI
 {
     /// <summary>
-    /// complete copy of the K2Slider, I've not figured out how to make it more generic
+    /// Int-typed twin of K2Slider. Duplicated rather than shared generically.
     /// </summary>
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] - see K2Slider.cs's class comment
-    // for the full reasoning (this is its exact int-typed twin). The same two fixes apply: the
-    // constructor sets main_slider's lowValue/highValue explicitly (0/100, matching the old
-    // min/max bag defaults) rather than trusting SliderInt's own built-in defaults, corrects
-    // _labelOnTop's field initializer to match the old `false` bag default, and registers an
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] - see K2Slider.cs's class comment.
+    // The constructor sets main_slider's lowValue/highValue explicitly (0/100, matching the old
+    // bag defaults) rather than trusting SliderInt's own defaults, and registers an
     // AttachToPanelEvent hook to reproduce Init()'s old unconditional trailing
-    // SliderValueChanged()/setLabels() calls. K2SliderInt currently has no live UXML usages
-    // anywhere in the project, so none of this was actually exercised before, but it's kept
-    // consistent with K2Slider.cs in case that changes.
+    // SliderValueChanged()/setLabels() calls.
     [UxmlElement]
     public partial class K2SliderInt : VisualElement
     {
@@ -142,8 +138,8 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new SliderInt() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
-            // Explicit, matching the old bag defaults exactly (min=0/max=100) rather than
-            // trusting SliderInt's own built-in lowValue/highValue defaults - see class comment.
+            // Explicit, matching the old bag defaults (min=0/max=100) rather than trusting
+            // SliderInt's own built-in lowValue/highValue defaults - see class comment.
             main_slider.lowValue = 0;
             main_slider.highValue = 100;
             main_slider.direction = SliderDirection.Horizontal;
@@ -176,12 +172,8 @@ namespace K2UI
             main_slider.RegisterCallback<ChangeEvent<int>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
 
-            // Mirrors K2Slider.cs (this class is "a complete copy" of it, per the class doc comment
-            // above) - see that file for the full story of why the dashed track is drawn directly
-            // with generateVisualContent instead of a USS background-image: the background-image
-            // approach reported a fully correct resolved style (right sprite, right size, visible)
-            // while still not actually painting anything in this game's embedding, so this avoids
-            // that whole mechanism rather than continuing to chase it.
+            // Mirrors K2Slider.cs - drawn directly with generateVisualContent rather than a USS
+            // background-image, which fails to paint in this game's embedding (see K2Slider.cs).
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
 
@@ -190,9 +182,7 @@ namespace K2UI
             RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
-        // See K2Slider.cs's DrawDashedTrack for the full story - the Butt line cap (not the dash
-        // size) was the real fix for the rounded-blob look, so this keeps Reese's original wider
-        // proportions.
+        // See K2Slider.cs's DrawDashedTrack.
         static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
         const float dash_length = 8f;
         const float dash_gap = 6f;

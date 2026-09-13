@@ -4,9 +4,9 @@ An astromech-style autopilot suite for Kerbal Space Program 2, ported to the **R
 
 K2-D2 gives you one panel (`Alt-O` or the AppBar icon) with a set of autopilots:
 
-- **Node** - executes the next maneuver node, with auto-circularize at Ap/Pe
-- **Lift** - automated ascent guidance with a configurable altitude/heading profile
-- **Landing** - automated descent, braking, and touchdown
+- **Node** - executes the next maneuver node, with auto-circularize at Ap/Pe and one-click buttons to create a node at the next apoapsis or periapsis
+- **Lift** - automated ascent guidance with a configurable altitude/heading profile, an optional roll program, and automatic circularization at the end of the climb
+- **Landing** - automated descent, braking, and touchdown, with an optional Precision Landing mode (currently bodies with no atmosphere only) that targets a specific site via Redux's waypoint system
 - **Docking** - automated final approach and docking
 - **Attitude** - point-and-hold attitude control (a simple plane autopilot)
 
@@ -17,14 +17,14 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 **Confirmed working (tested in-game):**
 - Full UI - all tabs, styling, custom controls
 - Node autopilot
-- Lift/ascent autopilot - flies the configured profile to orbit, pausing once it clears the atmosphere so there's time to build the circularization node yourself (see Known limitations below)
-- Landing autopilot - descent, braking, and touchdown, including collision detection
+- Lift/ascent autopilot - flies the configured profile to orbit, including an optional roll program, then creates and flies its own circularization node
+- Landing autopilot - descent, braking, and touchdown, including collision detection and precision landing on bodies with no atmosphere
 - Docking autopilot - final approach and main-thrust kill-speed/brake
 - Attitude hold
 - Auto-staging, with a player-facing on/off toggle in the window's title bar
 
 **Known limitations:**
-- The Lift/ascent autopilot asks for a manual circularization node rather than creating one itself. Wiring this up to K2-D2's native maneuver-node creation (rather than Flight Plan, which this port intentionally does not integrate) turned out to need more than a quick fix - see `NOTICE.md` for what was found.
+- Precision Landing on atmospheric bodies is still a work in progress and isn't exposed in the UI yet - only bodies with no atmosphere have a player-facing Precision Landing option for now.
 
 ## Installation
 
@@ -42,6 +42,10 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 - **[cheese3660](https://github.com/cheese3660)** - [SpaceWarp](https://github.com/Halbann) and [AutoBurn](https://github.com/cheese3660/AutoBurn), which the original mod was built on
 - **[Halbann](https://github.com/Halbann)** - [LazyOrbit](https://github.com/Halbann/LazyOrbit), which the original mod's first steps were based on
 - **[KSP2Community](https://github.com/KSP2Community)** - the Redux modding framework and the `Redux.Template` project scaffold this port is built on
+
+## Changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
 ## License
 

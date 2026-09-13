@@ -34,8 +34,18 @@ namespace K2D2.Landing
 
         // Precision Landing orbit gate (see UpdateOrbitGate below) - reuses Circularize's own
         // 100km ceiling (Circularize.max_starting_altitude_m) rather than a separate number, so
-        // this and the actual in-run refusal in Circularize.cs can never drift apart.
+        // this and the actual in-run refusal in Circularize.cs can never drift apart. Vacuum-only
+        // (precision_landing_orbit_gate_vac) - see landing_mode_group_vac/pilot.settings_vac below.
         Label orbit_gate_label;
+
+        // Atmo/Vacuum profile panels (see LandingSettings.cs's class comment) - shown/hidden
+        // together every UI tick by UpdateProfilePanels, based on LandingProfile.IsAtmospheric.
+        // Each pair is bound once, ever, in onInit() below to its own fixed settings object -
+        // never rebound, since K2Page.onInit() only runs once per game session.
+        VisualElement landing_mode_group_atmo;
+        VisualElement landing_mode_group_vac;
+        VisualElement atmo_settings_panel;
+        VisualElement vac_settings_panel;
 
         public override bool onInit()
         {
@@ -47,22 +57,24 @@ namespace K2D2.Landing
             status_bar = new FullStatus(panel);
 
             // Waypoint picker - lists whatever the player's already placed on the current body via
-            // Redux's own Waypoints window (K2D2.Landing.ReduxWaypoints, reflection-based since that
-            // system is internal to Assembly-CSharp). Docks' own target/control dropdowns
-            // (SelectTargetUI.cs) rebuild their choices via listenClick(), but that turned out not
-            // to work here - DropdownField opens its own native list on pointer-down rather than
-            // dispatching a bubbling ClickEvent our listenClick() extension can catch, so the click
-            // handler just never fired and the list stayed empty. Rebuilding every UI tick instead
-            // (see onUpdateUI() below) sidesteps that entirely and also means the list stays current
-            // if a waypoint's added while this tab is open.
-            waypoint_drop = panel.Q<DropdownField>("waypoint_drop");
+            // Redux's own Waypoints window (K2D2.Landing.ReduxWaypoints, reflection-based since
+            // that system is internal to Assembly-CSharp). Rebuilt every UI tick (see
+            // onUpdateUI() below) rather than via a click listener, since DropdownField opens its
+            // own native list on pointer-down instead of dispatching a bubbling ClickEvent - a
+            // per-tick rebuild also keeps the list current if a waypoint's added while this tab is
+            // open.
+            //
+            // Vacuum-only (waypoint_drop_vac - see landing_mode_group_vac in Landing.uxml), so this
+            // writes straight to settings_vac rather than through the profile-dependent
+            // pilot.settings property - the dropdown itself only ever exists on the Vacuum panel.
+            waypoint_drop = panel.Q<DropdownField>("waypoint_drop_vac");
             buildWaypointList();
             waypoint_drop.RegisterCallback<ChangeEvent<string>>(evt =>
             {
                 if (waypoint_choices.TryGetValue(evt.newValue, out var waypoint))
                 {
-                    pilot.settings.target_latitude.V = (float)waypoint.latitude;
-                    pilot.settings.target_longitude.V = (float)waypoint.longitude;
+                    pilot.settings_vac.target_latitude.V = (float)waypoint.latitude;
+                    pilot.settings_vac.target_longitude.V = (float)waypoint.longitude;
                 }
             });
 
@@ -83,14 +95,44 @@ namespace K2D2.Landing
                 pilot.setMode(LandingPilot.Mode.TouchDown);
             });
 
-            pilot.settings.setupUI(pilot, panel);
-            addResetButton(panel.Q<Foldout>("advanced_foldout"), "land");
+            // Atmo/Vacuum profile panels - two full sibling groups/panels in Landing.uxml, each
+            // bound exactly once here to its own fixed settings/TouchDown instance (never
+            // rebound - see this class's field comments and LandingSettings.cs's class comment).
+            landing_mode_group_atmo = panel.Q<VisualElement>("landing_mode_group_atmo");
+            landing_mode_group_vac = panel.Q<VisualElement>("landing_mode_group_vac");
+            atmo_settings_panel = panel.Q<VisualElement>("atmo_settings_panel");
+            vac_settings_panel = panel.Q<VisualElement>("vac_settings_panel");
+
+            // Pass `panel` (the whole tab page) here, not vac_settings_panel/atmo_settings_panel -
+            // LandingSettings.setupUI/setupBasicUI and TouchDown's SetupFullUI/SetupBasicUI all
+            // reach elements that live OUTSIDE the ADVANCED foldout's own sub-panels
+            // (precision_landing_vac, target_settings_vac, and the orbit gate label all live in
+            // landing_mode_group_vac, a sibling of advanced_foldout - see Landing.uxml).
+            // VisualElement.Q<T>() searches the whole subtree under whatever root it's given, so
+            // passing the narrower vac_settings_panel/atmo_settings_panel makes
+            // root.Q<K2Toggle>("precision_landing_vac") return null - Bind() on that null throws a
+            // NullReferenceException that unwinds all the way up through K2Page.Init ->
+            // TabbedPage.Init -> K2D2Window.OnUiReload, aborting every other tab's Init() too.
+            // Passing `panel` everywhere is always safe: Q<T>() finds a uniquely-named element
+            // anywhere under it regardless of nesting depth.
+            pilot.settings_vac.setupUI(panel);
+            pilot.brake.SetupFullUI(panel);
+
+            pilot.settings_atmo.setupBasicUI(panel);
+            pilot.brake.SetupBasicUI(panel);
+
+            // Reset resets BOTH profiles together, not just whichever panel happens to be showing
+            // right now, against two SettingsFile instances instead of the one SettingsFile.
+            // Instance the shared addResetButton helper hardcodes (see its own comment in
+            // K2Page.cs - it's shared by Node/Lift/Dock too, so it can't just be changed there).
+            addLandingResetButton(panel.Q<Foldout>("advanced_foldout"));
 
             // Precision Landing orbit gate - see UpdateOrbitGate's own comment. Reverts the toggle
             // the instant someone tries to turn it on from too high an orbit, rather than letting
-            // it sit on and only get refused once Circularize.cs actually runs.
-            orbit_gate_label = panel.Q<Label>("precision_landing_orbit_gate");
-            pilot.settings.precision_landing.listeners += v =>
+            // it sit on and only get refused once Circularize.cs actually runs. Vacuum-only, same
+            // as the toggle itself.
+            orbit_gate_label = panel.Q<Label>("precision_landing_orbit_gate_vac");
+            pilot.settings_vac.precision_landing.listeners += v =>
             {
                 if (!v) return;
 
@@ -100,10 +142,45 @@ namespace K2D2.Landing
 
                 pilot.logger.LogInfo($"[LandingUI] Precision Landing refused - orbit too high " +
                     $"(Ap {apoapsisAlt_m:n0}m / Pe {periapsisAlt_m:n0}m, max {Circularize.max_starting_altitude_m:n0}m).");
-                pilot.settings.precision_landing.V = false;
+                pilot.settings_vac.precision_landing.V = false;
             };
 
             return true;
+        }
+
+        // Same idea as K2Page.addResetButton (Node/Lift/Dock's shared helper), but resets the
+        // land_atmo AND land_vac SettingsFile instances together, since Landing's settings no
+        // longer live in the one SettingsFile.Instance that helper hardcodes.
+        void addLandingResetButton(VisualElement parent)
+        {
+            if (parent == null)
+                return;
+
+            Button reset_bt = new Button() { text = "Reset" };
+            reset_bt.name = "reset_advanced";
+            reset_bt.style.height = 30;
+            reset_bt.style.marginTop = 8;
+
+            parent.Add(reset_bt);
+
+            reset_bt.RegisterCallback<ClickEvent>(evt =>
+            {
+                SettingsFile.Get("land_atmo")?.Reset("land");
+                SettingsFile.Get("land_vac")?.Reset("land");
+            });
+        }
+
+        // Shows exactly one of each profile-pair (landing_mode_group_*/*_settings_panel) at a
+        // time, based on LandingProfile.IsAtmospheric - same per-tick refresh pattern
+        // UpdateOrbitGate below uses, so a body change while this tab's open switches panels
+        // immediately instead of needing a tab close/reopen.
+        void UpdateProfilePanels()
+        {
+            bool atmo = LandingProfile.IsAtmospheric;
+            landing_mode_group_atmo.Show(atmo);
+            landing_mode_group_vac.Show(!atmo);
+            atmo_settings_panel.Show(atmo);
+            vac_settings_panel.Show(!atmo);
         }
 
         void buildWaypointList()
@@ -139,15 +216,11 @@ namespace K2D2.Landing
             }
             else if (waypoint_choices.Count > 0)
             {
-                // Whatever was selected doesn't exist for this body - the bug Reese hit by
-                // teleporting between planets: the dropdown just kept showing the OLD body's
-                // waypoint label with nothing real behind it, and target_latitude/longitude
-                // silently stayed on the old body's coordinates until typed in by hand. Auto-
-                // select the new body's first real waypoint instead, through the normal .value
-                // setter (not SetValueWithoutNotify) so the ChangeEvent handler above actually
-                // fires and updates target_latitude/longitude, same as if the player had clicked
-                // it themselves. Side effect: this also means the dropdown starts pre-selected on
-                // the first waypoint (if any) instead of blank - an improvement, not just a fix.
+                // Whatever was selected doesn't exist for this body (e.g. after teleporting
+                // between planets) - auto-select the new body's first real waypoint instead,
+                // through the normal .value setter (not SetValueWithoutNotify) so the ChangeEvent
+                // handler above actually fires and updates target_latitude/longitude, same as if
+                // the player had clicked it themselves.
                 waypoint_drop.value = choices[0];
             }
             // else: no real waypoints on this body at all (just the "No body"/"No waypoints on
@@ -181,16 +254,15 @@ namespace K2D2.Landing
         // Precision Landing orbit gate. The status_bar console/status lines get wiped and
         // rebuilt every single UI tick (see status_bar.Reset() below), so a one-shot message from
         // the precision_landing toggle listener (onInit above) would only ever be visible for a
-        // single frame - not something Reese could actually read. This runs every tick instead,
-        // independent of isRunning/mode, and just keeps a small persistent label under the toggle
-        // in sync with the same Circularize.CheckOrbit() the toggle listener already gates on.
+        // single frame. This runs every tick instead, independent of isRunning/mode, keeping a
+        // small persistent label under the toggle in sync with the same Circularize.CheckOrbit()
+        // the toggle listener already gates on.
         void UpdateOrbitGate()
         {
-            // Guard Circularize.CheckOrbit() isn't itself null-safe against VesselComponent being
-            // null - fine for its one existing caller (Circularize.Start(), which only ever runs
-            // mid-landing-sequence, i.e. definitely in active flight), but this runs unconditionally
-            // every UI tick regardless of game state, so it needs its own check here (same
-            // null-conditional convention buildWaypointList() above already uses).
+            // Circularize.CheckOrbit() isn't itself null-safe against VesselComponent being null -
+            // fine for its one existing caller (Circularize.Start(), which only runs mid-landing,
+            // i.e. definitely in active flight), but this runs unconditionally every UI tick
+            // regardless of game state, so it needs its own check here.
             if (pilot.current_vessel?.VesselComponent == null)
             {
                 orbit_gate_label.Show(false);
@@ -207,12 +279,21 @@ namespace K2D2.Landing
             orbit_gate_label.text = $"Needs a starting orbit within {Circularize.max_starting_altitude_m / 1000:n0}km " +
                 $"(currently Ap {apoapsisAlt_m / 1000:n0}km / Pe {periapsisAlt_m / 1000:n0}km) - circularize lower first.";
 
-            // Covers the case where the orbit was fine when Precision Landing was turned on, but
-            // isn't anymore (e.g. the player boosted back out to a higher orbit) - same refusal
-            // the toggle listener applies on the way in, just re-checked continuously instead of
-            // only at the moment of the click.
-            if (pilot.settings.precision_landing.V)
-                pilot.settings.precision_landing.V = false;
+            // Covers the case where the orbit was too high when the player tries to turn
+            // Precision Landing on before a landing sequence has started, re-checked continuously
+            // instead of only at the moment of the click, so the toggle doesn't silently stay on
+            // if apoapsis creeps up between then and pressing Brake/Touch Down.
+            //
+            // Gated on !pilot.isRunning: apoapsis routinely sits well above
+            // max_starting_altitude_m for a big chunk of a normal descent (Circularize/DeorbitBurn
+            // only lower periapsis at first - apoapsis doesn't come down until much later, if at
+            // all). Without this guard the check would fire mid-descent too and silently flip
+            // precision_landing off, which would mean TouchDown's closed-loop steering never
+            // engages for the rest of that descent. This check is only meaningful as a pre-flight
+            // gate; once the sequence has committed (isRunning), the orbit is EXPECTED to move
+            // around and must not retroactively cancel precision landing.
+            if (!pilot.isRunning && pilot.settings_vac.precision_landing.V)
+                pilot.settings_vac.precision_landing.V = false;
         }
 
         public void updateContext()
@@ -229,12 +310,11 @@ namespace K2D2.Landing
                 AddInfoRow("Start Burn In", StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime));
                 AddInfoRow("Burn Duration", $"{pilot.burn_duration:n2} s");
 
-                // Precision landing readouts - informational only for now, nothing steers toward
-                // this yet. Predicted Landing lets us confirm the lat/lon math is sane in-game
-                // (compare it against where the ship actually comes down) before anything gets
-                // built on top of it.
+                // Precision landing readouts - informational only, nothing steers toward this
+                // yet. Predicted Landing lets players confirm the lat/lon math is sane in-game
+                // (compare it against where the ship actually comes down).
                 AddInfoRow("Predicted Landing", $"{pilot.predicted_landing_lat:n2}, {pilot.predicted_landing_lon:n2}");
-                if (pilot.settings.precision_landing.V)
+                if (pilot.settings_vac.precision_landing.V)
                     AddInfoRow("Target Error", StrTool.DistanceToString((float)pilot.target_error_m));
             }
 
@@ -261,15 +341,14 @@ namespace K2D2.Landing
             updateContext();
             buildWaypointList();
             UpdateOrbitGate();
+            UpdateProfilePanels();
 
             status_bar.Reset();
 
-            // This used to return early whenever collision_detected was false, which also skipped the
-            // touch_down button's Show()/Hide() and the mode status text below - so once collision
-            // detection legitimately flips false mid-descent (e.g. after braking changes the
-            // trajectory), the button/status display would freeze instead of updating. Collision
-            // prediction only matters for the info panel above; it has nothing to do with the mode
-            // display, so the early return was removed.
+            // Collision prediction only matters for the info panel above; it has nothing to do
+            // with the mode display below, so this no longer early-returns on
+            // !collision_detected (that used to freeze the touch_down button/status text
+            // whenever collision detection legitimately flipped false mid-descent).
             var state = GeneralTools.Game.GlobalGameState.GetState();
             if (state != GameState.FlightView)
             {
@@ -310,8 +389,7 @@ namespace K2D2.Landing
             else
             {
                 // Idle placeholder, same idea as Node's "No Node Created"/Lift's "Lift autopilot
-                // not enabled" - K2 has something to say here instead of the status readout just
-                // sitting empty before the pilot's ever been run.
+                // not enabled".
                 status_bar.Status("Landing autopilot not enabled");
             }
 

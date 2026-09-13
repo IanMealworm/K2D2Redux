@@ -305,3 +305,75 @@ pass over Docks/Landing/Lift/Nodes/Staging/Drone beyond the bugs above) has
 been verified call-by-call against the real Redux assemblies with no further
 issues found. `K2UI/` itself has not been given the same call-by-call
 verification pass (only the two structural issues above were investigated).
+
+## Landing/Node fixes before 1.3.0
+
+Four issues cleared before cutting 1.3.0, all in-game-tested behavior fixes
+rather than Redux porting bugs:
+
+- **Precision Landing gated to vacuum bodies only.** Nothing in Circularize/
+  DeorbitBurn currently supports an atmospheric descent, so turning Precision
+  Landing on at an atmospheric body previously just silently did nothing
+  useful. `LandingUI.cs`'s Precision Landing toggle now only exists on the
+  new Vacuum settings panel (see the profile split below) - an atmospheric
+  body shows a short explanatory note instead. `LandingPilot.cs`'s
+  `isRunning` setter also carries a defense-in-depth check
+  (`settings.precision_landing.V && !LandingProfile.IsAtmospheric`) so
+  Circularize/DeorbitBurn can never be entered on an atmospheric body even
+  from a manually-edited settings file.
+- **Deorbit-burn search biased toward nearby candidates.** `LandingTargeting.
+  FindBestDeorbitBurn`/`TryEvaluateCandidate` picked whichever sampled burn
+  time scored the lowest predicted ground-miss distance, with no cost for
+  how far around the orbit that candidate sat - so a burn point that was
+  numerically a hair better but almost a full orbit away could win outright,
+  even though a nearer candidate would have left the plane-trim budget
+  (`normalDeltaV`) enough room to actually matter. Fixed by adding a
+  `distance_penalty_per_second` term (0.2 m per second of wait, a first-pass
+  heuristic - worth tuning once seen flying) to the score used only for
+  picking a winner; the true predicted miss distance (`bestErrorM`) is
+  untouched, so logging and the in-game Target Error readout still show the
+  real number.
+- **Node's SAS now stays locked to the maneuver vector for the whole burn.**
+  `BurnManeuver.Update()` (`Pilots/Nodes/Controlers/BurnManeuvre.cs`) was
+  dropping from `AutopilotMode.Maneuver` to plain `AutopilotMode.
+  StabilityAssist` the instant a burn started, unless the "Rotate During
+  Burn" toggle (Node tab, Experimental section) was turned on - which
+  defaulted to off. Flipped that default to `true`; the toggle itself is
+  unchanged; for anyone who wants the old fixed-orientation behavior back.
+  Since `BurnManeuver` is shared by every burn in the mod, this also changes
+  Lift's final circularize and Landing's Circularize/DeorbitBurn/
+  MidCourseCorrection burns, not just Node's - intentional, since more
+  accurate burns are wanted everywhere.
+- **Atmospheric and Vacuum landings now use two fully separate settings
+  profiles**, so tuning one can no longer touch or wreck the other. Landing's
+  settings used to live in the same shared `k2d2_settings.json` every other
+  tab's settings do; they now live in two new dedicated files,
+  `k2d2_landing_atmo.json`/`k2d2_landing_vac.json`, switched automatically
+  based on whether the current body has an atmosphere
+  (`Pilots/Landing/LandingProfile.cs`, kept current every tick from
+  `LandingPilot.Update()`). `SettingsFile`/`Setting<T>`/`ClampSetting<T>`
+  (`KTools/`) were generalized to support named file instances beyond the
+  original singleton, purely additively - every other tab's settings are
+  unaffected. `LandingSettings`/`TouchDown` each now hold two full,
+  independent instances (`settings_atmo`/`settings_vac`,
+  `TouchDown`'s own internal `atmo`/`vac`), selected via a pass-through
+  property everywhere else in the codebase already reads through
+  (`LandingPilot.settings`, `TouchDown`'s public tunable properties) - no
+  other call site needed to change. The Landing tab's UI (`Landing.uxml`)
+  now has two full parallel panels (Atmo panel: Warp/Brake/Touch Down only;
+  Vacuum panel: those plus Precision Landing/RCS fine correction), each
+  bound exactly once at tab-init and never rebound - `K2Page.onInit()` only
+  ever runs once per session, so a single settings object dynamically
+  swapped underneath an already-bound `K2Slider`/`K2Toggle` would leave the
+  UI stuck on whichever profile was active the first time the tab opened.
+  Landing's Reset button now resets both files together instead of just the
+  shared one.
+  One consequence worth flagging: this moves Landing's settings out of the
+  main settings file entirely, so anything already tuned there (burn
+  timing, touchdown altitude, etc.) starts over at coded defaults in the new
+  files rather than carrying over automatically.
+
+Precision landing's accuracy rests entirely on TouchDown's own closed-loop
+steering (cross-track/along-track error correction, RCS fine correction,
+proportional arc extend/shorten - see `TouchDown.cs`), started early enough
+by `compute_startBurn`'s lateral-correction-time and altitude-margin floors.

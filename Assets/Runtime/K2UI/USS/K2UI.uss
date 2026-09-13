@@ -223,8 +223,8 @@
 .k2-status-row {
     flex-direction: row;
     align-items: center;
-    /* Reese: the icon sat flush against the panel's own left edge - a little breathing room, same
-       idea as the slider label row's own left/right padding fix earlier. */
+    /* Small breathing room so the icon doesn't sit flush against the panel's own left edge, same
+       idea as the slider label row's own left/right padding above. */
     padding-left: 6px;
 }
 
@@ -244,9 +244,9 @@
 }
 
 /* k2d2_big_icon.png is the same sticker-style mascot face already used on the About tab and the
-   window's own title icon - reused here at a smaller size as the "K2 is talking" avatar. Reese:
-   64px read as too big, and the text sat too close to K2 - shrunk the icon and widened the gap
-   to the speech text (light positions below are rescaled to match this new size). */
+   window's own title icon - reused here at a smaller size as the "K2 is talking" avatar, with a
+   wider gap to the speech text than a plain adjacent placement would give it (light positions
+   below are rescaled to match this size). */
 .k2-avatar {
     width: 48px;
     height: 48px;

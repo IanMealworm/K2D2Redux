@@ -34,7 +34,7 @@
     -unity-background-image-tint-color: rgb(255, 238, 0);
 }
 
-/* ===== Pixel-art 3D button treatment (Reese's PAUSE/PLAY reference images) =====
+/* ===== Pixel-art 3D button treatment (matches the mod's PAUSE/PLAY reference art) =====
    Scoped to .big only (Start/Stop and the small square Pause icon button), not the base
    .toggle-button class - InlineEnum's row buttons and the Advanced-settings gear mini-toggle use
    a much smaller, differently-shaped button that this chunky treatment isn't meant for.
