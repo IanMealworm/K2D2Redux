@@ -13,7 +13,9 @@ namespace K2D2.EditorTools
     /// K2D2's window silently fail to open (see NOTICE.md's "Sixth follow-up" for the full writeup:
     /// the crash is `_rootElement = root[0]` throwing in K2D2Window.OnUiReload because `root` has no
     /// children). Rebuilding here, with the currently-installed Unity version and the
-    /// currently-compiled K2UI UxmlFactory classes, removes that version mismatch.
+    /// currently-compiled K2UI custom control classes (now [UxmlElement]-based rather than the
+    /// old UxmlFactory, which Unity 6.6 removes - see NOTICE.md's UxmlElement migration entry),
+    /// removes that version mismatch.
     ///
     /// Run via K2D2 > Rebuild UI Bundle any time something under those source folders changes -
     /// it always rebuilds from whatever is currently in the project, so it's safe to re-run

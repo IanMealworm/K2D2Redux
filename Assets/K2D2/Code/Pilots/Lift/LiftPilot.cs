@@ -78,7 +78,14 @@ namespace K2D2.Lift
                     {
                         // stop
                         if (current_vessel != null)
+                        {
                             current_vessel.SetThrottle(0);
+                            // Roll program (see Ascent.cs) drives this as a raw control axis input,
+                            // not through SAS - if the pilot gets stopped mid-correction, release it
+                            // here too so a stray roll command doesn't keep firing after the
+                            // autopilot itself has stopped.
+                            current_vessel.Roll = 0;
+                        }
 
                         current_subpilot = null;
                     }
@@ -169,10 +176,21 @@ namespace K2D2.Lift
             if (!isRunning)
                 return;
 
-            if (current_subpilot != null)
+            var subpilot = current_subpilot;
+            if (subpilot != null)
             {
-                current_subpilot.Update();
-                if (current_subpilot.finished)
+                subpilot.Update();
+
+                // A subpilot's Update() can end the whole run right here - Coasting's Ap-under-
+                // atmosphere-limit check and FinalCircularize's burn-complete case (see Final.cs)
+                // both call lift.EndLiftPilot() directly rather than just setting finished, so
+                // that is_running_event actually fires (see EndLiftPilot's own comment about why
+                // it goes through the isRunning setter instead of setting status directly). That
+                // synchronously nulls current_subpilot via the status setter's Off case, before
+                // we get back here. Re-checking the field itself (not the stale local) means we
+                // don't NullReferenceException on a null current_subpilot, and don't call
+                // NextMode() a second time on top of a run that already ended itself.
+                if (current_subpilot == subpilot && subpilot.finished)
                     NextMode();
             }
         }

@@ -1,60 +1,25 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UITKRotate = UnityEngine.UIElements.Rotate;
 
 namespace K2UI
 {
-    public class K2ProgressBar : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). The old UxmlTraits.Init() always applied every one of these seven attributes from the
+    // bag, falling back to its own defaultValue for any one a tag omitted - the new attribute
+    // system only calls a setter for attributes actually present, so the constructor below sets
+    // all seven explicitly (same values, same order) to reproduce that guarantee for any current
+    // or future <K2UI.K2ProgressBar> tag that doesn't specify all of them.
+    [UxmlElement]
+    public partial class K2ProgressBar : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2ProgressBar, UxmlTraits> { }
-
-        // Add the two custom UXML attributes.
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            UxmlStringAttributeDescription m_Label =
-                new() { name = "label", defaultValue = "K2-Progress-Bar" };
-            UxmlFloatAttributeDescription m_Value =
-                new() { name = "value", defaultValue = 0 };
-
-            UxmlBoolAttributeDescription m_Centered =
-                new() { name = "centered", defaultValue = false };
-
-            UxmlFloatAttributeDescription m_Min =
-                new() { name = "min", defaultValue = 0 };
-
-            UxmlFloatAttributeDescription m_Max =
-                new() { name = "max", defaultValue = 1 };
-
-            UxmlBoolAttributeDescription m_LabelValue =
-                new() { name = "set-label-to-value", defaultValue = false };
-
-            UxmlStringAttributeDescription m_Postfix =
-                new() { name = "postfix", defaultValue = "%" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as K2ProgressBar;
-
-                ate.Label = m_Label.GetValueFromBag(bag, cc);
-                ate.value = m_Value.GetValueFromBag(bag, cc);
-                ate.Centered = m_Centered.GetValueFromBag(bag, cc);
-                ate.Min = m_Min.GetValueFromBag(bag, cc);
-                ate.Max = m_Max.GetValueFromBag(bag, cc);
-
-                ate.LabelValue = m_LabelValue.GetValueFromBag(bag, cc);
-                ate.Postfix = m_Postfix.GetValueFromBag(bag, cc);
-            }
-        }
-
-        // Must expose your element class to a { get; set; } property that has the same name 
+        // Must expose your element class to a { get; set; } property that has the same name
         // as the name you set in your UXML attribute description with the camel case format
         public string _label;
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string Label
         {
             get { return _label; }
@@ -64,6 +29,9 @@ namespace K2UI
         }
 
         float _value;
+
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public float value
         {
             get { return _value; }
@@ -71,13 +39,19 @@ namespace K2UI
         }
 
         bool _centered;
+
+        [CreateProperty]
+        [UxmlAttribute("centered")]
         public bool Centered
         {
             get { return _centered; }
             set { _centered = value; updateRender(); }
-        }       
+        }
 
         float _min;
+
+        [CreateProperty]
+        [UxmlAttribute("min")]
         public float Min
         {
             get { return _min; }
@@ -85,6 +59,9 @@ namespace K2UI
         }
 
         float _max;
+
+        [CreateProperty]
+        [UxmlAttribute("max")]
         public float Max
         {
             get { return _max; }
@@ -93,13 +70,19 @@ namespace K2UI
 
 
         bool _label_value;
+
+        [CreateProperty]
+        [UxmlAttribute("set-label-to-value")]
         public bool LabelValue
         {
             get { return _label_value; }
             set { _label_value = value; updateRender(); }
-        }       
+        }
 
         string _postfix;
+
+        [CreateProperty]
+        [UxmlAttribute("postfix")]
         public string Postfix
         {
             get { return _postfix; }
@@ -181,6 +164,16 @@ namespace K2UI
 
             // Style the control overall.
             AddToClassList(ussClassName);
+
+            // Reproduces the old UxmlTraits.Init()'s unconditional bag-default application - see
+            // class comment above.
+            Label = "K2-Progress-Bar";
+            value = 0f;
+            Centered = false;
+            Min = 0f;
+            Max = 1f;
+            LabelValue = false;
+            Postfix = "%";
         }
     }
 

@@ -1,48 +1,30 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 using System.Collections.Generic;
 
 namespace K2UI.Tabs
 {
-    class TabsBar : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). TabsBar is never actually instantiated from a UXML tag anywhere in the project - only
+    // ever via `new TabsBar()` from TabbedPage.Setup() - so its old Init() (including the
+    // updateList() call it used to make unconditionally) never actually ran in practice. Converted
+    // for consistency/future-proofing anyway; openedIndex needs to be public for the source
+    // generator to attach an attribute to it. Restricting children to TabButton (the old
+    // uxmlChildElementsDescription override) was only ever an editor-time authoring hint, not a
+    // runtime gate, so it has no equivalent here.
+    [UxmlElement]
+    public partial class TabsBar : VisualElement
     {
         public TabsBar()
         {
-            AddToClassList("k2-tabsbar");   
-        }    
-
-        public new class UxmlFactory : UxmlFactory<TabsBar, UxmlTraits> { }
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get
-                {
-                    // we can add only tabButton here
-                    yield return new UxmlChildElementDescription(typeof(TabButton));
-                }
-            }
-
-            UxmlIntAttributeDescription m_OpenedIndex =
-                new() { name = "opened-index", defaultValue = -1 };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-
-                var ate = ve as TabsBar;
-
-                ate.openedIndex = m_OpenedIndex.GetValueFromBag(bag, cc);
-                ate.updateList();
-            }
+            AddToClassList("k2-tabsbar");
         }
 
         int _openedIndex = -1;
-        int openedIndex
+
+        [CreateProperty]
+        [UxmlAttribute("opened-index")]
+        public int openedIndex
         {
             get { return _openedIndex; }
             set { _openedIndex = value; UpdateState(); }

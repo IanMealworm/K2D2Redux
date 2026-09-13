@@ -122,19 +122,17 @@
     justify-content: space-between;
 }
 
-/* Reese wants these to read like the game's own cockpit gauges: title pinned left, live value
-   pinned right in the gauge's amber/yellow instead of both baked into one "Label : value" string
-   (which can only have one alignment/color for its whole length). label_element keeps whatever
-   default width/margins Unity's BaseField gives it as a title; this just stops it from also
-   trying to grow/shrink like a normal field label now that it shares a row with the value. */
+/* Reads like the game's own cockpit gauges: title pinned left, live value pinned right in the
+   gauge's amber/yellow instead of both baked into one "Label : value" string (which can only
+   have one alignment/color for its whole length). label_element keeps whatever default
+   width/margins Unity's BaseField gives it as a title; this just stops it from also trying to
+   grow/shrink like a normal field label now that it shares a row with the value. */
 .k2-slider-label-row {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    /* Reese: the left (title) side sat flush against the row's own edge with no breathing room,
-       while the right (value) side wasn't - reads as lopsided even though both sides are honestly
-       just sitting at their natural flex position. Equal padding on both sides guarantees they're
-       symmetric regardless of either Label's own default margins. */
+    /* Equal padding on both sides keeps the title and value symmetric regardless of either
+       Label's own default margins. */
     padding-left: 4px;
     padding-right: 4px;
 }
@@ -145,8 +143,8 @@
     margin: 0;
 }
 
-/* Best-guess match to the amber/yellow of the in-game "ORBIT 1969.9 m/s" gauge readout Reese
-   referenced - nudge this hex if it's not a close enough match once seen next to the real gauge. */
+/* Matches the amber/yellow of the in-game "ORBIT 1969.9 m/s" gauge readout - nudge this hex if
+   it's not a close enough match seen next to the real gauge. */
 .k2-slider-value-label {
     color: rgb(242, 201, 76);
 }

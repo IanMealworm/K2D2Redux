@@ -1,3 +1,4 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
 using System.Linq;
@@ -6,44 +7,23 @@ using K2UI.Compas;
 
 namespace K2UI
 {
-    public class K2Compass : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment in
+    // this same folder for the full reasoning). The old UxmlTraits.Init() always applied all three
+    // attributes from the bag, falling back to its own defaultValue for any one a tag omitted -
+    // the new attribute system only calls a setter for attributes actually present. This mattered
+    // for real here: both attitude.uxml's and Lift.uxml's <K2UI.K2Compass name="heading" /> tags
+    // are completely bare (no value/angle-range/interactive at all), and _angleRange's own field
+    // initializer below was `0`, NOT the old bag default of `90` - a naive conversion would have
+    // left both compasses with a zero angle range (pixel_per_deg = width/AngleRange, so this would
+    // have divided by zero). Fixed by correcting the field default and setting all three
+    // explicitly in the constructor, matching the old bag defaults exactly.
+    [UxmlElement]
+    public partial class K2Compass : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2Compass, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            // This Unity version's base VisualElement.UxmlTraits.Init() has been reduced to a
-            // warn-and-return stub - it no longer sets the base "name"/etc UXML attributes at all
-            // for legacy UxmlTraits controls. Custom attributes (below) still apply fine since our
-            // own Init() override runs in full; only the base ones silently never happen. K2D2's UI
-            // code relies on "name" specifically (Q<T>("name") lookups throughout Pilots/*/*UI.cs
-            // and the tab system), so it's re-applied here by hand from the same attribute bag.
-            private UxmlStringAttributeDescription m_Name = new() { name = "name", defaultValue = "" };
-
-            private UxmlFloatAttributeDescription m_Value = new()
-            { name = "value", defaultValue = 0 };
-
-            private UxmlFloatAttributeDescription m_AngleRange = new()
-            { name = "angle-range", defaultValue = 90f };
-
-            private UxmlBoolAttributeDescription m_Interactive = new()
-            { name = "interactive", defaultValue = true };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                K2Compass k2_compas = (K2Compass)ve;
-
-                k2_compas.value = m_Value.GetValueFromBag(bag, cc);
-                k2_compas.AngleRange = m_AngleRange.GetValueFromBag(bag, cc);
-                k2_compas.Interactive = m_Interactive.GetValueFromBag(bag, cc);
-
-                k2_compas.UpdateContent();
-            }
-        }
-
         float _value = 0;
+
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public float value
         {
             get { return _value; }
@@ -75,7 +55,13 @@ namespace K2UI
             }
         }
 
-        float _angleRange = 0;
+        // Was `= 0` - the old bag default was 90 (see class comment). Init() always overwrote
+        // this from the bag regardless of whether a tag specified angle-range, so the wrong field
+        // default never mattered before.
+        float _angleRange = 90;
+
+        [CreateProperty]
+        [UxmlAttribute("angle-range")]
         public float AngleRange
         {
             get { return _angleRange; }
@@ -88,6 +74,9 @@ namespace K2UI
         }
 
         bool _interactive = true;
+
+        [CreateProperty]
+        [UxmlAttribute("interactive")]
         public bool Interactive
         {
             get { return _interactive; }
@@ -133,6 +122,10 @@ namespace K2UI
             // Register a callback after custom style resolution.
             RegisterCallback<CustomStyleResolvedEvent>(evt => CustomStylesResolved(evt));
             RegisterCallback<GeometryChangedEvent>(onGeometryChanged);
+
+            // Reproduces the old UxmlTraits.Init()'s unconditional trailing UpdateContent() call -
+            // see class comment above.
+            UpdateContent();
         }
 
         void CustomStylesResolved(CustomStyleResolvedEvent evt)

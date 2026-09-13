@@ -1,86 +1,33 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
-using System.Collections.Generic;
 using KTools;
 using K2D2;
 
 namespace K2UI
 {
-    public class K2Slider : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). The new attribute system only calls a setter for attributes actually present in a tag,
+    // unlike the old bag-based Init() which always applied every attribute, falling back to its
+    // own defaultValue for anything omitted. attitude.uxml's "elevation_slider" is a bare
+    // <K2UI.K2Slider name="elevation_slider" /> with none of these attributes set, so this
+    // constructor sets main_slider's lowValue/highValue explicitly (0/1, matching the old bag
+    // defaults) instead of trusting Slider's own defaults, and _labelOnTop's field initializer is
+    // `false` to match the old bag default. An AttachToPanelEvent hook (same idiom as
+    // ExFoldoutGroup.cs) reproduces the old Init()'s unconditional trailing
+    // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even for a
+    // bare tag.
+    [UxmlElement]
+    public partial class K2Slider : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2Slider, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get { yield break; }
-            }
-
-            private UxmlStringAttributeDescription m_Label = new()
-            { name = "label", defaultValue = "" };
-
-            private UxmlBoolAttributeDescription m_labelOnTop = new()
-            { name = "label-on-top", defaultValue = false };
-
-            private UxmlBoolAttributeDescription m_printValue = new()
-            { name = "print-value", defaultValue = false };
-
-            private UxmlStringAttributeDescription m_MinMaxLabel = new()
-            { name = "min-max-label", defaultValue = "" };
-
-            private UxmlFloatAttributeDescription m_Value = new()
-            { name = "value", defaultValue = 0f };
-
-            private UxmlFloatAttributeDescription m_Min = new()
-            {
-                name = "min",
-                defaultValue = 0f
-            };
-
-            private UxmlFloatAttributeDescription m_Max = new()
-            {
-                name = "max",
-                defaultValue = 1f
-            };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new()
-            { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                K2Slider k2_slider = (K2Slider)ve;
-                Slider main_slider = k2_slider.main_slider;
-
-                k2_slider.value = m_Value.GetValueFromBag(bag, cc);
-                k2_slider.printValue = m_printValue.GetValueFromBag(bag, cc);
-                k2_slider.labelOnTop = m_labelOnTop.GetValueFromBag(bag, cc);
-                k2_slider.minMaxLabel = m_MinMaxLabel.GetValueFromBag(bag, cc);
-
-                k2_slider.Label = m_Label.GetValueFromBag(bag, cc);
-
-                k2_slider.Min = m_Min.GetValueFromBag(bag, cc);
-                k2_slider.Max = m_Max.GetValueFromBag(bag, cc);
-
-                main_slider.direction = SliderDirection.Horizontal;//m_Direction.GetValueFromBag(bag, cc);
-                main_slider.pageSize = 0;//m_PageSize.GetValueFromBag(bag, cc);
-                main_slider.showInputField = false;//m_ShowInputField.GetValueFromBag(bag, cc);
-                main_slider.inverted = false;//m_Inverted.GetValueFromBag(bag, cc);
-
-                k2_slider.SliderValueChanged();
-                k2_slider.setLabels();
-            }
-        }
-
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public float value
         {
             get { return main_slider.value; }
-            set { 
+            set {
                 if (value == main_slider.value) return;
-                main_slider.value = value; 
+                main_slider.value = value;
                 listeners?.Invoke(value);
             }
         }
@@ -89,7 +36,10 @@ namespace K2UI
 
         public event OnChanged listeners;
 
-        string _label;
+        string _label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string Label
         {
             get { return _label; }
@@ -100,7 +50,10 @@ namespace K2UI
         }
 
         bool _printValue = false;
-        bool printValue
+
+        [CreateProperty]
+        [UxmlAttribute("print-value")]
+        public bool printValue
         {
             get { return _printValue; }
             set
@@ -126,8 +79,14 @@ namespace K2UI
             }
         }
 
-        bool _labelOnTop = true;
-        bool labelOnTop
+        // Default matches the old UxmlTraits "label-on-top" defaultValue - matters for tags that
+        // omit this attribute, since the new attribute system only calls the setter when present
+        // (see class comment / elevation_slider).
+        bool _labelOnTop = false;
+
+        [CreateProperty]
+        [UxmlAttribute("label-on-top")]
+        public bool labelOnTop
         {
             get { return _labelOnTop; }
             set
@@ -138,6 +97,9 @@ namespace K2UI
         }
 
         string _min_max_label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("min-max-label")]
         public string minMaxLabel
         {
             get { return _min_max_label; }
@@ -148,11 +110,16 @@ namespace K2UI
             }
         }
 
+        [CreateProperty]
+        [UxmlAttribute("min")]
         public float Min
         {
             get { return main_slider.lowValue; }
             set { main_slider.lowValue = value; }
         }
+
+        [CreateProperty]
+        [UxmlAttribute("max")]
         public float Max
         {
             get { return main_slider.highValue; }
@@ -172,11 +139,10 @@ namespace K2UI
 
         Label label_element;
 
-        // Reese wants these rows to read like the game's own cockpit gauges: title text pinned
-        // left, the live value pinned right in the same amber/yellow as those gauges, instead of
-        // both baked into one "Label : value" string (which can only be one alignment/color for
-        // its whole length). label_row wraps both so a single Insert(0, ...) in setLabelPos still
-        // moves them together as before.
+        // Title text pinned left, live value pinned right in the game's cockpit-gauge amber,
+        // rather than both baked into one "Label : value" string (which can only be one
+        // alignment/color for its whole length). label_row wraps both so a single Insert(0, ...)
+        // in setLabelPos still moves them together.
         VisualElement label_row;
         Label value_label_element;
 
@@ -198,6 +164,14 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new Slider() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
+            // Explicit, matching the old bag defaults (min=0/max=1) rather than trusting Slider's
+            // own built-in lowValue/highValue defaults - see class comment.
+            main_slider.lowValue = 0f;
+            main_slider.highValue = 1f;
+            main_slider.direction = SliderDirection.Horizontal;
+            main_slider.pageSize = 0;
+            main_slider.showInputField = false;
+            main_slider.inverted = false;
             Add(main_slider);
             dragger = main_slider.Q<VisualElement>("unity-dragger");
             tracker = main_slider.Q<VisualElement>("unity-tracker");
@@ -224,39 +198,27 @@ namespace K2UI
             main_slider.RegisterCallback<ChangeEvent<float>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
 
-            // Three theories tried and disproven via Reese's log before this one (search for
-            // "K2Slider dash diag" for the trail): (1) a display:none->visible transition losing
-            // the image - disproven by Max Throttle, which never goes through display:none;
-            // (2) the resolved background reference itself getting dropped on relayout - disproven
-            // directly, every logged relayout on every slider showed a correctly-resolved
-            // bg.sprite="dash"; (3) the tracker's own authored height rounding down to an invisible
-            // sub-pixel sliver, or the parent drag-container's overflow clipping it - both ruled
-            // out too: height read back as a clean 3, overflow was switched to visible, and every
-            // single slider still showed no dashes at all afterward.
-            //
-            // That last result is the real tell: resolvedStyle reported everything as it should be
-            // (correct sprite, correct size, Visible, opacity 1) and Reese still saw nothing. That
-            // means the actual GPU-side draw of this background-image is failing somewhere below
-            // what resolvedStyle can even see - not a sizing/visibility/clipping problem we can
-            // fix by tuning USS numbers further. Rather than keep guessing at properties of a
-            // background-image url() reference to a package-sourced sprite that's evidently not
-            // reliably paintable in this game's embedding, this drops that approach entirely and
-            // draws the dashes ourselves with generateVisualContent - plain rectangles via
-            // Painter2D, no texture/sprite/background-image resolution involved at all, so it
-            // can't be hit by whatever this was.
+            // The dashed track was originally a USS background-image (a package-sourced sprite),
+            // but that image reliably fails to paint in this game's UI Toolkit embedding even when
+            // resolvedStyle reports a correct sprite, size, and visibility - the failure is below
+            // what resolvedStyle can see. Drawn directly instead with generateVisualContent: plain
+            // rectangles via Painter2D, no texture/sprite/background-image resolution involved.
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
+
+            // Reproduces the old UxmlTraits.Init()'s unconditional trailing
+            // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even
+            // for a bare tag. Runs once attached, by which point any UXML attributes have already
+            // been applied - same idiom ExFoldoutGroup.cs uses.
+            RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
         // Matches the look the CSS background-image was going for: a thin horizontal dashed line,
         // tinted to the same blue-grey the retro pass uses elsewhere, tiled left-to-right at a
         // fixed dash/gap pitch regardless of this slider's actual width.
         static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
-        // Round-cap blobs from the first attempt turned out to be a stock KerbalUI.uss rule
-        // ghosting a second, lighter-blue dashed line behind ours (see #unity-tracker's
-        // background-image: none in K2Slider.uss for the full story) - the Butt line cap below
-        // was already the real fix for the rounded-end look, so these go back to Reese's original
-        // wider proportions now that the ghosting itself is what's actually being fixed.
+        // A stock KerbalUI.uss rule ghosts a second, lighter-blue dashed line behind this one
+        // unless #unity-tracker's background-image is set to none (see K2Slider.uss).
         const float dash_length = 8f;
         const float dash_gap = 6f;
 

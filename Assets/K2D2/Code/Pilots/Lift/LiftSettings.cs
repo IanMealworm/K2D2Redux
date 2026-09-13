@@ -66,9 +66,30 @@ namespace K2D2.Lift
             get => destination_Ap_km.V * end_adjust_pc.V/100;
         }
 
+        // Default on: run straight through ascent -> atmosphere clear -> circularize with no
+        // pause, since FinalCircularize (Controlers/Final.cs) now creates and flies the
+        // circularize burn itself instead of waiting on a manually- or FlightPlan-created node.
+        // Turning this off falls back to the old flow - Coasting.cs only actually pauses on
+        // pause_on_final below when this is off.
+        public Setting<bool> auto_circularize = new ("lift.auto_circularize", true);
+
         public Setting<bool> pause_on_final = new ("lift.pause_on_final", true);
 
         public Setting<bool> heading_correction = new ("lift.heading_correction", true);
+
+        // ROLL PROGRAM (see Ascent.cs for the full reasoning). Lives in the Profile foldout
+        // alongside Heading, not Advanced - it's a per-launch choice like heading, not a tuning
+        // knob. Off by default; measured relative to the vessel's OWN launch orientation rather
+        // than an absolute compass/navball reading (see Ascent.cs).
+        public Setting<bool> roll_program = new("lift.roll_program", false);
+        public ClampSetting<float> roll_program_altitude_km = new("lift.roll_program_altitude_km", 0.1f, 0, 5);
+        public ClampSetting<float> roll_program_angle_deg = new("lift.roll_program_angle_deg", 0, -180, 180);
+
+        // How fast Ascent.cs's roll ramp (ramped_roll_target_deg) is allowed to advance toward
+        // roll_program_angle_deg - player-tunable since different vessels can tolerate a faster
+        // roll than others before SAS overshoots (see Ascent.cs's class comment). Default and range
+        // centered on 3 deg/s.
+        public ClampSetting<float> roll_program_rate_deg_s = new("lift.roll_program_rate_deg_s", 3f, 0.5f, 15f);
 
         Label end_ascent_alt;
         Label end_adjust_alt;
@@ -102,7 +123,20 @@ namespace K2D2.Lift
             root.Q<K2Slider>("end_adjust_pc").Bind(end_adjust_pc);
             end_adjust_pc.listen(v => setLabels());
 
-            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);   
+            root.Q<K2Toggle>("auto_circularize").Bind(auto_circularize);
+
+            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
+
+            // ROLL PROGRAM - .listen(), not .listeners += (see LandingSettings.setupUI's comment on
+            // precision_landing for why that distinction matters): this defaults to off, so a plain
+            // .listeners += would leave roll_program_settings visible on a fresh window open until
+            // the toggle was flipped once.
+            root.Q<K2Toggle>("roll_program").Bind(roll_program);
+            var roll_program_settings = root.Q<VisualElement>("roll_program_settings");
+            roll_program.listen(v => roll_program_settings.Show(v));
+            roll_program_settings.Q<K2Slider>("roll_program_altitude_km").Bind(roll_program_altitude_km);
+            roll_program_settings.Q<K2Slider>("roll_program_angle_deg").Bind(roll_program_angle_deg);
+            roll_program_settings.Q<K2Slider>("roll_program_rate_deg_s").Bind(roll_program_rate_deg_s);
         }
     }
 }

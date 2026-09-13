@@ -10,6 +10,16 @@
             <!-- Section A: page title -->
             <ui:Label tabindex="-1" text="Maneuver Node Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
 
+            <!-- Quick-create buttons: plot a circularize node without needing the map view or
+                 another mod - "Circularize at AP" raises periapsis to meet the current apoapsis
+                 (burn at apoapsis), "Circularize at PE" lowers apoapsis to meet the current
+                 periapsis (burn at periapsis). Only creates the node - Start below (Section C)
+                 executes whatever node is next, same as it already does for a hand-plotted one. -->
+            <ui:VisualElement name="circularize_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; margin-bottom: 6px;">
+                <ui:Button text="Circularize at AP" display-tooltip-when-elided="true" name="circularize_ap" style="flex-grow: 1; margin-right: 0;" />
+                <ui:Button text="Circularize at PE" display-tooltip-when-elided="true" name="circularize_pe" style="flex-grow: 1; margin-left: 3px; margin-right: 0;" />
+            </ui:VisualElement>
+
             <!-- Section C: Start/Pause buttons + K2's own status readout + progress bar.
                  StatusGroup.uxml's shared template isn't used here anymore - status_pilot and
                  pilot_console are wrapped together in k2_status_speech, next to a K2Avatar, so the

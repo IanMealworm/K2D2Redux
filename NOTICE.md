@@ -92,13 +92,13 @@ unless a section says otherwise.
 ## UI Toolkit / K2UI
 
 K2D2's UI uses a library of custom UI Toolkit controls (`K2UI.*` -
-`TabbedPage`, `ToggleButton`, `K2Slider`, etc.), all using the legacy
-`UxmlFactory`/`UxmlTraits` registration pattern. K2D2 itself extends
-`Redux.ExtraModTypes.KerbalMod` and uses no BepInEx APIs at all - Redux
-loads it as a precompiled mod DLL at runtime, not compiled into the Player
-build. Two real, non-obvious problems specific to that loading model had to
-be worked out to get the custom controls rendering at all (last confirmed
-on Redux build 26w33a):
+`TabbedPage`, `ToggleButton`, `K2Slider`, etc.). Until the UxmlElement
+migration below, these all used the legacy `UxmlFactory`/`UxmlTraits`
+registration pattern. K2D2 itself extends `Redux.ExtraModTypes.KerbalMod`
+and uses no BepInEx APIs at all - Redux loads it as a precompiled mod DLL
+at runtime, not compiled into the Player build. Two real, non-obvious
+problems specific to that loading model had to be worked out to get the
+custom controls rendering at all (last confirmed on Redux build 26w33a):
 
 - **Custom control types declared in a precompiled mod DLL never get their
   `UxmlFactory` auto-registered.** Unity's automatic factory scan
@@ -113,12 +113,19 @@ on Redux build 26w33a):
   `VisualElementFactoryRegistry.RegisterFactory()` via reflection for every
   custom control, once, at plugin init - see `KTools/K2UIFactoryRegistration.cs`,
   called from `K2D2_Plugin.cs`'s `OnInitialized()` before any UXML loads.
-  **Note:** the modern `[UxmlElement]`/`UxmlSerializedData` pattern was
-  tried twice as an alternative fix and confirmed broken both times for
-  this AssetBundle + precompiled-mod-DLL combination (Unity's native
-  managed-type resolution can't find the type at runtime even though it's
-  correctly built into the DLL) - don't spend time on that path again for a
-  precompiled-plugin + AssetBundle UI, at least as of 26w33a.
+  **Note (superseded - see "UxmlElement migration" below):** the modern
+  `[UxmlElement]`/`UxmlSerializedData` pattern was tried twice as an
+  alternative fix around this time and confirmed broken both times, but
+  specifically for the **AssetBundle** + precompiled-mod-DLL combination
+  K2D2 was using back then (Unity's native managed-type resolution
+  couldn't find the type at runtime even though it was correctly built
+  into the DLL). By the time of the migration below, K2D2 had already
+  moved off that AssetBundle entirely onto Redux's Addressables system
+  (`AssetsLoader.LoadUxml()`, see the switch noted in `K2D2_Plugin.cs`) -
+  the same loading shape Redux's own `Redux.SDK.Examples` UxmlExample mod
+  uses and has confirmed working with `[UxmlElement]`. This old finding
+  was about the AssetBundle path specifically, not `[UxmlElement]` in
+  general, so it no longer applied once that switch had already happened.
 - **This Unity version's base `VisualElement.UxmlTraits.Init()` has been
   gutted to a deprecation-warning stub - it no longer applies built-in
   attributes like `name`.** Every custom control that calls
@@ -143,6 +150,92 @@ on Redux build 26w33a):
   (`Editor/RebuildK2D2UIBundle.cs`, menu item `K2D2 > Rebuild UI Bundle`) to
   rebuild `k2d2_ui.bundle` from source under the current Unity version. Run
   that tool again any time the UI source changes.
+
+### UxmlElement migration
+
+Unity 6.6 removes `UxmlFactory`/`UxmlTraits` entirely, so every `K2UI.*`
+custom control (`K2Toggle`, `K2Slider`, `K2SliderInt`, `ToggleButton`,
+`Group`, `ExFoldoutGroup`, `K2ProgressBar`, `InlineEnum`, `K2Avatar`,
+`Console`, `StatusLine`, `K2AutoFitLabel`, `K2Compass`, `Graph.GraphLine`,
+and the four `Tabs.*` classes) was converted to the modern
+`[UxmlElement]`/`[UxmlAttribute]` source-generated pattern ahead of that
+removal, following the pattern demonstrated in Redux's own
+`Redux.SDK.Examples` repo (`Assets/UxmlExample/Code/Controls/`). See the
+superseded note above for why the previous "confirmed broken" finding for
+this pattern doesn't apply to K2D2's current Addressables-based UI loading.
+
+`KTools/K2UIFactoryRegistration.cs` (the reflection-based manual
+`VisualElementFactoryRegistry.RegisterFactory()` workaround from the first
+bullet above) was deleted along with its call in `K2D2_Plugin.cs`'s
+`OnInitialized()` - the newer attribute-based registration is handled by
+Redux itself for mod assemblies, no manual step needed. The second bullet's
+`name`-re-application workaround is also gone - UI Toolkit's own attribute
+application sets `name` for every element type now, regardless of custom
+control.
+
+One non-mechanical wrinkle: the old `UxmlTraits.Init()` always applied
+every declared attribute from the UXML bag, filling in its own
+`defaultValue` for any attribute a tag didn't specify. The new attribute
+system only calls a property's setter for attributes actually present in
+the tag - so wherever a control's own C# default (its field initializer,
+or nothing at all) didn't already match the old bag default, converting
+it plainly would have silently changed behavior for any tag that omitted
+that attribute. Found and fixed while converting:
+
+- `K2Slider`/`K2SliderInt`: `_labelOnTop` was initialized to `true`, the
+  opposite of the old `label-on-top` bag default of `false`; `Min`/`Max`
+  relied on `Slider`/`SliderInt`'s own built-in `lowValue`/`highValue`
+  rather than the old bag defaults (0/1 and 0/100 respectively); and the
+  old `Init()`'s unconditional trailing `SliderValueChanged()`/
+  `setLabels()` calls (needed for a fully consistent visual state even on
+  a bare tag, e.g. `attitude.uxml`'s `elevation_slider`) had no equivalent
+  without an explicit hook - added via an `AttachToPanelEvent` callback,
+  the same "run my setup once actually attached" idiom `ExFoldoutGroup.cs`
+  already used.
+- `StatusLine`: every `<K2UI.StatusLine>` tag in the project omits
+  `level="..."` entirely, relying on the old bag default of `Level.Normal`
+  to apply its USS class - reproduced with an explicit `level =
+  Level.Normal;` in the constructor.
+- `ToggleButton`: `node.uxml`'s "pause" button omits `label="..."`
+  entirely, relying on the old bag default of `"Toggle Button"` -
+  reproduced the same way.
+- `Group`, `K2ProgressBar`, `InlineEnum`: no current UXML tag actually
+  omits the relevant attributes, but the same defensive default-setting
+  was added in each constructor anyway (matching each old bag default
+  exactly) in case a future tag does.
+
+`TabsBar`, `TabButton`, and `TabPage` are never actually instantiated from
+a UXML tag anywhere in the project (only ever via `new TabButton()` etc.
+from `TabbedPage`'s own code, or built programmatically for the tab bar) -
+their old `Init()` logic never actually ran in practice, so they converted
+without needing any of the above.
+
+`K2Compass` and `Graph.GraphLine` (both referenced by
+`K2UIFactoryRegistration.cs`'s old factory list, but not present in the
+first conversion pass) have since been converted too:
+
+- `K2Compass`: `_angleRange`'s field initializer was `0`, not the old
+  `angle-range` bag default of `90` - and both live usages
+  (`attitude.uxml`'s and `Lift.uxml`'s `<K2UI.K2Compass name="heading" />`)
+  are completely bare tags, so this would have divided by zero
+  (`pixel_per_deg = width / AngleRange`) the moment either compass
+  attached. Fixed the field default and set all three attributes
+  explicitly in the constructor; also added a trailing `UpdateContent()`
+  call to reproduce `Init()`'s old guaranteed call.
+- `Graph.GraphLine`: found an unrelated pre-existing bug while auditing
+  defaults - `_max_y`'s field initializer was `-1` (a copy-paste bug from
+  `MinY`'s line above it), not `1`. Not currently reachable from any UXML
+  tag, but fixed anyway since it would zero out the Y range
+  (`MinY == MaxY`) the instant it was used bare. All seven attributes are
+  now also set explicitly in the constructor, matching the old bag
+  defaults.
+
+`K2AutoFitLabel` converted trivially - it exposes no attributes beyond
+`Label`'s own standard ones, which UI Toolkit already applies regardless
+of custom control, so there was nothing else to change.
+
+All `K2UI.*` custom controls are now converted; none use the removed
+`UxmlFactory`/`UxmlTraits` pattern anymore.
 
 ## Node/orbit bugs fixed by subsystem
 
@@ -212,3 +305,75 @@ pass over Docks/Landing/Lift/Nodes/Staging/Drone beyond the bugs above) has
 been verified call-by-call against the real Redux assemblies with no further
 issues found. `K2UI/` itself has not been given the same call-by-call
 verification pass (only the two structural issues above were investigated).
+
+## Landing/Node fixes before 1.3.0
+
+Four issues cleared before cutting 1.3.0, all in-game-tested behavior fixes
+rather than Redux porting bugs:
+
+- **Precision Landing gated to vacuum bodies only.** Nothing in Circularize/
+  DeorbitBurn currently supports an atmospheric descent, so turning Precision
+  Landing on at an atmospheric body previously just silently did nothing
+  useful. `LandingUI.cs`'s Precision Landing toggle now only exists on the
+  new Vacuum settings panel (see the profile split below) - an atmospheric
+  body shows a short explanatory note instead. `LandingPilot.cs`'s
+  `isRunning` setter also carries a defense-in-depth check
+  (`settings.precision_landing.V && !LandingProfile.IsAtmospheric`) so
+  Circularize/DeorbitBurn can never be entered on an atmospheric body even
+  from a manually-edited settings file.
+- **Deorbit-burn search biased toward nearby candidates.** `LandingTargeting.
+  FindBestDeorbitBurn`/`TryEvaluateCandidate` picked whichever sampled burn
+  time scored the lowest predicted ground-miss distance, with no cost for
+  how far around the orbit that candidate sat - so a burn point that was
+  numerically a hair better but almost a full orbit away could win outright,
+  even though a nearer candidate would have left the plane-trim budget
+  (`normalDeltaV`) enough room to actually matter. Fixed by adding a
+  `distance_penalty_per_second` term (0.2 m per second of wait, a first-pass
+  heuristic - worth tuning once seen flying) to the score used only for
+  picking a winner; the true predicted miss distance (`bestErrorM`) is
+  untouched, so logging and the in-game Target Error readout still show the
+  real number.
+- **Node's SAS now stays locked to the maneuver vector for the whole burn.**
+  `BurnManeuver.Update()` (`Pilots/Nodes/Controlers/BurnManeuvre.cs`) was
+  dropping from `AutopilotMode.Maneuver` to plain `AutopilotMode.
+  StabilityAssist` the instant a burn started, unless the "Rotate During
+  Burn" toggle (Node tab, Experimental section) was turned on - which
+  defaulted to off. Flipped that default to `true`; the toggle itself is
+  unchanged; for anyone who wants the old fixed-orientation behavior back.
+  Since `BurnManeuver` is shared by every burn in the mod, this also changes
+  Lift's final circularize and Landing's Circularize/DeorbitBurn/
+  MidCourseCorrection burns, not just Node's - intentional, since more
+  accurate burns are wanted everywhere.
+- **Atmospheric and Vacuum landings now use two fully separate settings
+  profiles**, so tuning one can no longer touch or wreck the other. Landing's
+  settings used to live in the same shared `k2d2_settings.json` every other
+  tab's settings do; they now live in two new dedicated files,
+  `k2d2_landing_atmo.json`/`k2d2_landing_vac.json`, switched automatically
+  based on whether the current body has an atmosphere
+  (`Pilots/Landing/LandingProfile.cs`, kept current every tick from
+  `LandingPilot.Update()`). `SettingsFile`/`Setting<T>`/`ClampSetting<T>`
+  (`KTools/`) were generalized to support named file instances beyond the
+  original singleton, purely additively - every other tab's settings are
+  unaffected. `LandingSettings`/`TouchDown` each now hold two full,
+  independent instances (`settings_atmo`/`settings_vac`,
+  `TouchDown`'s own internal `atmo`/`vac`), selected via a pass-through
+  property everywhere else in the codebase already reads through
+  (`LandingPilot.settings`, `TouchDown`'s public tunable properties) - no
+  other call site needed to change. The Landing tab's UI (`Landing.uxml`)
+  now has two full parallel panels (Atmo panel: Warp/Brake/Touch Down only;
+  Vacuum panel: those plus Precision Landing/RCS fine correction), each
+  bound exactly once at tab-init and never rebound - `K2Page.onInit()` only
+  ever runs once per session, so a single settings object dynamically
+  swapped underneath an already-bound `K2Slider`/`K2Toggle` would leave the
+  UI stuck on whichever profile was active the first time the tab opened.
+  Landing's Reset button now resets both files together instead of just the
+  shared one.
+  One consequence worth flagging: this moves Landing's settings out of the
+  main settings file entirely, so anything already tuned there (burn
+  timing, touchdown altitude, etc.) starts over at coded defaults in the new
+  files rather than carrying over automatically.
+
+Precision landing's accuracy rests entirely on TouchDown's own closed-loop
+steering (cross-track/along-track error correction, RCS fine correction,
+proportional arc extend/shorten - see `TouchDown.cs`), started early enough
+by `compute_startBurn`'s lateral-correction-time and altitude-margin floors.

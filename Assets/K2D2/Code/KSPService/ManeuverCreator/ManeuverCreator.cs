@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using KSP.Game;
@@ -289,6 +289,167 @@ namespace K2D2.KSPService
             }
 
 
+        }
+
+        /// <summary>
+        /// New for precision landing (LandingTargeting.cs / DeorbitBurn.cs): creates a real,
+        /// visible maneuver node at a specific UT with a pure prograde/retrograde burn, rather
+        /// than deriving the UT from a TrueAnomaly like CreateManeuverNode_Co above does. The
+        /// deorbit/phasing burn needs to happen at a UT we've already computed ourselves (the
+        /// resonance search in LandingTargeting.DeltaVToShiftNodeLongitude), not one implied by
+        /// a true anomaly.
+        ///
+        /// FIXED (first in-game test): this originally copied CreateManeuverNode_Co's
+        /// referencedOrbit.PatchEndTransition / nodeData.SetManeuverState((PatchedConicsOrbit)...)
+        /// dance, which hard-casts _vesselComponent.Orbit to PatchedConicsOrbit - and threw
+        /// InvalidCastException every time, because under Redux the actively-flown vessel's
+        /// Orbit is a Redux.Ecs.Components.CurrentPatchedConicsOrbit (an ECS-backed class that
+        /// implements the same interfaces - IKeplerPatch, IPatchedOrbit, etc. - but is NOT a
+        /// PatchedConicsOrbit and can't be cast to one). Confirmed via ILSpy against the live
+        /// Redux assembly, not guessed.
+        ///
+        /// The fix, confirmed against Map3DManeuvers.OnAddManeuver() (the real code behind
+        /// clicking "add node" on the map, decompiled via ILSpy): that method only calls
+        /// SetManeuverState when maneuverNodeData.IsOnManeuverTrajectory is true - i.e. when
+        /// you're adding a node on top of an *existing* maneuver plan segment. For a first/only
+        /// node (our case - isManeuver: false in the constructor below), it's skipped entirely,
+        /// same as here. What it does NOT skip, and what this was actually missing, is
+        /// nodeData.InitializeTransform() right after construction - that's what
+        /// ManeuverPlanComponent.UpdateNodeDetails (called from AddNode/AddNodeToVessel) needed
+        /// and was null-reffing on without it. So no PatchedConicsOrbit needed at all for this
+        /// case - InitializeTransform() is the missing piece, not a replacement SetManeuverState
+        /// call.
+        ///
+        /// Unlike CreateManeuverNode_Co, this returns the created ManeuverNodeData synchronously
+        /// so the caller (DeorbitBurn) can hand it straight to its own TurnTo/WarpTo/BurnManeuver
+        /// instances without waiting a frame - only the map/gizmo bookkeeping is deferred to a
+        /// coroutine, same as the original.
+        ///
+        /// Note: the rest of this class (everything above) is unused anywhere else in K2D2Redux
+        /// as of this writing, so treat it as unverified rather than proven - this method is new
+        /// on top of that, and needs a real in-game test same as the rest of precision landing.
+        /// </summary>
+        // normalDeltaV added for precision landing's optional small plane trim (see
+        // LandingTargeting.FindBestDeorbitBurn) - defaults to 0 so every existing caller
+        // (Circularize.cs, Final.cs) keeps behaving exactly as before, pure prograde/retrograde.
+        public ManeuverNodeData CreateManeuverNodeAtUT(double UT, double progradeDeltaV, double normalDeltaV = 0)
+        {
+            Vector3d burnVector = ProgradeBurnVector(progradeDeltaV) + NormalBurnVector(normalDeltaV);
+
+            var SimulationObject = _vesselComponent.SimulationObject;
+
+            ManeuverNodeData nodeData = new ManeuverNodeData(SimulationObject.GlobalId, false, UT);
+            nodeData.InitializeTransform();
+            nodeData.BurnVector = burnVector;
+
+            // IsOnManeuverTrajectory is false here (first/only node), so per
+            // Map3DManeuvers.OnAddManeuver() SetManeuverState is correctly skipped - the engine's
+            // own maneuver-plan pipeline (ManeuverPlanComponent.AddNode, same path the in-game
+            // "add node" UI uses) resolves ManeuverTrajectoryPatch from here.
+            Game.SpaceSimulation.Maneuvers.AddNodeToVessel(nodeData);
+
+            K2D2_Plugin.Instance.StartCoroutine(UpdateMapGizmo_Co(nodeData));
+
+            return nodeData;
+        }
+
+        /// <summary>
+        /// Removes every maneuver node currently on the vessel's plan. Needed before creating a
+        /// new node via CreateManeuverNodeAtUT above - AddNodeToVessel only ever appends (see
+        /// that method's own comment: IsOnManeuverTrajectory is deliberately false, "first/only
+        /// node"), so calling it again on top of a node that's already there (e.g. precision
+        /// landing's Circularize node, still sitting in the plan once its burn finishes and
+        /// DeorbitBurn starts) adds a second node instead of replacing it - confirmed in-game:
+        /// the vessel ended up turning to align with the wrong node's direction once Deorbit
+        /// started. Same ManeuverPlanComponent.RemoveNodes API the old (dead, FlightPlan-
+        /// dependent) Lift Final.cs used for its create_ap/create_now buttons.
+        /// </summary>
+        public void RemoveAllNodes()
+        {
+            var maneuvers_component = _vesselComponent?.SimulationObject?.FindComponent<ManeuverPlanComponent>();
+            if (maneuvers_component == null)
+                return;
+
+            List<ManeuverNodeData> nodes = maneuvers_component.GetNodes();
+            if (nodes == null || nodes.Count == 0)
+                return;
+
+            // FIXED (first in-game test): GetNodes() hands back the component's own live list, not
+            // a copy. Passing that straight into RemoveNodes() throws "Collection was modified;
+            // enumeration operation may not execute" the moment RemoveNodes tries to enumerate the
+            // exact list it's removing entries from - confirmed via the log, and it's what actually
+            // broke DeorbitBurn after Circularize: the exception aborted Start() right at this call,
+            // before it ever got to creating the new node (the ~2 seconds of ArgumentOutOfRange
+            // spam right after in the log was the game's own UI repeatedly choking on the plan this
+            // left half-mutated). Passing a copy so RemoveNodes enumerates a snapshot instead.
+            maneuvers_component.RemoveNodes(new List<ManeuverNodeData>(nodes));
+        }
+
+        /// <summary>
+        /// Removes a single maneuver node from the plan, leaving every other node alone - unlike
+        /// RemoveAllNodes above, which assumes the whole plan belongs to whichever pilot is
+        /// calling it (true for Circularize/DeorbitBurn/FinalCircularize, which own the node they
+        /// create start to finish). Added for auto-deleting a node once it's been executed (Lift's
+        /// FinalCircularize, and the Node tab's own executor) without also wiping out anything
+        /// else the player - or a multi-node Flight Plan - might have queued up behind it. Same
+        /// ManeuverPlanComponent.RemoveNodes API as RemoveAllNodes, just handed a single-item list.
+        /// </summary>
+        public void RemoveNode(ManeuverNodeData node)
+        {
+            if (node == null)
+                return;
+
+            var maneuvers_component = _vesselComponent?.SimulationObject?.FindComponent<ManeuverPlanComponent>();
+            if (maneuvers_component == null)
+                return;
+
+            maneuvers_component.RemoveNodes(new List<ManeuverNodeData> { node });
+        }
+
+        /// <summary>
+        /// Removes every node on the plan, then creates a fresh one via CreateManeuverNodeAtUT -
+        /// but a fixed update later, not in the same call. First in-game test of the remove-then-
+        /// create sequence (precision landing's Circularize handing off to DeorbitBurn): the old
+        /// node visibly disappeared (RemoveAllNodes worked), but the new deorbit node never
+        /// actually showed up or did anything - the game "half saw" the removal. Calling
+        /// CreateManeuverNodeAtUT immediately afterward, in the same frame as RemoveNodes, is the
+        /// one thing that changed versus DeorbitBurn's first (working, node-count-zero) test, so
+        /// that's the leading suspect - same reasoning as why AddNodeToVessel's own gizmo/map
+        /// update below already waits a WaitForFixedUpdate rather than touching the map layer in
+        /// the same frame it adds a node. This is the fix to try first; logs the node count right
+        /// after creation so a next test confirms it either way if this isn't the whole story.
+        /// </summary>
+        public void RemoveAllNodesThenCreate(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated, double normalDeltaV = 0)
+        {
+            RemoveAllNodes();
+            K2D2_Plugin.Instance.StartCoroutine(RemoveAllNodesThenCreate_Co(UT, progradeDeltaV, onCreated, normalDeltaV));
+        }
+
+        private IEnumerator RemoveAllNodesThenCreate_Co(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated, double normalDeltaV = 0)
+        {
+            yield return new WaitForFixedUpdate();
+
+            var nodeData = CreateManeuverNodeAtUT(UT, progradeDeltaV, normalDeltaV);
+
+            var maneuvers_component = _vesselComponent?.SimulationObject?.FindComponent<ManeuverPlanComponent>();
+            int count_after = maneuvers_component?.GetNodes()?.Count ?? -1;
+            logger.LogInfo($"[ManeuverCreator] RemoveAllNodesThenCreate: created node {nodeData?.NodeID} at UT={UT:n1} " +
+                $"deltaV={progradeDeltaV:n2} normalDeltaV={normalDeltaV:n2} - {count_after} node(s) now on the plan.");
+
+            onCreated?.Invoke(nodeData);
+        }
+
+        private IEnumerator UpdateMapGizmo_Co(ManeuverNodeData nodeData)
+        {
+            yield return new WaitForFixedUpdate();
+
+            MapCore mapCore = null;
+            Game.Map.TryGetMapCore(out mapCore);
+            if (mapCore)
+            {
+                mapCore.map3D.ManeuverManager.GetNodeDataForVessels();
+                mapCore.map3D.ManeuverManager.UpdatePositionForGizmo(nodeData.NodeID);
+            }
         }
 
 

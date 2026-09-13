@@ -1,43 +1,27 @@
+using Unity.Properties;
 using UnityEngine.UIElements;
 
 namespace K2UI.Tabs
 {
-     
+
     /// <summary>
     /// a simple visual element just used to contains label and icon
     /// </summary>
-    public class TabPage : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). "name" itself needs no special handling any more - UI Toolkit's own attribute
+    // application always sets it now, regardless of custom control type - so
+    // TabbedPage.ShowContent()'s page.Show(page.name == code), K2Page.Init()'s
+    // panels.Q<TabPage>(code), and setButton() below all keep working unchanged. TabPage is never
+    // actually instantiated from a UXML tag in this project though (K2D2_Window.uxml's tab content
+    // is <ui:Instance> template references, not literal <K2UI.Tabs.TabPage> tags) - only ever via
+    // `new TabPage()` - so none of this was actually exercised via Init() before either way.
+    [UxmlElement]
+    public partial class TabPage : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<TabPage, UxmlTraits> { }
-
-        // Add the two custom UXML attributes.
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            // This Unity version's base VisualElement.UxmlTraits.Init() no longer applies the "name"
-            // UXML attribute for legacy controls - it's now just a warn-and-return stub. This one
-            // matters more than most: TabbedPage.ShowContent()'s page.Show(page.name == code),
-            // K2Page.Init()'s panels.Q<TabPage>(code), and setButton() below (which copies this.name
-            // onto the TabButton) all depend on a TabPage's "name" actually being set from its UXML
-            // tag, so without this fix every tab silently fails to match and switching tabs blanks
-            // the whole content area.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            UxmlStringAttributeDescription m_Label =
-                new() { name = "label", defaultValue = "My Tab" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as TabPage;
-
-                ate.label = m_Label.GetValueFromBag(bag, cc);
-
-            }
-        }
-
         public string _label;
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string label
         {
             get { return _label; }
@@ -64,39 +48,20 @@ namespace K2UI.Tabs
     /// <summary>
     /// TabButton have two states : active (showing current content) and lighted (pilot is on)
     /// </summary>
-    public class TabButton : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). TabButton, like TabsBar and TabPage, is never actually instantiated from a UXML tag in
+    // this project - only ever via `new TabButton()` from TabbedPage/TabPage's own code - so its
+    // old Init() (and the "Tab Button"/false/false defaults it unconditionally applied) never
+    // actually ran in practice. Converted for consistency/future-proofing anyway.
+    [UxmlElement]
+    public partial class TabButton : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<TabButton, UxmlTraits> { }
-
-        // Add the two custom UXML attributes.
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            UxmlStringAttributeDescription m_Label =
-                new() { name = "label", defaultValue = "Tab Button" };
-            UxmlBoolAttributeDescription m_Active =
-                new() { name = "active", defaultValue = false };
-            UxmlBoolAttributeDescription m_Lighted =
-                new() { name = "lighted", defaultValue = false };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as TabButton;
-
-                ate.label = m_Label.GetValueFromBag(bag, cc);
-                ate.Active = m_Active.GetValueFromBag(bag, cc);
-                ate.Lighted = m_Lighted.GetValueFromBag(bag, cc);
-            }
-        }
-
-        // Must expose your element class to a { get; set; } property that has the same name 
+        // Must expose your element class to a { get; set; } property that has the same name
         // as the name you set in your UXML attribute description with the camel case format
         public string _label;
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string label
         {
             get { return _label; }
@@ -107,6 +72,9 @@ namespace K2UI.Tabs
             }
         }
         bool _active;
+
+        [CreateProperty]
+        [UxmlAttribute("active")]
         public bool Active
         {
             get { return _active; }
@@ -125,6 +93,9 @@ namespace K2UI.Tabs
         }
 
         bool _lighted;
+
+        [CreateProperty]
+        [UxmlAttribute("lighted")]
         public bool Lighted
         {
             get { return _lighted; }

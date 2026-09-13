@@ -55,11 +55,10 @@ Label {
    this only ports the stock colors/font onto K2UI.ToggleButton's own class structure
    (.toggle-button / .checked / > Label, from ToggleButton.uss). #debug is used instead of
    a shared class so these rules win regardless of stylesheet load order. */
-/* Reese liked #reset_all's font (it never overrides one, so it just falls through to the
-   generic Label rule above - plain JetBrains Mono Regular) better than the SFPixelate bold
-   this block and #run below used to carry, so both now point at that same JetBrains Mono
-   Regular SDF asset instead, matching Reset All Settings/#reset_advanced without needing
-   their own override at all. */
+/* #debug and #run below point at the same JetBrains Mono Regular SDF asset as #reset_all's
+   font (it never overrides one, so it just falls through to the generic Label rule above -
+   plain JetBrains Mono Regular), rather than the SFPixelate bold they used to carry, matching
+   Reset All Settings/#reset_advanced without needing their own override at all. */
 /* Same pixel-bevel treatment as #run/#pause below, toned down - see that block's comment for why
    this has to be an ID selector and how the bevel itself is built. Debug Mode keeps its own
    established purple "settings toggle" color instead of the green used for Start/Pause's
@@ -179,19 +178,19 @@ Label {
     color: rgb(34, 38, 46) !important;
 }
 
-/* Node tab: Start/Pause toggle buttons. Originally just ported the stock KerbalUI oab-button-
-   toggle palette (flat fill, thin uniform border) - now redone as Reese's pixel-art 3D "PAUSE"/
-   "PLAY" bevel reference. This has to live HERE, as an ID selector, not as the .toggle-button.big
-   class rules over in ToggleButton.uss: an ID selector always wins a specificity fight against
-   any class selector regardless of which stylesheet loads later, so those .big rules were being
-   silently overridden by this block the entire time - same lesson as the #debug case above.
+/* Node tab: Start/Pause toggle buttons, styled as a pixel-art 3D "PAUSE"/"PLAY" bevel rather
+   than the stock KerbalUI oab-button-toggle palette (flat fill, thin uniform border). This has
+   to live HERE, as an ID selector, not as the .toggle-button.big class rules over in
+   ToggleButton.uss: an ID selector always wins a specificity fight against any class selector
+   regardless of which stylesheet loads later, so those .big rules were being silently overridden
+   by this block the entire time - same lesson as the #debug case above.
    UI Toolkit has no real box-shadow/gradient, so the bevel is faked with asymmetric border
    widths/colors: a dark keyline all round, a light face, and heavier right/bottom borders in
    darker shades standing in for the block's own right-side and underside faces - the diagonal
    seam where they meet at the corner falls out for free from how adjacent border colors miter.
-   Reese: the first pass read as too heavy/3D - thinner borders and less contrast between the
-   face/right-face/bottom-face shades tones it down while keeping the same bevel shape. Explicit
-   height here (not left to each button's own natural sizing) also fixes Pause reading shorter
+   Borders are kept thin and shade contrast low between the face/right-face/bottom-face tones so
+   the block reads as a bevel rather than heavy 3D. Explicit height here (not left to each
+   button's own natural sizing) also fixes Pause reading shorter
    than Start - #pause was capped at .toggle-button.big.icon's own height:30px (inside the same
    border-box as its now-thicker border, shrinking its content) while #run had no explicit height
    at all, so the two drifted apart the instant the borders got heavier. */
@@ -300,6 +299,32 @@ Label {
     translate: 1px 1px;
 }
 
+/* Node tab: Circularize at AP/PE quick-create buttons - same plain-Button pixel-bevel treatment
+   as Touch Down/Main Thrust Brake above (no nested .oab-button__inner/label, no .checked state -
+   one-shot actions, not toggles). Sized down from the stock 32px/14px default to 22px/11px
+   (border trimmed to match), since these sit above Start/Pause as a secondary, less prominent
+   pair rather than a primary mode button and should read clearly smaller, not just slightly
+   smaller. */
+#circularize_ap, #circularize_pe {
+    background-color: rgb(225, 227, 233);
+    background-image: none;
+    color: rgb(34, 38, 46);
+    font-size: 11px;
+    height: 22px;
+    border-width: 1px 2px 3px 1px;
+    border-color: rgb(35, 35, 42) rgb(170, 172, 180) rgb(120, 122, 130) rgb(35, 35, 42);
+    border-radius: 3px;
+}
+
+#circularize_ap:hover, #circularize_pe:hover {
+    background-color: rgb(238, 240, 245);
+}
+
+#circularize_ap:active, #circularize_pe:active {
+    background-color: rgb(210, 212, 218);
+    translate: 1px 1px;
+}
+
 /* Attitude tab: Elevation's -/+ stepper (RepeatButton, held down to repeat-step - see
    AttitudeUI.cs's SetAction calls). These came from a stock RepeatButton preset ("unity-button
    fixed-button icon-right" in attitude.uxml) that rendered as a plain dark dashed-border button,
@@ -380,10 +405,9 @@ Label {
     margin-right: 0;
 }
 
-/* Tab bar (Node/Lift/Land/Dock/Att.) - redesigned to match the flat "underline" tab style from
-   Reese's other-mod reference screenshot (plain text row, dim/gray for unselected, bright/bold
-   + a colored underline for the selected tab, no boxes or fills at all) rather than the boxed/
-   filled pill-tab look from the first pass. K2Tabs.uss's base rule gives every tab a full
+/* Tab bar (Node/Lift/Land/Dock/Att.) - a flat "underline" tab style (plain text row, dim/gray
+   for unselected, bright/bold + a colored underline for the selected tab, no boxes or fills at
+   all) rather than a boxed/filled pill-tab look. K2Tabs.uss's base rule gives every tab a full
    rounded-box border (top-left/right radius, border on all 4 sides) - this flattens that out to
    just a bottom border, repurposed as the underline indicator. Green matches the same "confirm/
    active" green used for Start and the progress bar elsewhere in this theme.
@@ -496,11 +520,11 @@ Label {
 }
 
 /* K2Tabs.uss's #tab_light was a separate "pilot is running" indicator (unrelated to tab
-   selection), restyled as a small pixelated dot in each tab's top-right corner (see git history
-   for the full backstory on that pass). Reese: remove it outright - only one autopilot can
-   actually be running at a time (K2D2_Plugin.ResetControllers() stops whichever pilot was active
-   the moment a different one starts), so it never showed more than one tab lit anyway and wasn't
-   worth the extra chrome. Hidden via the same ID-anchored selectors that were needed to style it
+   selection), previously restyled as a small pixelated dot in each tab's top-right corner (see
+   git history for that pass) and now removed outright - only one autopilot can actually be
+   running at a time (K2D2_Plugin.ResetControllers() stops whichever pilot was active the moment
+   a different one starts), so it never showed more than one tab lit anyway and wasn't worth the
+   extra chrome. Hidden via the same ID-anchored selectors that were needed to style it
    in the first place - a bare ".k2-tab-button #tab_light { display: none; }" won't reliably apply
    here for the same specificity reason a plain hide attempt failed when this was first touched:
    these runtime-built TabButton elements only reliably take overrides when every element in the
@@ -605,10 +629,10 @@ Label {
    below, which jumps straight to the About tab instead of toggling a shared settings pane.
    (Old gear art comment kept only in git history, not worth preserving here.)
 
-   New info button: Reese's reference image was a pixel-art blue circular info badge, so this is
-   built CSS-only (no new PNG/GUID asset) using the same bevel language as the rest of the mod's
-   buttons - a circular blue face, a dark navy outer border standing in for the pixel-bevel shadow
-   edge, and a lighter blue top/left highlight - with the "i" set directly as the Button's text
+   New info button: a pixel-art blue circular info badge, built CSS-only (no new PNG/GUID asset)
+   using the same bevel language as the rest of the mod's buttons - a circular blue face, a dark
+   navy outer border standing in for the pixel-bevel shadow edge, and a lighter blue top/left
+   highlight - with the "i" set directly as the Button's text
    rather than a separate icon child. */
 #info-toggle {
     width: 25px;

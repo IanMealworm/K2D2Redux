@@ -1,82 +1,29 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
-using System.Collections.Generic;
 using KTools;
 
 namespace K2UI
 {
     /// <summary>
-    /// complete copy of the K2Slider, I've not figured out how to make it more generic
+    /// Int-typed twin of K2Slider. Duplicated rather than shared generically.
     /// </summary>
-    public class K2SliderInt : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] - see K2Slider.cs's class comment.
+    // The constructor sets main_slider's lowValue/highValue explicitly (0/100, matching the old
+    // bag defaults) rather than trusting SliderInt's own defaults, and registers an
+    // AttachToPanelEvent hook to reproduce Init()'s old unconditional trailing
+    // SliderValueChanged()/setLabels() calls.
+    [UxmlElement]
+    public partial class K2SliderInt : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<K2SliderInt, UxmlTraits> { }
-
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            public override IEnumerable<UxmlChildElementDescription> uxmlChildElementsDescription
-            {
-                get { yield break; }
-            }
-
-            private UxmlStringAttributeDescription m_Label = new()
-            { name = "label", defaultValue = "" };
-
-            private UxmlBoolAttributeDescription m_labelOnTop = new()
-            { name = "label-on-top", defaultValue = false };
-
-            private UxmlBoolAttributeDescription m_printValue = new()
-            { name = "print-value", defaultValue = false };
-
-            private UxmlStringAttributeDescription m_MinMaxLabel = new()
-            { name = "min-max-label", defaultValue = "" };
-
-            private UxmlIntAttributeDescription m_Value = new()
-            { name = "value", defaultValue = 0 };
-
-            private UxmlIntAttributeDescription m_Min = new()
-            { name = "min", defaultValue = 0 };
-
-            private UxmlIntAttributeDescription m_Max = new()
-            { name = "max", defaultValue = 100 };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            private UxmlStringAttributeDescription m_Name = new()
-            { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                K2SliderInt k2_slider = (K2SliderInt)ve;
-                SliderInt main_slider = k2_slider.main_slider;
-
-                k2_slider.value = m_Value.GetValueFromBag(bag, cc);
-                k2_slider.printValue = m_printValue.GetValueFromBag(bag, cc);
-                k2_slider.labelOnTop = m_labelOnTop.GetValueFromBag(bag, cc);
-                k2_slider.minMaxLabel = m_MinMaxLabel.GetValueFromBag(bag, cc);
-
-                k2_slider.Label = m_Label.GetValueFromBag(bag, cc);
-
-                k2_slider.Min = m_Min.GetValueFromBag(bag, cc);
-                k2_slider.Max = m_Max.GetValueFromBag(bag, cc);
-
-                main_slider.direction = SliderDirection.Horizontal;//m_Direction.GetValueFromBag(bag, cc);
-                main_slider.pageSize = 0;//m_PageSize.GetValueFromBag(bag, cc);
-                main_slider.showInputField = false;//m_ShowInputField.GetValueFromBag(bag, cc);
-                main_slider.inverted = false;//m_Inverted.GetValueFromBag(bag, cc);
-
-                k2_slider.SliderValueChanged();
-                k2_slider.setLabels();
-            }
-        }
-
+        [CreateProperty]
+        [UxmlAttribute("value")]
         public int value
         {
             get { return main_slider.value; }
-            set { 
+            set {
                 if (value == main_slider.value) return;
-                main_slider.value = value; 
+                main_slider.value = value;
                 listeners?.Invoke(value);
             }
         }
@@ -85,7 +32,10 @@ namespace K2UI
 
         public event OnChanged listeners;
 
-        string _label;
+        string _label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("label")]
         public string Label
         {
             get { return _label; }
@@ -96,7 +46,10 @@ namespace K2UI
         }
 
         bool _printValue = false;
-        bool printValue
+
+        [CreateProperty]
+        [UxmlAttribute("print-value")]
+        public bool printValue
         {
             get { return _printValue; }
             set
@@ -106,8 +59,11 @@ namespace K2UI
             }
         }
 
-        bool _labelOnTop = true;
-        bool labelOnTop
+        bool _labelOnTop = false;
+
+        [CreateProperty]
+        [UxmlAttribute("label-on-top")]
+        public bool labelOnTop
         {
             get { return _labelOnTop; }
             set
@@ -118,6 +74,9 @@ namespace K2UI
         }
 
         string _min_max_label = "";
+
+        [CreateProperty]
+        [UxmlAttribute("min-max-label")]
         public string minMaxLabel
         {
             get { return _min_max_label; }
@@ -128,11 +87,16 @@ namespace K2UI
             }
         }
 
+        [CreateProperty]
+        [UxmlAttribute("min")]
         public int Min
         {
             get { return main_slider.lowValue; }
             set { main_slider.lowValue = value; }
         }
+
+        [CreateProperty]
+        [UxmlAttribute("max")]
         public int Max
         {
             get { return main_slider.highValue; }
@@ -174,6 +138,14 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new SliderInt() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
+            // Explicit, matching the old bag defaults (min=0/max=100) rather than trusting
+            // SliderInt's own built-in lowValue/highValue defaults - see class comment.
+            main_slider.lowValue = 0;
+            main_slider.highValue = 100;
+            main_slider.direction = SliderDirection.Horizontal;
+            main_slider.pageSize = 0;
+            main_slider.showInputField = false;
+            main_slider.inverted = false;
             Add(main_slider);
             dragger = main_slider.Q<VisualElement>("unity-dragger");
             tracker = main_slider.Q<VisualElement>("unity-tracker");
@@ -200,19 +172,17 @@ namespace K2UI
             main_slider.RegisterCallback<ChangeEvent<int>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
 
-            // Mirrors K2Slider.cs (this class is "a complete copy" of it, per the class doc comment
-            // above) - see that file for the full story of why the dashed track is drawn directly
-            // with generateVisualContent instead of a USS background-image: the background-image
-            // approach reported a fully correct resolved style (right sprite, right size, visible)
-            // while still not actually painting anything in this game's embedding, so this avoids
-            // that whole mechanism rather than continuing to chase it.
+            // Mirrors K2Slider.cs - drawn directly with generateVisualContent rather than a USS
+            // background-image, which fails to paint in this game's embedding (see K2Slider.cs).
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
+
+            // Reproduces the old UxmlTraits.Init()'s unconditional trailing
+            // SliderValueChanged()/setLabels() calls - see K2Slider.cs's class comment.
+            RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
-        // See K2Slider.cs's DrawDashedTrack for the full story - the Butt line cap (not the dash
-        // size) was the real fix for the rounded-blob look, so this keeps Reese's original wider
-        // proportions.
+        // See K2Slider.cs's DrawDashedTrack.
         static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
         const float dash_length = 8f;
         const float dash_gap = 6f;

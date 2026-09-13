@@ -1,68 +1,34 @@
+using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements;
 using System.Collections.Generic;
 
 namespace K2UI.Graph
 {
-    public class GraphLine : VisualElement
+    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
+    // why). GraphLine isn't referenced from any UXML tag in the project currently, so none of this
+    // was actually exercised via Init() before - but `_max_y`'s own field default below was
+    // already wrong independent of that (a pre-existing copy-paste bug, `-1` instead of `1`,
+    // presumably from MinY's line above it), which would degenerate MinY==MaxY and divide by zero
+    // in value_to_pixel() the moment a bare <K2UI.Graph.GraphLine> tag omits max-y="...". Fixed
+    // both that and set every attribute explicitly in the constructor, matching the old bag
+    // defaults exactly, for the same reason as every other control in this migration.
+    [UxmlElement]
+    public partial class GraphLine : VisualElement
     {
-        public new class UxmlFactory : UxmlFactory<GraphLine, UxmlTraits> { }
-
-        // Add the two custom UXML attributes.
-        public new class UxmlTraits : VisualElement.UxmlTraits
-        {
-            UxmlFloatAttributeDescription m_MinX =
-                new() { name = "min-x", defaultValue = 0 };
-
-            UxmlFloatAttributeDescription m_MaxX =
-                new() { name = "max-x", defaultValue = 5 };
-
-            UxmlFloatAttributeDescription m_MinY =
-                new() { name = "min-y", defaultValue = -1 };
-
-            UxmlFloatAttributeDescription m_MaxY =
-                new() { name = "max-y", defaultValue = 1 };
-
-            UxmlColorAttributeDescription m_Color =
-                new() { name = "line-color", defaultValue = Color.white };    
-
-            UxmlFloatAttributeDescription m_LineWidth =
-                new() { name = "line-width", defaultValue = 1 };   
-              
-
-            UxmlFloatAttributeDescription m_seed =
-                new() { name = "test-seed", defaultValue = -1 };
-
-            // Base Init() no longer applies "name" in this Unity version, so it's re-applied here.
-            UxmlStringAttributeDescription m_Name =
-                new() { name = "name", defaultValue = "" };
-
-            public override void Init(VisualElement ve, IUxmlAttributes bag, CreationContext cc)
-            {
-                base.Init(ve, bag, cc);
-                ve.name = m_Name.GetValueFromBag(bag, cc);
-                var ate = ve as GraphLine;
-                ate.MinX = m_MinX.GetValueFromBag(bag, cc);     
-                ate.MaxX = m_MaxX.GetValueFromBag(bag, cc);
-                ate.MinY = m_MinY.GetValueFromBag(bag, cc);
-                ate.MaxY = m_MaxY.GetValueFromBag(bag, cc);
-                ate.LineColor = m_Color.GetValueFromBag(bag, cc);
-                ate.LineWidth = m_LineWidth.GetValueFromBag(bag, cc);
-                
-                ate.TestSeed = m_seed.GetValueFromBag(bag, cc);     
-            }
-        }
-
         // the orther is left, right, top, bottom
         public void setRanges(float min_x, float max_x, float min_y, float max_y)
         {
             MinX = min_x;
             MaxX = max_x;
             MinY = min_y;
-            MaxY = max_y;          
+            MaxY = max_y;
         }
 
         public float _min_x = 0;
+
+        [CreateProperty]
+        [UxmlAttribute("min-x")]
         public float MinX
         {
             get { return _min_x; }
@@ -70,6 +36,9 @@ namespace K2UI.Graph
         }
 
         public float _max_x = 5;
+
+        [CreateProperty]
+        [UxmlAttribute("max-x")]
         public float MaxX
         {
             get { return _max_x; }
@@ -77,13 +46,21 @@ namespace K2UI.Graph
         }
 
         public float _min_y = -1;
+
+        [CreateProperty]
+        [UxmlAttribute("min-y")]
         public float MinY
         {
             get { return _min_y; }
             set { _min_y = value; MarkDirtyRepaint(); }
         }
 
-        public float _max_y = -1;
+        // Was `= -1` - a pre-existing copy-paste bug (see class comment); the old bag default was
+        // `1`, matching what this is now.
+        public float _max_y = 1;
+
+        [CreateProperty]
+        [UxmlAttribute("max-y")]
         public float MaxY
         {
             get { return _max_y; }
@@ -91,18 +68,27 @@ namespace K2UI.Graph
         }
 
         public Color _color = Color.white;
+
+        [CreateProperty]
+        [UxmlAttribute("line-color")]
         public Color LineColor  {
             get { return _color; }
             set { _color = value; MarkDirtyRepaint(); }
         }
 
         public float _line_width = 1;
+
+        [CreateProperty]
+        [UxmlAttribute("line-width")]
         public float LineWidth  {
             get { return _line_width; }
             set { _line_width = value; MarkDirtyRepaint(); }
         }
 
         public float _test_seed = -1;
+
+        [CreateProperty]
+        [UxmlAttribute("test-seed")]
         public float TestSeed  {
             get { return _test_seed; }
             set { _test_seed = value; 
@@ -138,6 +124,16 @@ namespace K2UI.Graph
         {
            AddToClassList("graph-line");
            generateVisualContent += Draw;
+
+           // Reproduces the old UxmlTraits.Init()'s unconditional bag-default application - see
+           // class comment above.
+           MinX = 0f;
+           MaxX = 5f;
+           MinY = -1f;
+           MaxY = 1f;
+           LineColor = Color.white;
+           LineWidth = 1f;
+           TestSeed = -1f;
         }
 
         List<Vector2> points = new();
