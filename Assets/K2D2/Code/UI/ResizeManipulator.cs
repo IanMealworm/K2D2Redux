@@ -23,10 +23,23 @@ namespace K2D2.UI
     ///    by polling the real OS mouse button state directly, ending the gesture within a frame of
     ///    the button coming up regardless of what events do or don't arrive.
     ///
-    /// 2. KTools.SettingsFile.Set[T] only special-cases string/bool/int/float/double/Color/Vector3,
-    ///    not Vector2, so persisting a Vector2 size threw InvalidCastException on every resize end.
-    ///    Since this only tracks height, it persists as a plain Setting&lt;float&gt; instead, which
-    ///    SettingsFile already supports natively.
+    /// 2. Once #1 was fixed, the log immediately surfaced a second bug that #1's fix had been
+    ///    masking: every time a resize gesture ended, saving the chosen size threw
+    ///    "InvalidCastException: UnityEngine.Vector2 not implemented" from
+    ///    KTools.SettingsFile.Set[T] - that generic method only special-cases string/bool/int/
+    ///    float/double/Color/Vector3, not Vector2 (confirmed by reading SettingsFile.cs directly).
+    ///    Every single resize-end was silently throwing and never actually persisting. Now that
+    ///    this only tracks height, it persists as a plain Setting&lt;float&gt; instead, which
+    ///    SettingsFile already supports natively - this fixes the crash and matches the new
+    ///    height-only scope at the same time.
+    ///
+    /// 3. The bottom clamp used `Configuration.CurrentScreenHeight`, which is NOT the screen: it
+    ///    forwards to the compile-time 1920x1080 constant `UitkForKsp2.API.ReferenceResolution
+    ///    .Height` (IL proof in DragManipulator's class doc). On any panel that is not exactly
+    ///    reference 1080 tall, the window could be resized past the real bottom wall. The limit is
+    ///    now derived from the live panel rect (TryGetBottomLimit), and a restored saved height is
+    ///    re-clamped once, on the first real layout pass, instead of while resolvedStyle.top still
+    ///    reads 0.
     /// </summary>
     public class ResizeManipulator : IManipulator
     {
@@ -109,7 +122,28 @@ namespace K2D2.UI
                 size_setting = new Setting<float>(save_setting, invalid_height);
 
             if (size_setting != null && size_setting.V != invalid_height)
+            {
+                // The constructor runs before this element has a panel/layout (right after the UXML
+                // is cloned), so TryGetBottomLimit below has nothing to measure and this first
+                // application is unclamped - correct, since it is just reinstating the user's own
+                // saved value. Re-apply it once on the first real layout pass so a height saved on
+                // a taller panel still gets pulled inside a shorter one (see
+                // OnFirstGeometryForSavedHeight).
                 ApplyHeight(size_setting.V);
+                _resizeTarget.RegisterCallback<GeometryChangedEvent>(OnFirstGeometryForSavedHeight);
+            }
+        }
+
+        /// <summary>
+        /// One-shot: re-applies the saved height once the window actually has a laid-out panel
+        /// rect, so <see cref="TryGetBottomLimit"/> has real numbers to work with.
+        /// </summary>
+        private void OnFirstGeometryForSavedHeight(GeometryChangedEvent evt)
+        {
+            if (evt.newRect.width == 0 || evt.newRect.height == 0) return;
+
+            _resizeTarget.UnregisterCallback<GeometryChangedEvent>(OnFirstGeometryForSavedHeight);
+            ApplyHeight(size_setting.V);
         }
 
         /// <summary>
@@ -127,8 +161,15 @@ namespace K2D2.UI
             // would need to track which button OnPointerDown saw (evt.button) instead of assuming 0.
             if (Input.GetMouseButton(0)) return;
 
-            L.Log("ResizeManipulator: Tick() watchdog caught a gesture the event pipeline never " +
-                  "ended - mouse button is up but pointerDown/IsResizing was still true.");
+            // PRODUCTION (v1.2.1): this was `L.Log`, which now routes to LogDebug and would be
+            // invisible in a shipped game. It is promoted to Warn instead of being deleted, because it
+            // is NOT per-frame chatter - unlike the two deleted in LandingPilot, it fires only when the
+            // watchdog actually catches a stuck gesture, which means the event pipeline dropped a
+            // pointer-up. That is a real (if rare) malfunction, and this line is the only signal it
+            // ever happened. The `if (!_pointerDown) return;` and `Input.GetMouseButton(0)` guards above
+            // keep it off the steady-state path, so it costs nothing until something is genuinely wrong.
+            L.Warn("ResizeManipulator: Tick() watchdog caught a gesture the event pipeline never " +
+                   "ended - mouse button is up but pointerDown/IsResizing was still true.");
 
             if (_target != null && _pointerId >= 0 && _target.HasPointerCapture(_pointerId))
                 _target.ReleasePointer(_pointerId);
@@ -141,8 +182,15 @@ namespace K2D2.UI
             height = Mathf.Clamp(height, MinHeight, MaxHeight);
 
             // Keep the window from being resized past the bottom of the screen, the same idea
-            // DragManipulator's clampWindow uses for position.
-            height = Mathf.Min(height, Configuration.CurrentScreenHeight - _resizeTarget.resolvedStyle.top);
+            // DragManipulator's clampWindow uses for position - but derived from the SAME live
+            // panel rect. Configuration.CurrentScreenHeight is not the screen, it is the
+            // compile-time 1920x1080 ReferenceResolution constant (see DragManipulator's class doc
+            // for the IL), so using it here allowed resizing past the real bottom wall at any panel
+            // height other than exactly 1080. If no laid-out rect is available the clamp is skipped
+            // rather than applied with a bogus constant; the geometry callback re-applies it once
+            // the window is laid out.
+            if (TryGetBottomLimit(out float bottomLimit))
+                height = Mathf.Min(height, Mathf.Max(MinHeight, bottomLimit));
 
             _resizeTarget.style.height = height;
 
@@ -152,15 +200,56 @@ namespace K2D2.UI
             _resizeTarget.MarkDirtyRepaint();
         }
 
+        /// <summary>
+        /// The most this window can grow before its bottom edge would leave the panel, measured
+        /// from the SAME live panel rect the drag clamps against (panel.visualTree.contentRect,
+        /// panel space). bottomLimit = panel bottom - window top, i.e. the height the
+        /// window can have while its top stays put. Units are panel units for the rect and the
+        /// window's top; style.height is in the element's local units - identical for an unscaled
+        /// panel, and conservative (never permissive) if a UI scale is applied to this subtree.
+        /// Returns false when there is no laid-out rect yet (e.g. in the constructor), so callers
+        /// skip the clamp instead of applying a stale constant.
+        /// </summary>
+        private bool TryGetBottomLimit(out float bottomLimit)
+        {
+            bottomLimit = 0f;
+            try
+            {
+                IPanel panel = _resizeTarget.panel;
+                if (panel == null || panel.visualTree == null) return false;
+
+                Rect bounds = panel.visualTree.contentRect;  // panel space, live read
+                Rect world = _resizeTarget.worldBound;       // panel space, live read
+                if (bounds.height <= 0 || world.height <= 0) return false;
+
+                bottomLimit = bounds.yMax - world.y;
+                return true;
+            }
+            catch { return false; }
+        }
+
         private void OnPointerDown(PointerDownEvent evt)
         {
+            // Left button only, for the same reason as DragManipulator: this registers PointerDownEvent
+            // directly and so bypasses MouseManipulator's activators. It also keeps the Tick()
+            // watchdog's assumption true - that watchdog tests Input.GetMouseButton(0) to decide a
+            // gesture has ended, so a right-button resize would look immediately "ended" to it and
+            // trip the stuck-gesture recovery on the next frame. (See the comment at Tick().)
+            if (evt.button != 0)
+                return;
+
             if (!IsEnabled) return;
 
             // If we're already mid-gesture when a new PointerDown arrives, we never saw that
             // previous gesture end - that's the stuck-state signature itself, so log it loudly
             // before forcing a clean restart, rather than silently papering over it.
             if (_pointerDown)
-                L.Log($"ResizeManipulator: PointerDown id={evt.pointerId} arrived while ALREADY " +
+                // PRODUCTION (v1.2.1): promoted to Warn rather than left as debug chatter, because the
+                // comment above is right - this is the stuck-state signature. It means a
+                // PointerUp/PointerCaptureOut was genuinely missed, which is a malfunction of the
+                // gesture pipeline. Promoted instead of deleted: the line is the only record that it
+                // ever happened, and it costs nothing off the steady-state path.
+                L.Warn($"ResizeManipulator: PointerDown id={evt.pointerId} arrived while ALREADY " +
                       $"mid-gesture (prev id={_pointerId}, wasResizing={IsResizing}) - a previous " +
                       $"PointerUp/PointerCaptureOut was missed. Forcing a clean restart.");
 

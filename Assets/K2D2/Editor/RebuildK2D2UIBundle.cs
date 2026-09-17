@@ -27,6 +27,7 @@ namespace K2D2.EditorTools
         private const string SourceDir = "Assets/UI/K2D2_UI";
         private const string RootUxml = SourceDir + "/K2D2_Window.uxml";
         private const string OutputDir = "Assets/K2D2/Copied/assets/bundles";
+        private const string ModAssemblyName = "K2D2";
 
         [MenuItem("K2D2/Rebuild UI Bundle")]
         public static void Rebuild()
@@ -60,8 +61,44 @@ namespace K2D2.EditorTools
             if (!Directory.Exists(OutputDir))
                 Directory.CreateDirectory(OutputDir);
 
-            var manifest = BuildPipeline.BuildAssetBundles(
-                OutputDir, BuildAssetBundleOptions.None, EditorUserBuildSettings.activeBuildTarget);
+            // [UxmlElement] controls get Unity-generated `X/UxmlSerializedData` companions that the
+            // imported UXML references by assembly-qualified name. The player can only resolve
+            // managed-reference types from assemblies it was compiled against, and this mod's
+            // `K2D2` assembly is runtime-loaded by SpaceWarp2 - so a bundle that names
+            // `K2D2 K2UI.*/UxmlSerializedData` deserializes with zero children (launch 2 measured
+            // it). The conversion below swaps every mod-owned reference for the shipped
+            // `UitkForKsp2.Controls.LateBoundUxmlSerializedData` proxy (in the Unity-known
+            // uitkforksp2.controls.Runtime assembly), which defers construction to runtime, and
+            // restores the source assets when the scope disposes after the build.
+            AssetBundleManifest manifest;
+            using (var conversion = LateBoundUxmlBundleConversion.Apply(new[] { SourceDir }, new[] { ModAssemblyName }))
+            {
+                if (conversion.ConvertedReferenceCount > 0)
+                {
+                    Debug.Log($"[K2D2] RebuildK2D2UIBundle: converted " +
+                        $"{conversion.ConvertedReferenceCount} mod-owned UxmlSerializedData reference(s) " +
+                        "to UitkForKsp2.Controls.LateBoundUxmlSerializedData.");
+                }
+                else
+                {
+                    Debug.LogWarning("[K2D2] RebuildK2D2UIBundle: no mod-owned UxmlSerializedData " +
+                        "references found - the built bundle would not be player-loadable. Check that " +
+                        "the [UxmlElement] K2UI controls still compile into the K2D2 assembly.");
+                }
+
+                // ForceRebuildAssetBundle is required, and is the second half of the fix. Unity's
+                // incremental check compares the bundle's inputs as they are SAVED on disk, and the
+                // conversion above deliberately only touches the in-memory objects (the sources are
+                // restored on dispose). Without the flag Unity decides every bundle is up to date and
+                // skips the write entirely - measured: the build reports only the `bundles` index
+                // (1.6 KB) and k2d2_ui.bundle keeps its pre-conversion mtime and contents. With it,
+                // the converted tree is what gets serialized; measured on StatusGroup.uxml, the built
+                // file's type tree goes from 3 `K2D2 K2UI.*/UxmlSerializedData` records to 0, with the
+                // proxy records in their place.
+                manifest = BuildPipeline.BuildAssetBundles(
+                    OutputDir, BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                    EditorUserBuildSettings.activeBuildTarget);
+            }
 
             if (manifest == null)
             {

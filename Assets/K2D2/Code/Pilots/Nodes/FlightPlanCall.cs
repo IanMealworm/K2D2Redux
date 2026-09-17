@@ -1,4 +1,5 @@
 using K2UI;
+using KSP.Sim;
 using KSP.Sim.impl;
 using KTools;
 using UnityEngine;
@@ -13,7 +14,7 @@ namespace K2D2.Node
             this.pilot = pilot;
         }
 
-        public static PatchedConicsOrbit getOrbit()
+        public static IKeplerPatch getOrbit()
         {
             var current_vessel = K2D2_Plugin.Instance.current_vessel;
             if (current_vessel == null)
@@ -28,10 +29,11 @@ namespace K2D2.Node
                 return null;
             }
 
-            // VERIFIED during Redux port verification: VesselComponent.Orbit is typed KSP.Sim.IKeplerPatch
-            // (an interface) in the current assemblies, not PatchedConicsOrbit directly - needs an explicit
-            // cast, same as every other call site in this codebase that reads VesselComponent.Orbit.
-            PatchedConicsOrbit orbit = (PatchedConicsOrbit)current_vessel.VesselComponent.Orbit;
+            // VesselComponent.Orbit is statically typed KSP.Sim.IKeplerPatch at this pin
+            // (0.2.9.0.104521), not the concrete PatchedConicsOrbit - return the interface. Both
+            // callers only read TimeToAp, which the interface carries via IPatchedOrbit, so no
+            // concrete type is needed anywhere here.
+            IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             return orbit;
         }
   

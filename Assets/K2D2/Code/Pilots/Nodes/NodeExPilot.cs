@@ -80,7 +80,7 @@ namespace K2D2.Node
             if (mode == this.mode)
                 return;
 
-            logger.LogInfo("setMode " + mode);  
+            L.Log("setMode " + mode);  
             if (mode == Mode.Off)
             {
                 TimeWarpTools.SetRateIndex(0, false);
@@ -125,7 +125,7 @@ namespace K2D2.Node
                     break;
             }
 
-            logger.LogInfo("setMode " + mode);
+            L.Log("setMode " + mode);
         }
 
         public bool canStart()
@@ -171,6 +171,14 @@ namespace K2D2.Node
         public void UpdateUI()
         {
             if (!ui.isVisible) return;
+
+            // F3(b): this is the SECOND per-frame UI path. It is reached from K2D2_Plugin.Update()
+            // -> pilots_manager.UpdateControllers(), not from K2D2Window.Update(), so gating the
+            // window alone would leave it alive. ui.isVisible only means "this is the selected tab"
+            // - it stays true while the window is shut, so without this the node page kept running
+            // the full Reset()/Status() sequence, flip-flop included, in flight with the window
+            // closed.
+            if (!K2D2_Plugin.IsWindowOpen) return;
 
             ui.status_bar.Reset();
 

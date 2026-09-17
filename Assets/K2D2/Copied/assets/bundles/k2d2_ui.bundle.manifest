@@ -1,16 +1,16 @@
 ManifestFileVersion: 0
 UnityVersion: 6000.5.8f1
-CRC: 3092328825
+CRC: 3734554186
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 48bd3dedd5748dbeae0a947ecd36b520
+    Hash: 155af84f0afbe2f969806dc528e3410b
   TypeTreeHash:
     serializedVersion: 2
     Hash: 504c8d9fdba5b4f9c5f6b0dc9033942b
   IncrementalBuildHash:
     serializedVersion: 2
-    Hash: 64cad7918655e2c3732fb6864cec01e9
+    Hash: c69bf30956ebcdd33db562710d359af0
 HashAppended: 0
 ClassTypes:
 - Class: 21
@@ -32,8 +32,34 @@ ClassTypes:
 - Class: 213
   Script: {instanceID: 0}
 SerializeReferenceClassIdentifiers:
+- AssemblyName: K2D2
+  ClassName: K2UI.Console/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.Group/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.InlineEnum/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.K2Avatar/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.K2Compass/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.K2ProgressBar/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.K2Slider/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.K2Toggle/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.StatusLine/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.Tabs.TabPage/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.Tabs.TabbedPage/UxmlSerializedData
+- AssemblyName: K2D2
+  ClassName: K2UI.ToggleButton/UxmlSerializedData
 - AssemblyName: UnityEngine.CoreModule
   ClassName: UnityEngine.Color
+- AssemblyName: UnityEngine.CoreModule
+  ClassName: UnityEngine.EntityId
 - AssemblyName: UnityEngine.TextCoreFontEngineModule
   ClassName: UnityEngine.TextCore.FaceInfo
 - AssemblyName: UnityEngine.TextCoreFontEngineModule
@@ -71,6 +97,8 @@ SerializeReferenceClassIdentifiers:
 - AssemblyName: UnityEngine.UIElementsModule
   ClassName: UnityEngine.UIElements.RepeatButton/UxmlSerializedData
 - AssemblyName: UnityEngine.UIElementsModule
+  ClassName: UnityEngine.UIElements.ScrollView/UxmlSerializedData
+- AssemblyName: UnityEngine.UIElementsModule
   ClassName: UnityEngine.UIElements.Specificity
 - AssemblyName: UnityEngine.UIElementsModule
   ClassName: UnityEngine.UIElements.StyleComplexSelector
@@ -97,7 +125,15 @@ SerializeReferenceClassIdentifiers:
 - AssemblyName: UnityEngine.UIElementsModule
   ClassName: UnityEngine.UIElements.VisualElementAsset
 - AssemblyName: UnityEngine.UIElementsModule
+  ClassName: UnityEngine.UIElements.VisualTreeAsset/AssetEntry
+- AssemblyName: UnityEngine.UIElementsModule
   ClassName: UnityEngine.UIElements.VisualTreeAsset/UsingEntry
+- AssemblyName: uitkforksp2.controls.Runtime
+  ClassName: UitkForKsp2.Controls.AppShell/UxmlSerializedData
+- AssemblyName: uitkforksp2.controls.Runtime
+  ClassName: UitkForKsp2.Controls.LateBoundUxmlSerializedData
+- AssemblyName: uitkforksp2.controls.Runtime
+  ClassName: UitkForKsp2.Controls.OabButton/UxmlSerializedData
 Assets:
 - Assets/Runtime/K2UI/Images/Cross.png
 - Assets/UI/K2D2_UI/K2D2.uss

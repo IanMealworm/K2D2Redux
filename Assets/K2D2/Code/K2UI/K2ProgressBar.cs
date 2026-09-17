@@ -89,6 +89,44 @@ namespace K2UI
             set { _postfix = value; updateRender(); }
         }
 
+        // F1: updateRender() is called by every setter (:61,70,76,86,95,101) and used to write three
+        // style properties plus one text with no equality check, so FullStatus.Progress()'s two
+        // setter hits cost 8 DOM mutations per frame while a burn runs. The three style values are
+        // COMPUTED (Mathf.InverseLerp(Min, Max, value), and the centered branch's width/rotate), so
+        // the cache key is the INPUT tuple - (value, Min, Max, Centered) - never the rendered style
+        // value (P1 recon, section 9 item 14).
+        bool _rendered;
+        float _r_value, _r_min, _r_max;
+        bool _r_centered;
+
+        // F1: same frame-boundary memory as StatusLine/Console. FullStatus.Reset() used to pre-hide
+        // the bar and Progress() then re-showed it, a None -> Flex flip every frame.
+        bool _frame_open;
+        bool _written_this_frame;
+
+        /// <summary>
+        /// Called by FullStatus.Reset() at the top of every frame, in place of Show(false).
+        /// </summary>
+        public void ResetFrame()
+        {
+            if (_frame_open && !_written_this_frame)
+                this.Show(false);   // the previous frame produced no progress - hide the bar here
+
+            _frame_open = true;
+            _written_this_frame = false;
+        }
+
+        /// <summary>
+        /// Called by FullStatus.Progress() in place of Show(true): books the bar as this frame's
+        /// producer, then shows it. The show itself is cached, so a bar that is already visible
+        /// costs nothing.
+        /// </summary>
+        public void ShowFrame()
+        {
+            _written_this_frame = true;
+            this.Show(true);
+        }
+
         void updateRender()
         {
 
@@ -98,7 +136,15 @@ namespace K2UI
                 // el_progress.style.transformOrigin = new StyleTransformOrigin(new TransformOrigin(Length.Percent(50f), Length.Percent(50f)));
 
 
-                if (Centered)
+                bool style_unchanged = _rendered
+                    && _r_value == value && _r_min == Min && _r_max == Max
+                    && _r_centered == Centered;
+
+                if (style_unchanged)
+                {
+                    K2UiWriteStats.Skipped();
+                }
+                else if (Centered)
                 {
                     float range = Max-Min;
                     float center_value = (Min + Max)/2;
@@ -128,13 +174,25 @@ namespace K2UI
                     el_progress.style.rotate = new StyleRotate(new UITKRotate(0));
                     el_progress.style.left = new StyleLength(Length.Percent(0));
                 }
+
+                if (!style_unchanged)
+                {
+                    _rendered = true;
+                    _r_value = value;
+                    _r_min = Min;
+                    _r_max = Max;
+                    _r_centered = Centered;
+
+                    // one cached style render = one write unit (the three property writes above)
+                    K2UiWriteStats.Performed();
+                }
             }
             if (el_label != null)
             {
                 if (LabelValue)
-                    el_label.text = Label + $"{value:n2}{Postfix}";
+                    el_label.SetText(Label + $"{value:n2}{Postfix}");
                 else
-                   el_label.text = Label;
+                   el_label.SetText(Label);
             }
 
         }

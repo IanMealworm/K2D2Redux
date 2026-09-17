@@ -302,20 +302,20 @@ namespace K2UI
             if (printValue || _value_text_override != null)
             {
                 value_label_element.text = _value_text_override ?? value.ToStringInvariant("N2");
-                value_label_element.style.display = DisplayStyle.Flex;
+                value_label_element.SetDisplay(DisplayStyle.Flex);
             }
             else
             {
-                value_label_element.style.display = DisplayStyle.None;
+                value_label_element.SetDisplay(DisplayStyle.None);
             }
 
             if (string.IsNullOrEmpty(minMaxLabel))
             {
-                min_max_bar.style.display = DisplayStyle.None;
+                min_max_bar.SetDisplay(DisplayStyle.None);
             }
             else
             {
-                min_max_bar.style.display = DisplayStyle.Flex;
+                min_max_bar.SetDisplay(DisplayStyle.Flex);
 
                 if (minMaxLabel == "x")
                 {

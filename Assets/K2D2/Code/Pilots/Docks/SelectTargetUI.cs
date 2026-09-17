@@ -30,7 +30,10 @@ namespace K2D2.Controller.Docks
             control_from_drop.listenClick(buildControlList);
             control_from_drop.RegisterCallback<ChangeEvent<string>>(evt =>
             {
-                Debug.LogWarning("Control Selected " + evt.newValue);
+                // PRODUCTION (v1.2.1): was Debug.LogWarning, which put "user selected a control" chatter
+                // in the log at WARNING level. The handler body is entirely `// todo` - nothing is wired
+                // yet - so this reports a UI event, not a problem. Demoted to L.Log (invisible).
+                L.Log("Control Selected " + evt.newValue);
                 // todo
                 //selected_control = part.component;
                 //pilot.current_vessel.VesselComponent.SetControlOwner(selected_control);
@@ -39,7 +42,7 @@ namespace K2D2.Controller.Docks
             target_drop = panel.Q<DropdownField>("target_drop");
             target_drop.listenClick(buildTargetList);
             target_drop.RegisterCallback<ChangeEvent<string>>(evt =>
-                    Debug.LogWarning("Target Selected " + evt.newValue)
+                    L.Log("Target Selected " + evt.newValue)
 
         
                 // todo
@@ -50,7 +53,7 @@ namespace K2D2.Controller.Docks
             dock_drop = panel.Q<DropdownField>("dock_drop");
             dock_drop.listenClick(buildDockList);
             dock_drop.RegisterCallback<ChangeEvent<string>>(evt =>
-                    Debug.LogWarning("Dock Selected " + evt.newValue)
+                    L.Log("Dock Selected " + evt.newValue)
 
                 // todo
                 // if (selected_control != null)

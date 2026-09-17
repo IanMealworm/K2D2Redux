@@ -14,23 +14,54 @@ namespace K2UI
     {
         public static new readonly string ussClassName = "console";
 
+        // F1: the frame's console block is assembled here in memory instead of in the element.
+        // It used to be built by clearing `text` in FullStatus.Reset() and appending raw onto the
+        // element, so a frame cost one clear plus one write per line - and every intermediate value
+        // went through the DOM. Now only the assembled block is written, through the text cache, so
+        // a frame whose block is unchanged costs nothing at all.
+        string _pending;
+
+        // F1: same frame-boundary memory as StatusLine - see the note there. Reset() must not
+        // pre-hide the console or every frame flips None -> Flex on it.
+        bool _frame_open;
+        bool _written_this_frame;
+
         public Console() : base()
         {
             AddToClassList(ussClassName);
         }
 
+        /// <summary>
+        /// Called by FullStatus.Reset() at the top of every frame. Starts a fresh block and hides
+        /// the console only if the previous frame produced no output.
+        /// </summary>
+        public void ResetFrame()
+        {
+            _pending = null;
+
+            if (_frame_open && !_written_this_frame)
+                this.Show(false);
+
+            _frame_open = true;
+            _written_this_frame = false;
+        }
+
         public void Set(string txt)
         {
-            this.text = txt;
+            _written_this_frame = true;
+            _pending = txt;
+            this.SetText(txt);
             this.Show(true);
         }
 
         public void Add(string line)
         {
-            if (string.IsNullOrEmpty(text))
-                text = line;
-            else      
-                text += "\n"+line;
+            _written_this_frame = true;
+
+            // Same join rule as before: the first line of the frame replaces, the rest append.
+            _pending = string.IsNullOrEmpty(_pending) ? line : _pending + "\n" + line;
+
+            this.SetText(_pending);
             this.Show(true);
         }
     }
@@ -54,9 +85,18 @@ namespace K2UI
 
         const string uss_name = "k2-status-line";
 
-        string getUss(Level level)
+        // F1: computed once, at type-init, instead of twice per call (getUss() did an Enum.GetName
+        // plus a string concatenation on every read and every write - see P1 recon section 4).
+        static readonly string[] _uss_by_level =
         {
-            return uss_name+ "--" + Enum.GetName( typeof(Level), level).ToLower();
+            uss_name + "--" + "normal",
+            uss_name + "--" + "warning",
+            uss_name + "--" + "error"
+        };
+
+        static string getUss(Level level)
+        {
+            return _uss_by_level[(int)level];
         }
 
         Level _level = Level.Normal;
@@ -68,20 +108,41 @@ namespace K2UI
             get { return _level; }
             set
             {
-                var current_uss = getUss(_level);
-                RemoveFromClassList(current_uss);
-
+                // F1: was RemoveFromClassList(current) then AddToClassList(new), which removed and
+                // re-added the SAME class when the level had not changed - two real class-list
+                // mutations per call, every frame. SetClass owns the class and skips when equal.
                 _level = value;
-                current_uss = getUss(_level);
-                AddToClassList(current_uss);
+                this.SetClass(getUss(_level));
             }
+        }
+
+        // F1: the frame-boundary memory that removes the None -> Flex flip. FullStatus.Reset() used
+        // to Show(false) and Status() then Show(true) - three display writes on the same element in
+        // one frame. ResetFrame() records "no producer wrote this frame" instead and resolves it at
+        // the NEXT frame boundary, so a frame that produces a status writes the display once (or
+        // not at all once it is already Flex), and a frame that produces nothing still ends hidden.
+        bool _frame_open;
+        bool _written_this_frame;
+
+        /// <summary>
+        /// Called by FullStatus.Reset() at the top of every frame, in place of Show(false).
+        /// </summary>
+        public void ResetFrame()
+        {
+            if (_frame_open && !_written_this_frame)
+                this.Show(false);   // the previous frame produced no status - hide it here
+
+            _frame_open = true;
+            _written_this_frame = false;
         }
 
         public void Set(string text, Level level)
         {
-            this.text = text;
+            _written_this_frame = true;
+
+            this.SetText(text);
             this.level = level;
-            this.Show(true);
+            this.Show(true);        // the frame's single display decision
         }
 
         public StatusLine() : base()

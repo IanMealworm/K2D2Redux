@@ -634,12 +634,17 @@ namespace K2D2.KSPService
 
         public double getCurrentOrbitSpeed()
         {
-            // FIXED during Redux port verification: orbitalSpeed exists only on the concrete
-            // PatchedConicsOrbit class in the current assemblies, not on the IKeplerPatch interface
-            // VesselComponent.Orbit is statically typed as - unlike the other getters in this file
-            // (getApoapsis/getPeriapsis/getCurrenOrbitHeight/getEccentricity/getInclination), which all use
-            // members that genuinely are on IOrbit/IKeplerOrbit and don't need a cast.
-            return ((PatchedConicsOrbit)VesselComponent.Orbit).orbitalSpeed;
+            // VesselComponent.Orbit is statically typed KSP.Sim.IKeplerPatch at this pin
+            // (0.2.9.0.104521), and .orbitalSpeed exists only on the two CONCRETE orbit
+            // implementations (KSP.Sim.impl.PatchedConicsOrbit and the ECS-backed
+            // Redux.Ecs.Components.CurrentPatchedConicsOrbit), which share no base class - a cast to
+            // either one would throw for the other. Ask the interface for the same number instead:
+            // IKeplerOrbit.GetOrbitalSpeedAtDistance(d) is documented as "the orbital speed at the
+            // given distance from the reference body center", and IKeplerOrbit.radius is "the current
+            // orbital radius from the reference body center" - so this is exactly the value
+            // PatchedConicsOrbit.orbitalSpeed returns, for either implementation.
+            var orbit = VesselComponent.Orbit;
+            return orbit.GetOrbitalSpeedAtDistance(orbit.radius);
         }
 
         public double getEccentricity()

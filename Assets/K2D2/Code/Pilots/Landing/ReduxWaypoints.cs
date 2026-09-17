@@ -6,9 +6,10 @@ using System.Reflection;
 namespace K2D2.Landing
 {
     // Redux's own player-waypoint system (Redux.UI.Waypoints.PlayerWaypointManager and friends,
-    // in Assembly-CSharp) is declared `internal`, so it's invisible to K2D2.dll through a normal
-    // reference - same problem, and same fix, as VisualElementFactoryRegistry.RegisterFactory()
-    // in KTools/K2UIFactoryRegistration.cs (see NOTICE.md's UI Toolkit section): reflection.
+    // in Assembly-CSharp) is declared `internal`, so it is invisible to K2D2.dll through a normal
+    // reference and is reached here by reflection. The K2UI custom controls once needed the same
+    // reflection trick to register; they now use the `[UxmlElement]` attribute route instead (see
+    // Assets/K2D2/Code/K2UI/), and NOTICE.md's UI Toolkit section records that history.
     // Confirmed against the real decompiled PlayerWaypointManager.cs/PlayerWaypointRecord.cs
     // rather than guessed at.
     //

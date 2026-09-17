@@ -103,3 +103,14 @@ ksp2.catalog
 # accident instead of Assets/K2D2/Code - the folder is dead, Unity never reads it, safe to ignore
 # or delete manually). See NOTICE.md's Fifteenth follow-up.
 /Source/
+
+# Vendored package copy (uitkforksp2.controls) used by the local bundle tooling. Unity resolves the
+# real package from Packages/manifest.json; this on-disk copy is a convenience and is never tracked.
+/Tools/unity-bundle/
+
+# Local scratch: API probes, IL dumps and generated evidence. Regenerable, never tracked.
+/_tmp/
+
+# Editor/IDE working files. *.slnx is the successor to *.sln, already ignored above.
+/.vscode/
+*.slnx

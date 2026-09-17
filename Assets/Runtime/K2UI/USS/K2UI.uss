@@ -414,7 +414,10 @@ Label {
     padding-top: 2px;
     padding-right: 4px;
     padding-bottom: 2px;
-    background-color: rgb(0, 0, 0);
+    /* The legend masks the group's top border, so its background must match the panel it sits on,
+       not the old black app shell. The game theme declares the panel #1e2129 = rgb(30, 33, 41)
+       (references/UitkForKsp2-Unity/Assets/Theme/KerbalUI.uss:42). */
+    background-color: rgb(30, 33, 41);
     padding-left: 6px;
     color: rgb(153, 160, 255);
 }

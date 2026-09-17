@@ -1,4 +1,3 @@
-
 using K2UI;
 using UnityEngine.UIElements;
 
@@ -27,13 +26,17 @@ namespace K2D2.UI
         public void Reset()
         {
             main_group.Show(true);
-            console.Show(false);
-            console.text = "";
 
-            status.Show(false);
-            status.text = "";
-        
-            progressBar.Show(false);          
+            // F1: this used to pre-clear and pre-hide both read-outs (console.Show(false) +
+            // console.text = "", status.Show(false) + status.text = ""), so the frame that followed
+            // wrote None and "" and then immediately wrote Flex and the real value - the flip-flop
+            // and the clear-then-set pairs in the P1 recon, section 4. ResetFrame() books "no
+            // producer has written this frame" instead; Status()/Console() then decide the display
+            // once, and the hide happens at the next frame boundary only if nothing wrote.
+            console.ResetFrame();
+            status.ResetFrame();
+
+            progressBar.ResetFrame();
         }
 
         public void Console(string txt)
@@ -53,14 +56,15 @@ namespace K2D2.UI
 
         public void Status(string text, StatusLine.Level level = StatusLine.Level.Normal)
         {
+            // Set() also shows the line - the redundant `status.Show(true)` that used to follow is
+            // gone, so the frame's display decision is made in exactly one place.
             status.Set(text, level);
-            status.Show(true);
         }
 
         public void Progress(double ratio, string label = null)
         {
             progressBar.value = (float)(ratio * 100);
-            progressBar.Show(true);
+            progressBar.ShowFrame();
             if (!string.IsNullOrEmpty(label))
             {
                 progressBar.Label = label;
@@ -68,4 +72,3 @@ namespace K2D2.UI
         }
     }
 }
-

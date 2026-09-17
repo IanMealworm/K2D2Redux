@@ -18,7 +18,7 @@ namespace K2UI.Compas
         {
             foreach (var label in buttons.Values)
             {
-                label.style.display = DisplayStyle.None;
+                label.SetDisplay(DisplayStyle.None);
             }
         }
 
@@ -46,7 +46,7 @@ namespace K2UI.Compas
                 button = buttons[angle];
             }
 
-            button.style.display = DisplayStyle.Flex;
+            button.SetDisplay(DisplayStyle.Flex);
             // width of the button is hardcoded for the moment
             button.style.left = pos.x - 20;
             button.style.bottom = pos.y;
@@ -70,7 +70,7 @@ namespace K2UI.Compas
         {
             foreach (var label in labels)
             {
-                label.style.display = DisplayStyle.None;
+                label.SetDisplay(DisplayStyle.None);
             }
             nb_used = 0;
         }
@@ -102,7 +102,7 @@ namespace K2UI.Compas
                 label.AddToClassList(uss_small_text);
             }
 
-            label.style.display = DisplayStyle.Flex;
+            label.SetDisplay(DisplayStyle.Flex);
             label.style.left = pos.x;
             label.style.bottom = pos.y;
             label.text = text;

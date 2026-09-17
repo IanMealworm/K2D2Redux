@@ -102,7 +102,7 @@ namespace K2D2.Landing
             if (mode == this.mode)
                 return;
 
-            logger.LogInfo("setMode " + mode);
+            L.Log("setMode " + mode);
 
             this.mode = mode;
 
@@ -165,7 +165,7 @@ namespace K2D2.Landing
                     break;
             }
 
-            logger.LogInfo("current_pilot " + mode);
+            L.Log("current_pilot " + mode);
         }
 
         public void nextMode()

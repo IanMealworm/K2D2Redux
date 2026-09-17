@@ -256,11 +256,12 @@ namespace K2D2.KSPService
 
         private IEnumerator CreateManeuverNode_Co(Vector3d burnVector, double TrueAnomaly)
         {
-            // FIXED during Redux port verification: VesselComponent.Orbit is typed KSP.Sim.IKeplerPatch in
-            // the current assemblies, not PatchedConicsOrbit - an explicit cast is required (every other call
-            // site in this file already does this via GetLastOrbit()'s "as PatchedConicsOrbit", this one was
-            // the sole outlier that would not compile as-is).
-            PatchedConicsOrbit referencedOrbit = (PatchedConicsOrbit)_vesselComponent.Orbit;
+            // VesselComponent.Orbit is statically typed KSP.Sim.IKeplerPatch at this pin
+            // (0.2.9.0.104521) - not the concrete PatchedConicsOrbit. Keep the interface type: it
+            // carries GetUTforTrueAnomaly (IKeplerOrbit) and PatchEndTransition (IPatchedOrbit), which
+            // is everything this method reads; only the SetManeuverState call below still names the
+            // concrete type (SetManeuverState takes PatchedConicsOrbit), exactly as upstream does.
+            IKeplerPatch referencedOrbit = _vesselComponent.Orbit;
 
             double TrueAnomalyRad = TrueAnomaly * Math.PI / 180;
             double UT = referencedOrbit.GetUTforTrueAnomaly(TrueAnomalyRad, 0);
@@ -605,13 +606,17 @@ namespace K2D2.KSPService
                 normalVector =
                     _vesselComponent.Orbit
                         .GetRelativeOrbitNormal(); //GetOrbitalNormalVector(UT, inclination, longitudeOfAscendingNode);
-            // VERIFIED during Redux port verification: ReferenceBodyConstants exists only on the concrete
-            // PatchedConicsOrbit class, not on the IKeplerPatch interface VesselComponent.Orbit is typed
-            // as - needs an explicit cast, unlike inclination/eccentricity/semiMajorAxis/etc. above which
-            // are genuinely on the interface and compile fine as-is.
+            // ReferenceBodyConstants is a member of the two CONCRETE orbit implementations
+            // (KSP.Sim.impl.PatchedConicsOrbit and the ECS-backed Redux.Ecs.Components
+            // .CurrentPatchedConicsOrbit), which share no base class - so there is no single concrete
+            // type to cast to that is right for both. Take the interface route to the same number
+            // instead: IOrbit.referenceBody (the body this orbit is centred around) .gravParameter,
+            // the body's standard gravitational parameter - the same value
+            // ReferenceBodyConstants.StandardGravitationParameter carries, and the same access
+            // LandingTargeting.cs already uses for mu.
             Vector3d velocity = GetOrbitalPerifocalVelocityVector(UT, _vesselComponent.Orbit.eccentricity,
                 _vesselComponent.Orbit.semiMajorAxis, _vesselComponent.Orbit.meanAnomalyAtEpoch,
-                ((PatchedConicsOrbit)_vesselComponent.Orbit).ReferenceBodyConstants.StandardGravitationParameter);
+                _vesselComponent.Orbit.referenceBody.gravParameter);
 
             Vector3d orbitalVelocity = Vector3d.Cross(normalVector, velocity);
             return orbitalVelocity;
@@ -661,8 +666,11 @@ namespace K2D2.KSPService
         {
             // Calculate the magnitude of the velocity vector
             double r = semiMajorAxis * (1 - eccentricity * eccentricity) / (1 + eccentricity * Math.Cos(trueAnomaly));
-            // VERIFIED during Redux port verification: same ReferenceBodyConstants cast fix as above.
-            double gravitation = ((PatchedConicsOrbit)_vesselComponent.Orbit).ReferenceBodyConstants.StandardGravitationParameter;
+            // Same interface route to the body's standard gravitational parameter as
+            // GetOrbitalVelocityAtUT above: _vesselComponent.Orbit is typed IKeplerPatch, and it
+            // reaches the body through IOrbit.referenceBody - no concrete-orbit cast, so this is safe
+            // for both the PatchedConicsOrbit and the ECS CurrentPatchedConicsOrbit implementation.
+            double gravitation = _vesselComponent.Orbit.referenceBody.gravParameter;
             // Calculate the magnitude of the velocity vector
             double v = Math.Sqrt(gravitation * (2 / r - 1 / semiMajorAxis));
 

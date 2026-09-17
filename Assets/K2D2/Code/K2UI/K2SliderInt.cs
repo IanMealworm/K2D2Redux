@@ -255,22 +255,22 @@ namespace K2UI
             if (printValue)
             {
                 value_label_element.text = $"{value}";
-                value_label_element.style.display = DisplayStyle.Flex;
+                value_label_element.SetDisplay(DisplayStyle.Flex);
             }
             else
             {
-                value_label_element.style.display = DisplayStyle.None;
+                value_label_element.SetDisplay(DisplayStyle.None);
             }
 
             setLabelPos();
 
             if (string.IsNullOrEmpty(minMaxLabel))
             {
-                min_max_bar.style.display = DisplayStyle.None;
+                min_max_bar.SetDisplay(DisplayStyle.None);
             }
             else
             {
-                min_max_bar.style.display = DisplayStyle.Flex;
+                min_max_bar.SetDisplay(DisplayStyle.Flex);
                 if (minMaxLabel == "x")
                 {
                     // magic code to take from min max values

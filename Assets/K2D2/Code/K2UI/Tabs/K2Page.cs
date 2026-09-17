@@ -63,6 +63,7 @@ namespace K2UI.Tabs
             if (settings_page != null && main_page != null)
             {
                 GlobalSetting.settings_visible.listeners += onSettingsChanged;
+                _settings_listener_bound = true;
                 onSettingsChanged(GlobalSetting.settings_visible.V);
             }
             else
@@ -71,6 +72,24 @@ namespace K2UI.Tabs
             }
 
             return onInit();
+        }
+
+        // F2(d): true once this page has subscribed to the static settings_visible listener, so the
+        // teardown hook below knows whether there is anything to unlink.
+        bool _settings_listener_bound;
+
+        /// <summary>
+        /// F2(d): teardown hook, called for every page from K2D2Window.OnDestroy. The settings
+        /// listener in Init() is registered on a static Setting, which nothing else ever clears -
+        /// without this unsubscribe the page and its whole visual tree outlive the window.
+        /// </summary>
+        public virtual void onDestroy()
+        {
+            if (_settings_listener_bound)
+            {
+                GlobalSetting.settings_visible.listeners -= onSettingsChanged;
+                _settings_listener_bound = false;
+            }
         }
 
         private void onSettingsChanged(bool value)

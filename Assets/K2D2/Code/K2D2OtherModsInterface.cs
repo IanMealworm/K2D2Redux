@@ -32,16 +32,21 @@ namespace K2D2
 
         public void CheckModsVersions()
         {
-            Logger.LogInfo($"ManeuverNodeControllerMod.ModGuid = {ManeuverNodeControllerMod.ModGuid}");
+            // PRODUCTION (v1.2.1): every line in this method was `Logger.LogInfo` diagnostic chatter
+            // about which optional companion mods are present. All ten now route through L.Log ->
+            // LogDebug, so they stay available for a support pass but do not reach a shipped log. The
+            // findings themselves (mncLoaded / fpLoaded and the version checks) still drive behaviour -
+            // only the reporting changed.
+            L.Log($"ManeuverNodeControllerMod.ModGuid = {ManeuverNodeControllerMod.ModGuid}");
             if (Chainloader.PluginInfos.TryGetValue(ManeuverNodeControllerMod.ModGuid, out _mncInfo))
             {
                 mncLoaded = true;
-                Logger.LogInfo("Maneuver Node Controller installed and available");
-                Logger.LogInfo($"_mncInfo = {_mncInfo}");
+                L.Log("Maneuver Node Controller installed and available");
+                L.Log($"_mncInfo = {_mncInfo}");
                 // mncVersion = _mncInfo.Metadata.Version;
                 _mncMinVersion = new Version(0, 8, 3);
                 _mncVerCheck = _mncInfo.Metadata.Version.CompareTo(_mncMinVersion);
-                Logger.LogInfo($"_mncVerCheck = {_mncVerCheck}");
+                L.Log($"_mncVerCheck = {_mncVerCheck}");
 
                 // Reflections method to attempt the same thing more cleanly
                 MNCType = Type.GetType($"ManeuverNodeController.ManeuverNodeControllerMod, {ManeuverNodeControllerMod.ModGuid}");
@@ -50,19 +55,19 @@ namespace K2D2
                 MNCLaunchMNCMethodInfo = MNCPropertyInfo!.PropertyType.GetMethod("LaunchMNC");
             }
             // else _mncLoaded = false;
-            Logger.LogInfo($"_mncLoaded = {mncLoaded}");
+            L.Log($"_mncLoaded = {mncLoaded}");
 
-            Logger.LogInfo($"FlightPlanPlugin.ModGuid = {FlightPlanPlugin.ModGuid}");
+            L.Log($"FlightPlanPlugin.ModGuid = {FlightPlanPlugin.ModGuid}");
             if (Chainloader.PluginInfos.TryGetValue(FlightPlanPlugin.ModGuid, out _fpInfo))
             {
                 _fpInfo = Chainloader.PluginInfos[FlightPlanPlugin.ModGuid];
 
                 fpLoaded = true;
-                Logger.LogInfo("FlightPlan installed and available");
-                Logger.LogInfo($"FlightPlan = {_fpInfo}");
+                L.Log("FlightPlan installed and available");
+                L.Log($"FlightPlan = {_fpInfo}");
                 _fpMinVersion = new Version(0, 9, 1);
                 _fpVerCheck = _fpInfo.Metadata.Version.CompareTo(_fpMinVersion);
-                Logger.LogInfo($"_fpVerCheck = {_fpVerCheck}");
+                L.Log($"_fpVerCheck = {_fpVerCheck}");
 
                 FPType = Type.GetType($"FlightPlan.FlightPlanPlugin, {FlightPlanPlugin.ModGuid}");
                 FPPropertyInfo = FPType!.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
@@ -70,7 +75,7 @@ namespace K2D2
                 CircularizeMethodInfo = FPPropertyInfo!.PropertyType.GetMethod("Circularize");
             }
 
-            Logger.LogInfo($"fpLoaded = {fpLoaded}");
+            L.Log($"fpLoaded = {fpLoaded}");
 
             instance = this;
         }

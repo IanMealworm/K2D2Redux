@@ -168,6 +168,12 @@ namespace K2UI.Tabs
                 panel.isVisible = panel.code == code;    
             }
 
+            // F2(c): a tab switch is a repaint boundary. The tab that is about to be shown may have
+            // been written last as hidden, and every cached value still says "already written" for
+            // elements whose styling this switch just touched - drop the caches so the newly shown
+            // tab repaints unconditionally on its first frame.
+            VisualElementExtension.InvalidateUiCaches();
+
             tabsbar_el.setOpenedPage(code);
         }
 

@@ -29,18 +29,67 @@ work re-targeting the plugin entry point at Redux's current API surface
 (`Redux.ExtraModTypes.KerbalMod`, `ReduxLib.Logging.ILogger`,
 `SpaceWarp2.UI.API.Appbar`) rather than the original's SpaceWarp1/BepInEx
 base, but was never built or tested against a live game, and its Flight Plan
-integration (`K2D2OtherModsInterface.cs`) was left a commented-out stub. This
-project starts from that port's source (`Assets/K2D2/Code`) rather than
+integration (`K2D2OtherModsInterface.cs`) was left as a commented-out stub.
+This project starts from that port's source (`Assets/K2D2/Code`) rather than
 porting fresh from the original, to build on the real work already there.
 
 # Redux port notes
 
-This section is a technical reference for what actually broke porting K2-D2
-from SpaceWarp1/UitkForKsp2 to Redux, and how each issue was fixed - kept for
-anyone porting a similar mod (or building on Redux's node/orbit APIs) and
-likely to hit the same walls. It's organized by topic rather than
-chronologically; every fix described here has been confirmed working in-game
-unless a section says otherwise.
+This section is a technical reference for **what actually ships in this
+artefact**: K2-D2 **v1.2.0** backported to **KSP 2 Redux v0.2.8.5.103184**
+(Unity `6000.4.1f1` Windows player under Proton). Upstream v1.2.0 was written
+for a newer Redux / Unity `6000.5.8f1` generation, so some of its API
+adaptations run the *other* way here. The sections below state, in order: what
+v1.2 features are preserved, what had to be adapted for 0.2.8.5, what bugs
+were fixed while backporting, and what was dropped. Every claim here is true
+of the built DLL / rebuilt AssetBundle in `Deploy/`, not of the upstream tree
+it came from - the full evidence set lives in `Deploy/obj/`.
+
+## What v1.2 features this build preserves
+
+- The restyled UI: Landing, Dock and Attitude tab restyles, the re-worded tab
+  titles, the Painter2D dashed-slider track, and the status group.
+- The info button that opens the About page directly (the settings-gear /
+  settings-pane toggle is gone, as in v1.2).
+- `K2Avatar` (the animated status avatar), including its manual factory
+  registration and its `is_running_event` wiring.
+- `ResizeManipulator` (window resizing, with its `Tick()` watchdog) and the
+  `DragManipulator` exclusion for grabs on the resize handle.
+- The auto-staging toggle, the `K2Toggle` label attribute, the `K2Page`
+  inline ADVANCED reset buttons, and the per-pilot info-row telemetry
+  (`ExecuteController.UpdateInfoRows` and its overrides).
+- The landing terrain-collision fix (`orbit.GetRelativePositionAtUTZup(ut)`
+  with the Zup->Y/Z swap, paired with
+  `body.SimulationObject.transform.celestialFrame` instead of
+  `body.coordinateSystem`).
+- The Lift end-of-run fix (`EndLiftPilot()` sets `isRunning = false` so
+  `is_running_event` fires on the natural end path too).
+- The Landing UI fix (removal of the early return that froze the Touch Down
+  button / status text) and the Docks dropdown fixes (`List<T>.Add` instead
+  of `Enumerable.Append`, and the target-drop assignment).
+- The Drone settings-key separation (inherited from the v1.1 backport, which
+  both trees already share).
+
+Nothing in `Assets/UI`, `Assets/Runtime/K2UI`, `Assets/Images` or
+`Assets/Fonts` was edited for this build; the UI sources are v1.2's.
+
+## What had to be adapted for Redux 0.2.8.5
+
+| Upstream v1.2 construct | What this build does instead | Why |
+|---|---|---|
+| Window root via `PanelRenderer` + `RegisterUIReloadCallback` | `UIDocument` + `rootVisualElement` (v1.1's proven wiring) | Neither `PanelRenderer` nor `RegisterUIReloadCallback` exists in any 0.2.8.5 assembly; `UitkForKsp2.API.Window.Create` returns a `UIDocument` here. |
+| `VesselComponent.Orbit` treated as the `IKeplerPatch` interface (the newer ECS returns `CurrentPatchedConicsOrbit` for the live vessel) | The concrete `PatchedConicsOrbit` (v1.1's form) | `IKeplerPatch` does not exist in 0.2.8.5; `Orbit` already returns `KSP.Sim.impl.PatchedConicsOrbit`, so no cast is needed - and the cast that the newer-API code added is what would throw here. This also means `ManeuverNodeData.SetManeuverState(...)`, which only accepts the concrete class, is *not* a blocker on this build: a real `PatchedConicsOrbit` is what `Orbit` returns. |
+| UI loaded through Addressables (`Assets.LoadAssetAsync<VisualTreeAsset>(address)`) | `AssetBundle.LoadFromFile(...)` + `Bundle.LoadAsset<VisualTreeAsset>(...)` (v1.1's path) | The 0.2.8.5 API for Addressables exists, and SpaceWarp2 does auto-load a mod's `addressables/catalog.json`, but resolving a catalog *built from K2-D2's own Addressables group* is unproven, and the csc-based toolchain cannot build an Addressables catalog at all. The bundle path has no unknowns. See `Deploy/obj/addressables-verdict.md` for the full H1/H2/H3 evidence and the one-launch experiment that would settle the other route. |
+| `ValidScene()` reading `GetGameState().GameState` without a null guard | The v1.1 null guards are restored before reading `.GameState` | 0.2.8.5's `GetGameState()` can return null during startup (v1.1's logs show the resulting NRE-per-frame). |
+| `GlobalGameState.GetState()` | `GlobalGameState.GetGameState().GameState` | `GetState()` is not on this `GameStateMachine`; the call resolves, but the guarded `GetGameState()` form is the one proven here. |
+| `SpaceWarpPluginDescriptor.Folder` used as a string | `.Folder.FullName` | `SWMetadata.Folder` is a `System.IO.DirectoryInfo` in these assemblies. |
+| `PropertyExternal<T>.Value` | `.GetValue()` | The opposite change ("fixing" `.GetValue()` to `.Value`) is the bug - an earlier verification pass in this project made exactly that mistake and it was reverted. |
+
+`K2D2.asmdef` and `precompiledReferences` are irrelevant to this build: the DLL
+is compiled by Roslyn `csc` against the installed `KSP2_x64_Data/Managed/`
+set (a stricter reference set than the asmdefs' superset), and the loader
+pre-flight probe resolves every type/field/property/method in the result
+before it is deployed - the same thing Redux's loader does at registration.
 
 ## Redux API differences from SpaceWarp1
 
@@ -89,6 +138,56 @@ unless a section says otherwise.
   copying the raw DLLs in separately causes duplicate-assembly-identity
   conflicts at both compile and runtime.
 
+## Two bugs fixed while making this build work
+
+### The window did not paint: theme font materials packaged with a NULL shader
+
+The v1.2 AppShell chrome uses the vendored `uitkforksp2.controls` theme, whose
+`KerbalUI.uss` applies TextCore SDF fonts (`RosesareFF0000 SDF`,
+`SFPixelate SDF`, and 9 more of the package's 17) to the window header. Those
+font assets' materials referenced an **editor-only TextMeshPro shader GUID**
+(`d34666db7075ab14bb31064962ed538c`) that exists nowhere in the project or in
+the game. At bundle-build time Unity therefore serialised the materials with
+`shader=NULL`, and with no shader it also dropped their `_MainTex` binding. In
+the player, `TextUtilities.GetTextCoreSettingsForElement` dereferences
+`fontAsset.material.mainTexture.format` without a null check; the resulting
+`NullReferenceException` is thrown inside `RenderTree.ProcessChanges()`, so the
+panel's render tree never completes a visual update - the window stays
+**blank**, and with nothing painted there is nothing to drag either.
+
+The fix is in the bundle recipe, not in the UI: the 11 affected
+`Tools/unity-bundle/uitkforksp2.controls/Assets/Theme/Fonts/**/*.asset`
+materials now reference the built-in TextCore distance-field shader
+(`{fileID: 19011, guid: 0000000000000000f000000000000000}`), exactly like the
+6 healthy fonts beside them. No USS/UXML was changed and no font was dropped.
+The fixed bundle's packed materials were then re-dumped from the bundle bytes
+to prove every one has a real shader and a real `_MainTex`, and the player-side
+diagnostic showed the broken control reproducing the failure while the fixed
+live bundle produced zero repaint exceptions.
+
+### The window could not be dragged to the left (and overhung the right)
+
+`VisualElement.transform.position` in this runtime is CSS **`translate`**, not
+`left`/`top` (the `ITransform` getter/setter call `resolvedStyle.translate` /
+`set_translate`). The old drag code wrote `_target.transform.position` on top
+of a layout position, and clamped that translate to `[0, 1920 - width]` - a
+clamp in the wrong coordinate space, where the reachable left edge is the
+element's own layout origin (a translate cannot go negative). The rewritten
+`DragManipulator` follows the installed library's own manipulator: compute the
+desired position in **panel space** from `evt.position`, clamp it against
+`panel.visualTree.contentRect`, convert with `WorldToLocal(parent, ...)`, then
+write `style.left/top` and zero `transform.position`. The saved position is
+restored once (yielding to a live drag) and saved in the same parent-local
+units it is read in. `ResizeManipulator`'s bottom limit was moved off the same
+hardcoded reference constant and onto the live panel rect.
+
+A remark for anyone reading the old numbers: in the user's 1920x1080 panel the
+compile-time `ReferenceResolution` constant (1920x1080) *coincided* with the
+real panel rect, so the constant being "the wrong number" is **not** the
+observed defect - the coordinate-space error was. The constant is still a
+latent fragility (it would break on any other panel size), and removing it is
+why the fix reads the live panel rect.
+
 ## UI Toolkit / K2UI
 
 K2D2's UI uses a library of custom UI Toolkit controls (`K2UI.*` -
@@ -101,18 +200,18 @@ problems specific to that loading model had to be worked out to get the
 custom controls rendering at all (last confirmed on Redux build 26w33a):
 
 - **Custom control types declared in a precompiled mod DLL never get their
-  `UxmlFactory` auto-registered.** Unity's automatic factory scan
-  (`VisualElementFactoryRegistry.RegisterUserFactories()`) only looks at
-  assemblies Unity considers "known project assemblies"
-  (`GetAllUserAssemblies()`), and a mod DLL loaded this way by Redux never
-  appears in that list - regardless of whether the control uses the legacy
-  `UxmlFactory` pattern or the modern `[UxmlElement]` attribute. Symptom:
-  the UI renders everything else correctly, but drops literal placeholder
-  text (`Unknown type: 'K2UI.ToggleButton'`, etc.) wherever a custom control
-  should be. **Fix:** manually call the internal, protected
+  `UxmlFactory` auto-registered.** Unity's automatic factory scan only looks
+  at assemblies Unity considers "known project assemblies", and a mod DLL
+  loaded this way by Redux never appears in that list - regardless of whether
+  the control uses the legacy `UxmlFactory` pattern or the modern
+  `[UxmlElement]` attribute. Symptom: the UI renders everything else, but
+  drops literal placeholder text (`Unknown type: 'K2UI.ToggleButton'`) where
+  a custom control should be. **Fix:** call the internal, protected
   `VisualElementFactoryRegistry.RegisterFactory()` via reflection for every
   custom control, once, at plugin init - see `KTools/K2UIFactoryRegistration.cs`,
   called from `K2D2_Plugin.cs`'s `OnInitialized()` before any UXML loads.
+  **Historical (0.2.8.5 pin):** the v1.2 build registered **18/18** factories
+  (v1.1 logged 17/17; `K2Avatar` is the addition).
   **Note (superseded - see "UxmlElement migration" below):** the modern
   `[UxmlElement]`/`UxmlSerializedData` pattern was tried twice as an
   alternative fix around this time and confirmed broken both times, but
@@ -300,6 +399,15 @@ All `K2UI.*` custom controls are now converted; none use the removed
   Fixed by getting the root element via
   `PanelRenderer.RegisterUIReloadCallback` instead.
 
+## What was dropped
+
+**Nothing.** Every v1.2 feature on the drop-candidate list (window resizing,
+`K2Avatar`, the info/About button, the restyled tabs, the auto-staging toggle,
+the Landing collision fix, the Lift event fix) is present in the shipped DLL
+and bundle. Where behaviour is not individually user-confirmed, that is
+recorded honestly in `Deploy/obj/feature-validation.md` - it is not a dropped
+feature.
+
 Everything else in `Source/Pilots/` (base controllers, Attitude, and a full
 pass over Docks/Landing/Lift/Nodes/Staging/Drone beyond the bugs above) has
 been verified call-by-call against the real Redux assemblies with no further
@@ -377,3 +485,24 @@ Precision landing's accuracy rests entirely on TouchDown's own closed-loop
 steering (cross-track/along-track error correction, RCS fine correction,
 proportional arc extend/shorten - see `TouchDown.cs`), started early enough
 by `compute_startBurn`'s lateral-correction-time and altitude-margin floors.
+
+## Verification status of the 0.2.8.5 backport round (historical record)
+
+The record below describes the superseded-pin build this branch carried
+before the merge onto v1.3.0; the merged 0.2.9.0.104521 artefact is verified
+separately.
+
+The DLL compiles clean against the installed 0.2.8.5 assemblies and passes the
+loader pre-flight (no `PanelRenderer`/`IKeplerPatch`/`RegisterUIReloadCallback`
+references; every type, field, property and method resolves). The rebuilt
+bundle loads, instantiates all 8 UXML pages with non-zero `childCount`, and
+contains the v1.2-only markers. In-game: the user confirmed the mod works
+("Everything seem to work as intended") and separately confirmed `Execute
+Node`; the render fix was proven by the diagnostic mod (flat repaint-exception
+count while the window was open for the rest of a 12-minute session), and the
+drag-bounds fix by a numeric assertion against the live panel rect plus
+session samples covering the full clamp domain. Per-feature provenance -
+including exactly which features were *not* individually exercised - is in
+`Deploy/obj/feature-validation.md`; known divergences are in
+`Deploy/obj/divergences.md`; the complete backport record is
+`Deploy/obj/FINAL-REPORT.md`.
