@@ -115,7 +115,7 @@ namespace K2D2.UI
         /// then) and again on any later live UI reload. All the wiring that needs the real root
         /// VisualElement lives here instead of OnEnable for that reason.
         /// </summary>
-        private void OnUiReload(PanelRenderer panel, VisualElement root)
+        private void OnUiReload(PanelRenderer panel, VisualElement root, int version)
         {
             L.Log("K2D2Window.OnUiReload running");
 

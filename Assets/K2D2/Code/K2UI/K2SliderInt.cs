@@ -214,8 +214,12 @@ namespace K2UI
 
         void SliderValueChanged()
         {
-            Vector2 pos = dragger.parent.LocalToWorld(dragger.transform.position);
-            fill_bar.transform.position = fill_bar.parent.WorldToLocal(pos);
+            // transform.position is obsolete on VisualElement - resolvedStyle.translate/
+            // style.translate are the replacements for reading/setting it.
+            var draggerTranslate = dragger.resolvedStyle.translate;
+            Vector2 pos = dragger.parent.LocalToWorld(new Vector2(draggerTranslate.x, draggerTranslate.y));
+            var localPos = fill_bar.parent.WorldToLocal(pos);
+            fill_bar.style.translate = new Translate(localPos.x, localPos.y);
 
             setLabels();
         }

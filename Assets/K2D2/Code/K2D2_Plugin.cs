@@ -41,7 +41,10 @@ namespace K2D2
 
         private static string _assemblyFolder;
         private static string AssemblyFolder =>
-            _assemblyFolder ??= Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            // Redux loads mods from a byte stream rather than a file on disk, so Assembly.Location
+            // is always empty here - GetLoadedAssemblyPath() is Unity's replacement that works
+            // under that loading model.
+            _assemblyFolder ??= Path.GetDirectoryName(Assembly.GetExecutingAssembly().GetLoadedAssemblyPath());
 
         private static string _settingsPath;
         private static string SettingsPath =>
@@ -69,7 +72,7 @@ namespace K2D2
 
         public static ILogger logger;
 
-        public KSPVessel current_vessel = new KSPVessel();
+        [System.NonSerialized] public KSPVessel current_vessel = new KSPVessel();
 
         static bool loaded = false;
 
@@ -286,7 +289,7 @@ namespace K2D2
 
         public bool settings_visible = false;
 
-        public PilotsManager pilots_manager = new PilotsManager();
+        [System.NonSerialized] public PilotsManager pilots_manager = new PilotsManager();
 
         void FixedUpdate()
         {

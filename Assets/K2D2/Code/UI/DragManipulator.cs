@@ -179,14 +179,17 @@ namespace K2D2.UI
             }
 
             var delta = evt.localPosition - _offset;
-            var newPosition = target.transform.position + delta;
+            // transform.position is obsolete on VisualElement - resolvedStyle.translate is the
+            // replacement for reading the current position, style.translate for setting it.
+            var currentTranslate = target.resolvedStyle.translate;
+            var newPosition = new Vector3(currentTranslate.x, currentTranslate.y, 0) + delta;
 
             if (!AllowDraggingOffScreen)
             {
                newPosition = clampWindow(newPosition);
             }
             positon = newPosition;
-            _target.transform.position = newPosition;
+            _target.style.translate = new Translate(newPosition.x, newPosition.y);
         }
 
         Vector3 positon;

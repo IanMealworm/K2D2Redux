@@ -21,14 +21,14 @@ namespace K2UI.Tabs
         public string code;
 
         // the main panel (including page and settings)
-        public TabPage panel;
+        [System.NonSerialized] public TabPage panel;
 
         // the settings page if found
-        public VisualElement settings_page;
+        [System.NonSerialized] public VisualElement settings_page;
         // the main page if found
-        public VisualElement main_page;
+        [System.NonSerialized] public VisualElement main_page;
 
-        public TabButton tab_button;
+        [System.NonSerialized] public TabButton tab_button;
 
         TabbedPage tabbed_page;
 
