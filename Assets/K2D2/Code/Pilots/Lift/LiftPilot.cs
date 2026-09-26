@@ -31,10 +31,20 @@ namespace K2D2.Lift
         Vector3d direction = Vector3d.zero;
 
         // sub pilots
-        internal Ascent ascent = null;
+        // Both Ascent-phase controllers are always constructed (see the constructor below) so
+        // switching the ascent_profile dropdown mid-session doesn't need to build anything on the
+        // fly - `ascent` below just picks whichever one matches the player's current choice,
+        // re-evaluated live every time something reads it (see AscentProfile.cs).
+        Ascent ascent_guided = null;
+        ReactiveAscent ascent_gravity_turn = null;
         Adjust adjust = null;
-        Coasting coasting = null;   
+        Coasting coasting = null;
         FinalCircularize final_circularize;
+
+        internal AscentControllerBase ascent =>
+            settings.ascent_profile.V == AscentProfile.GravityTurn
+                ? (AscentControllerBase)ascent_gravity_turn
+                : ascent_guided;
 
         public ExecuteController current_subpilot = null;
 
@@ -46,8 +56,9 @@ namespace K2D2.Lift
 
             current_vessel = K2D2_Plugin.Instance.current_vessel;
        
-            ascent = new Ascent(settings, ascent_path);
-            adjust = new Adjust(settings, ascent);
+            ascent_guided = new Ascent(settings, ascent_path);
+            ascent_gravity_turn = new ReactiveAscent(settings);
+            adjust = new Adjust(settings, this);
             coasting = new Coasting(this, settings);
             final_circularize = new FinalCircularize(this, settings);
         

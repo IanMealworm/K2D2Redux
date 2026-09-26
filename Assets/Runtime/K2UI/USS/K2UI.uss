@@ -437,6 +437,18 @@ Label {
     padding-right: 12px;
 }
 
+/* Fixing .unity-popup-field__input's own height below (see its comment) shrank the input box
+   back to normal, but left a blank gap under it on Lift's Profile foldout - the OUTER field
+   (label + input together) still had no explicit height/flex-grow of its own, so it was
+   inheriting a tall default and just leaving empty space around its now-correctly-sized
+   children instead of shrinking to match them. flex-grow: 0 stops it claiming leftover space
+   from its flex-grow: 1 Foldout container in the first place; the explicit height keeps it
+   exactly as tall as the input box under it. */
+.unity-popup-field {
+    flex-grow: 0;
+    height: 24px;
+}
+
 .unity-popup-field:focus {
     color: rgb(255, 255, 255);
 }
@@ -460,7 +472,15 @@ Label {
     padding: 1px;
     width: 200px;
     background-color: rgb(0, 0, 0);
-    height: 100%;
+    /* Was height: 100% - "fill my parent" only reads as a normal single-line field when the
+       parent itself is exactly one line tall. Every DropdownField in this project (Dock's
+       control_from_drop/target_drop/dock_drop, Landing's waypoint_drop_vac, Lift's
+       ascent_profile_drop) actually sits inside a Foldout content container with flex-grow: 1,
+       so "100%" resolved to however much vertical space happened to be left in the tab - the
+       oversized dropdown box seen on Lift's Profile foldout. A fixed height matching the other
+       single-line rows (K2Slider/K2Toggle/IntegerField) fixes it everywhere at once instead of
+       overriding it per-instance. */
+    height: 24px;
 }
 
 .unity-base-popup-field__text {

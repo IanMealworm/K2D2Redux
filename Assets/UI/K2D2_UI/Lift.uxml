@@ -8,19 +8,59 @@
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
             <ui:Label tabindex="-1" text="Ascent Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
             <ui:Foldout text="Profile" value="false" name="profile">
+                <!-- Ascent profile picker (see Pilots/Lift/AscentProfile.cs) - Guided is the
+                     original fixed pitch-curve behavior, Gravity Turn is the new reactive
+                     throttle-modulated one (ReactiveAscent.cs). Wired in LiftSettings.setupUI,
+                     which also shows/hides guided_profile_settings vs gravity_turn_settings
+                     below to match whichever is picked here.
+                     A real DropdownField (not InlineEnum's segmented-button row - tried that as a
+                     workaround, but it wasn't the look wanted here). The oversized height seen
+                     in-game was a K2UI.uss bug (.unity-popup-field__input's height: 100%
+                     resolving against this Foldout's flex-grow: 1 container, not this field
+                     specifically) - fixed at the shared stylesheet level, so a plain dropdown
+                     now renders correctly here the same as Dock's/Landing's. -->
+                <ui:DropdownField label="Ascent Profile" index="0" choices="Guided,Gravity Turn" name="ascent_profile_drop" style="justify-content: space-between;" tooltip="Guided: fixed pitch-over curve (original K2D2 behavior). Gravity Turn: holds prograde and modulates throttle to hold a target time-to-apoapsis, closer to a real rocket's ascent." />
                 <ui:IntegerField label="Ap Altitude" value="42" name="destination_Ap_km" style="justify-content: space-between;">
                     <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />
                 </ui:IntegerField>
-                <!-- Reverted back to sliders (typed absolute-km fields didn't stick) - title
-                     stays static now ("5° Alt"/"45° Alt", never rewritten), the live computed
-                     altitude reads in the amber value slot via K2Slider's new ValueText override
-                     (see K2Slider.cs) instead of being baked into one plain-white title string,
-                     matching the amber "cockpit gauge" value convention used elsewhere. -->
-                <K2UI.K2Slider name="end_rotate_ratio" label="5° Alt" max="10" print-value="false" label-on-top="true" value="0" min="0.01" />
-                <K2UI.K2Slider name="mid_rotate_ratio" label="45° Alt" max="10" print-value="false" label-on-top="true" value="0.98" min="0.01" />
-                <ui:IntegerField label="90° Alt. :" value="42" name="start_altitude_km" style="justify-content: space-between;">
-                    <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />
-                </ui:IntegerField>
+                <!-- Guided-only controls (see AscentProfile.cs) - hidden when Gravity Turn is
+                     selected above. Roll program lives in here too for now: it isn't wired into
+                     ReactiveAscent's prograde-hold steering yet (see LiftSettings.cs's comment on
+                     roll_program). -->
+                <ui:VisualElement name="guided_profile_settings">
+                    <!-- Reverted back to sliders (typed absolute-km fields didn't stick) - title
+                         stays static now ("5° Alt"/"45° Alt", never rewritten), the live computed
+                         altitude reads in the amber value slot via K2Slider's new ValueText override
+                         (see K2Slider.cs) instead of being baked into one plain-white title string,
+                         matching the amber "cockpit gauge" value convention used elsewhere. -->
+                    <K2UI.K2Slider name="end_rotate_ratio" label="5° Alt" max="10" print-value="false" label-on-top="true" value="0" min="0.01" />
+                    <K2UI.K2Slider name="mid_rotate_ratio" label="45° Alt" max="10" print-value="false" label-on-top="true" value="0.98" min="0.01" />
+                    <ui:IntegerField label="90° Alt. :" value="42" name="start_altitude_km" style="justify-content: space-between;">
+                        <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />
+                    </ui:IntegerField>
+                    <!-- Roll program: rolls the vessel to a chosen offset from however it spawned on
+                         the pad, once past a chosen altitude - part of the launch Profile alongside
+                         Heading above rather than tucked away in ADVANCED, since it's a per-launch
+                         choice like heading is. A rocket built without the spawn rotation
+                         in mind can come off the pad "funky" otherwise (see Ascent.cs's own comment
+                         for the full reasoning, and exactly what "roll" means here - relative to
+                         launch orientation, not an absolute compass reading). First pass, not yet
+                         flight-tested. -->
+                    <K2UI.K2Toggle label="Roll Program" name="roll_program" tooltip="Roll the vessel to a chosen offset from its launch orientation once it clears the altitude below" />
+                    <ui:VisualElement name="roll_program_settings">
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.1" max="5" name="roll_program_altitude_km" label="Roll Program Altitude (km)" tooltip="Altitude at which the roll program executes" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="-180" value="0" max="180" name="roll_program_angle_deg" label="Roll Program Angle (°)" tooltip="How many degrees to roll from the vessel's launch orientation (not an absolute compass heading)" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="3" max="15" name="roll_program_rate_deg_s" label="Roll Program Rate (°/s)" tooltip="How fast the roll program is allowed to roll the vessel toward its target angle - lower is gentler but takes longer, higher settles faster but risks overshoot" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <!-- Gravity Turn-only controls (see ReactiveAscent.cs) - hidden when Guided is
+                     selected above. -->
+                <ui:VisualElement name="gravity_turn_settings">
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="100" max="300" name="gravity_turn_kick_speed_mps" label="Kick Speed (m/s)" tooltip="Vertical speed the rocket needs to reach during the initial straight-up rise before it performs its pitch kick" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="1" value="7.5" max="15" name="gravity_turn_pitch_kick_deg" label="Pitch Kick (°)" tooltip="One-time pitch-over right after the vertical rise, to seed the turn - prograde-hold alone can't start turning from dead vertical" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="45" max="120" name="gravity_turn_hold_time_s" label="Hold Time-to-Apoapsis (s)" tooltip="Target seconds-to-apoapsis the throttle tries to hold during the turn - lower is a steeper/faster climb, higher is a shallower, more fuel-efficient one" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.05" max="0.5" name="gravity_turn_min_throttle" label="Min Throttle" tooltip="Throttle floor during the turn, so the engine never fully cuts out while coasting the trajectory over" />
+                </ui:VisualElement>
                 <!-- Same title-left/amber-value-right treatment as the sliders above, reusing
                      K2Slider's own label_row/value_label CSS classes directly since this isn't a
                      K2Slider itself. -->
@@ -30,20 +70,6 @@
                 </ui:VisualElement>
                 <K2UI.K2Compass name="heading" />
                 <ui:VisualElement name="graph" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); height: 162px; border-left-width: 1px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px; border-left-color: rgb(71, 75, 175); border-right-color: rgb(71, 75, 175); border-top-color: rgb(71, 75, 175); border-bottom-color: rgb(71, 75, 175); border-top-left-radius: 5px; border-bottom-left-radius: 5px; border-top-right-radius: 5px; border-bottom-right-radius: 5px;" />
-                <!-- Roll program: rolls the vessel to a chosen offset from however it spawned on
-                     the pad, once past a chosen altitude - part of the launch Profile alongside
-                     Heading above rather than tucked away in ADVANCED, since it's a per-launch
-                     choice like heading is. A rocket built without the spawn rotation
-                     in mind can come off the pad "funky" otherwise (see Ascent.cs's own comment
-                     for the full reasoning, and exactly what "roll" means here - relative to
-                     launch orientation, not an absolute compass reading). First pass, not yet
-                     flight-tested. -->
-                <K2UI.K2Toggle label="Roll Program" name="roll_program" tooltip="Roll the vessel to a chosen offset from its launch orientation once it clears the altitude below" />
-                <ui:VisualElement name="roll_program_settings">
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.1" max="5" name="roll_program_altitude_km" label="Roll Program Altitude (km)" tooltip="Altitude at which the roll program executes" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="-180" value="0" max="180" name="roll_program_angle_deg" label="Roll Program Angle (°)" tooltip="How many degrees to roll from the vessel's launch orientation (not an absolute compass heading)" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="3" max="15" name="roll_program_rate_deg_s" label="Roll Program Rate (°/s)" tooltip="How fast the roll program is allowed to roll the vessel toward its target angle - lower is gentler but takes longer, higher settles faster but risks overshoot" />
-                </ui:VisualElement>
             </ui:Foldout>
             <K2UI.K2Slider name="max_throttle" label="Max Throttle" max="10" print-value="false" label-on-top="false" value="0" min="0.01" />
             <K2UI.ToggleButton name="run" label="Start" class="big" style="flex-grow: 1; margin-top: 10px; margin-bottom: 10px;" />
