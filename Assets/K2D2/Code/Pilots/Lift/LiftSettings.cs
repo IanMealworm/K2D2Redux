@@ -67,6 +67,15 @@ namespace K2D2.Lift
         public ClampSetting<float> gravity_turn_hold_time_s = new("lift.gravity_turn_hold_time_s", 45f, 10f, 120f);
         public ClampSetting<float> gravity_turn_min_throttle = new("lift.gravity_turn_min_throttle", 0.05f, 0f, 0.5f);
 
+        // Pitch-down bias "second actuator" (see ReactiveAscent.cs's pitch_down_bias_deg) - leans
+        // the nose below true prograde when throttle alone can't hold the turn's target apoapsis
+        // time. Both were fixed constants at first; made player-tunable since how much lean is
+        // appropriate, and how early it should start sharing the work with throttle, both depend
+        // heavily on the specific vehicle (a lightly-overpowered rocket needs much less of either
+        // than a heavily SRB-boosted one).
+        public ClampSetting<float> gravity_turn_pitch_bias_max_deg = new("lift.gravity_turn_pitch_bias_max_deg", 25f, 0f, 45f);
+        public ClampSetting<float> gravity_turn_pitch_bias_engage_margin = new("lift.gravity_turn_pitch_bias_engage_margin", 0.6f, 0f, 1f);
+
         public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0, 1);
         public ClampSetting<float> end_ascent_pc = new ("lift.end_ascent_pc", 0.1f, 0, 1);
 
@@ -168,6 +177,8 @@ namespace K2D2.Lift
             gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_kick_deg").Bind(gravity_turn_pitch_kick_deg);
             gravity_turn_settings.Q<K2Slider>("gravity_turn_hold_time_s").Bind(gravity_turn_hold_time_s);
             gravity_turn_settings.Q<K2Slider>("gravity_turn_min_throttle").Bind(gravity_turn_min_throttle);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_max_deg").Bind(gravity_turn_pitch_bias_max_deg);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_engage_margin").Bind(gravity_turn_pitch_bias_engage_margin);
 
             root.Q<K2Toggle>("heading_correction").Bind(heading_correction);
 

@@ -100,19 +100,42 @@ namespace K2D2.Lift
         // wanted_throttle itself IS the integral accumulator here - there's no separate state for
         // it, and clamping wanted_throttle to the throttle range every tick doubles as basic
         // anti-windup (it can never accumulate further than the clamp allows).
-        const float ApoapsisTimeIntegralGain = 0.006f;
+        //
+        // Raised from the original 0.006/0.05 pair (same ~1:3 ratio, scaled up together so the
+        // loop speeds up without losing the damping that keeps it from oscillating - raising the
+        // integral gain alone, without a matching derivative increase, is what would bring the
+        // hunting back). This also specifically helps SRB-heavy craft: SRBs can't be throttled at
+        // all, so on a vehicle where they supply a big chunk of total thrust, the SAME throttle
+        // swing on the (smaller) throttleable portion moves the vehicle's actual acceleration -
+        // and therefore time_to_apoapsis - by proportionally less than it would on an all-liquid
+        // stack. These gains were tuned assuming throttle has full leverage over acceleration;
+        // a heavily-SRB vehicle effectively has less of that leverage, so it needs a stronger gain
+        // to react at the same real-world speed. This also reacts faster to SRB burnout itself (a
+        // sudden drop in available thrust the controller has to make up for by throttling up).
+        const float ApoapsisTimeIntegralGain = 0.018f;
 
         // Derivative gain: reacts to time_to_apoapsis_s's own rate of change (not the error's -
         // equivalent here since the target doesn't move, and it avoids "derivative kick" if it
         // ever does). This is the damping term - see the class comment above for why it's the
         // actual fix, not the exact number here.
-        const float ApoapsisTimeDerivativeGain = 0.05f;
+        const float ApoapsisTimeDerivativeGain = 0.09f;
 
         // Below this much apoapsis-time error, the integral term stops accumulating (treated as
         // zero error) - a small dead zone so once it's genuinely converged, leftover measurement
         // noise can't slowly walk the integral term around. The derivative term still applies
         // inside this band, so any real leftover motion is still damped, not ignored.
-        const float TimeToApoapsisDeadbandSeconds = 2f;
+        //
+        // Shrunk from an original 2s: that value predates the derivative term above, from back
+        // when this was an undamped integral-only controller that genuinely needed a wide dead
+        // zone to ever stop adjusting at all. It had a real downside that only showed up once the
+        // PID redesign made the loop well-damped: approaching from above, it would cross into the
+        // band and immediately damp to a stop right near the edge it entered on, instead of
+        // continuing to close the rest of the way to the actual target - a flight settling at 47s
+        // against a 45s target was it parking at the edge of a 2s-wide band, not a tuning error.
+        // Now that the derivative term is what actually prevents noise-chasing, this only needs to
+        // be wide enough to swallow genuine measurement jitter (the input is already smoothed - see
+        // computeValues), not to hide a structural inability to converge.
+        const float TimeToApoapsisDeadbandSeconds = 0.3f;
 
         // Both gains above are scaled down by this much right at the very start of the turn (dead
         // vertical), ramping back up to full strength as the trajectory flattens toward horizontal
@@ -120,6 +143,41 @@ namespace K2D2.Lift
         // when the trajectory is most vertical, so the same gains that behave well once horizontal
         // would still overreact right after the kick.
         const float VerticalPidScale = 0.2f;
+
+        // Throttle is the PRIMARY way RunTurn controls the climb, but it has a floor
+        // (gravity_turn_min_throttle) - on a high-TWR vehicle (or one still coasting on SRBs),
+        // even that floor can still be adding more energy than the hold-time target wants, and
+        // there's nowhere left for throttle to go. This leans the nose DOWN below true prograde
+        // (toward the horizon) to help - thrust that isn't pointed exactly along the velocity
+        // vector is less efficient at raising the apoapsis further, so it acts as a second,
+        // geometric "throttle". It phases in smoothly as throttle APPROACHES its floor (see
+        // settings.gravity_turn_pitch_bias_engage_margin below), not just once throttle has
+        // already bottomed out, so the two actually work together over that last stretch instead
+        // of one picking up only after the other has completely given up. The whole point is to
+        // flatten the arc itself (push the apoapsis further out along the orbit, rather than
+        // straight up) when throttle alone can't - never to climb faster. Reset in Start(),
+        // updated once per tick in RunTurn(). How far this is ever allowed to go
+        // (settings.gravity_turn_pitch_bias_max_deg) and how early it starts sharing the work with
+        // throttle (settings.gravity_turn_pitch_bias_engage_margin) are both player-tunable sliders
+        // now (LiftSettings.cs / Lift.uxml's gravity_turn_settings) - how much lean is appropriate,
+        // and how early it should kick in, both depend heavily on the specific vehicle.
+        float pitch_down_bias_deg = 0f;
+
+        // How many degrees per second the bias above grows, per second of residual apoapsis-time
+        // error, scaled by pid_scale (vertical/horizontal, same as the throttle gains),
+        // floor_proximity (how deep into settings.gravity_turn_pitch_bias_engage_margin throttle
+        // currently is - see RunTurn), and settings.gravity_turn_pitch_bias_max_deg (the further
+        // the player allows this to go, the faster it's allowed to get there). Deliberately gentle
+        // on its own: it's meant to ease in alongside throttle over that last stretch, not snap on,
+        // so most of the actual correcting still happens through whatever throttle authority is
+        // left until there genuinely isn't any.
+        const float PitchBiasGainDegPerApoapsisSecond = 0.3f;
+
+        // How fast the bias eases back out, in degrees per second, the moment throttle pulls back
+        // out of the engage margin or time_to_apoapsis is no longer overshooting - faster than it
+        // builds up, since there's no reason to keep fighting the climb once the real throttle can
+        // handle it again.
+        const float PitchBiasRecoveryDegPerSecond = 5f;
 
         float wanted_throttle = 0;
         public float time_to_apoapsis_s = 0;
@@ -141,6 +199,7 @@ namespace K2D2.Lift
             time_to_apoapsis_s = 0;
             previous_time_to_apoapsis_s = 0f;
             time_to_apoapsis_rate = 0f;
+            pitch_down_bias_deg = 0f;
             heading_correction_deg = 0;
             h_speed_heading_deg = 0;
             last_ap_km = 0;
@@ -274,17 +333,18 @@ namespace K2D2.Lift
 
         void RunTurn()
         {
-            // Prograde-hold is the actual "turn" - the nose stays on the velocity vector and
-            // gravity does the rest of the pitching-over, rather than this controller commanding
-            // pitch directly the way Ascent.cs's fixed curve does. This used to be
-            // SASTool.setAutoPilot(AutopilotMode.Prograde) - Redux/KSP's own built-in SAS mode -
-            // but that mode has no hook for nudging heading, so it couldn't support Heading
-            // Correction. PointAt already knows how to point at an elevation/heading with an
-            // optional heading correction baked in (VerticalRise/PitchKick already go through it),
-            // so Turn now just needs prograde's own elevation each tick - see
-            // ComputeProgradeElevation above - and hands that to the same shared method.
+            // Prograde-hold is the actual "turn" - the nose stays on the velocity vector (plus the
+            // pitch_down_bias_deg brake below, when it's engaged) and gravity does the rest of the
+            // pitching-over, rather than this controller commanding pitch directly the way
+            // Ascent.cs's fixed curve does. This used to be SASTool.setAutoPilot(AutopilotMode.
+            // Prograde) - Redux/KSP's own built-in SAS mode - but that mode has no hook for
+            // nudging heading or pitch, so it couldn't support Heading Correction or the bias
+            // below. PointAt already knows how to point at an elevation/heading with an optional
+            // heading correction baked in (VerticalRise/PitchKick already go through it), so Turn
+            // just needs prograde's own elevation each tick - see ComputeProgradeElevation above -
+            // and hands that (adjusted by the bias) to the same shared method, called once at the
+            // end of this method once the bias for THIS tick is known.
             float elevation_deg = ComputeProgradeElevation();
-            PointAt(elevation_deg);
 
             float error = time_to_apoapsis_s - settings.gravity_turn_hold_time_s.V;
 
@@ -316,6 +376,30 @@ namespace K2D2.Lift
             else if (wanted_throttle < settings.gravity_turn_min_throttle.V)
                 wanted_throttle = settings.gravity_turn_min_throttle.V;
 
+            // Second actuator: rather than waiting for throttle to bottom out completely, this
+            // phases in over the last gravity_turn_pitch_bias_engage_margin stretch of throttle's
+            // travel toward its floor - floor_proximity is 0 as long as wanted_throttle is
+            // comfortably above that margin, ramping smoothly to 1 right at the floor, so the two
+            // actually work together over that last stretch instead of one waiting for the other
+            // to fully give up first. Still only engages while time_to_apoapsis is actually
+            // overshooting (integral_error > 0 - the deadband above already zeroes this out once
+            // it's close enough) - no reason to lean the nose down if throttle merely happens to
+            // be low but is already holding target fine on its own.
+            float throttle_range = Mathf.Max(settings.max_throttle.V - settings.gravity_turn_min_throttle.V, 0.0001f);
+            float engage_margin = settings.gravity_turn_pitch_bias_engage_margin.V * throttle_range;
+            float floor_proximity = Mathf.Clamp01((settings.gravity_turn_min_throttle.V + engage_margin - wanted_throttle) / engage_margin);
+
+            if (integral_error > 0f && floor_proximity > 0f)
+            {
+                pitch_down_bias_deg += PitchBiasGainDegPerApoapsisSecond * integral_error * pid_scale * floor_proximity * Time.deltaTime;
+            }
+            else
+            {
+                pitch_down_bias_deg -= PitchBiasRecoveryDegPerSecond * Time.deltaTime;
+            }
+            pitch_down_bias_deg = Mathf.Clamp(pitch_down_bias_deg, 0f, settings.gravity_turn_pitch_bias_max_deg.V);
+
+            PointAt(elevation_deg - pitch_down_bias_deg);
             current_vessel.SetThrottle(wanted_throttle);
         }
 
@@ -365,6 +449,12 @@ namespace K2D2.Lift
             // large while it's climbing/falling toward the target. Useful for telling "still
             // converging" apart from "found it and holding" at a glance.
             addRow("Ap Time Rate", $"{time_to_apoapsis_rate:n2} s/s");
+
+            // Only shows up once throttle has actually pinned at its floor and started leaning on
+            // this second actuator - see pitch_down_bias_deg's own comment. 0 the rest of the
+            // time, which is the normal, expected case for most vehicles.
+            if (pitch_down_bias_deg > 0f)
+                addRow("Pitch-Down Bias", $"{pitch_down_bias_deg:n1} °");
 
             // Same two rows Ascent.cs's own UpdateInfoRows shows under the same toggle - lets the
             // player see the correction actually working (or confirm it's doing nothing when
