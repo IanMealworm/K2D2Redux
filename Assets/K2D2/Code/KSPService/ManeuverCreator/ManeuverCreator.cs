@@ -274,19 +274,7 @@ namespace K2D2.KSPService
 
             Game.SpaceSimulation.Maneuvers.AddNodeToVessel(nodeData);
 
-            yield return new WaitForFixedUpdate();
-
-            MapCore mapCore = null;
-            Game.Map.TryGetMapCore(out mapCore);
-            if (mapCore)
-            {
-                mapCore.map3D.ManeuverManager.GetNodeDataForVessels();
-                mapCore.map3D.ManeuverManager.UpdatePositionForGizmo(nodeData.NodeID);
-                // mapCore.map3D.ManeuverManager.UpdateAll();
-                // mapCore.map3D.ManeuverManager.RemoveAll();
-            }
-
-
+            yield return UpdateMapGizmoWhenReady_Co(nodeData);
         }
 
         /// <summary>
@@ -332,7 +320,7 @@ namespace K2D2.KSPService
             // "add node" UI uses) resolves ManeuverTrajectoryPatch from here.
             Game.SpaceSimulation.Maneuvers.AddNodeToVessel(nodeData);
 
-            K2D2_Plugin.Instance.StartCoroutine(UpdateMapGizmo_Co(nodeData));
+            K2D2_Plugin.Instance.StartCoroutine(UpdateMapGizmoWhenReady_Co(nodeData));
 
             return nodeData;
         }
@@ -410,8 +398,67 @@ namespace K2D2.KSPService
             onCreated?.Invoke(nodeData);
         }
 
-        private IEnumerator UpdateMapGizmo_Co(ManeuverNodeData nodeData)
+        // How long to keep waiting for the player to actually be in Map3DView before giving up on
+        // nudging this particular node's gizmo - generous (most players who are going to check the
+        // map do so within a few seconds), but bounded so a node created while the player never
+        // opens the map doesn't leave a coroutine polling forever. Shared by every call site below.
+        const float MapGizmoReadyTimeoutSeconds = 120f;
+
+        // True while UpdateMapGizmoWhenReady_Co below is waiting on the player to switch into
+        // Map3DView - callers (FinalCircularize, and any other controller built on this same
+        // ManeuverCreator) can surface this as an on-screen hint instead of leaving the wait
+        // silent. NOT a one-time "map hasn't loaded yet this session" flag, deliberately: K2D2Redux's
+        // own log showed the exact same wait needed again for a LATER node even though the player
+        // had already opened the map once earlier in the session - its 3D scene appears to tear
+        // down when the player leaves map view and rebuild fresh each time they re-enter, not just
+        // the first time ever. So this goes true/false around every individual wait, however many
+        // times that turns out to be.
+        public bool waiting_for_map_view { get; private set; } = false;
+
+        /// <summary>
+        /// Positions the given node's gizmo/conic-patch preview on the 3D map - but only once the
+        /// player is actually IN Map3DView, polling at a relaxed half-second interval until then (or
+        /// resolving on the next FixedUpdate if they're already there).
+        ///
+        /// Why wait instead of just trying once: Game.Map.TryGetMapCore can return a non-null
+        /// MapCore even while the player is still in Flight view, before its map3D scene has
+        /// actually finished initializing - calling into Map3DManeuvers.GetNodeDataForVessels() at
+        /// that point throws a NullReferenceException from deep inside the game's own code.
+        /// Confirmed from K2D2Redux's own log during Lift's FinalCircularize: every node created
+        /// while still in Flight view threw here every single time, while one created after the
+        /// player had already switched to Map view didn't. The maneuver node itself is already
+        /// fully valid at that point regardless - AddNodeToVessel and (for CreateManeuverNodeAtUT)
+        /// InitializeTransform both already ran before this is ever called, and Turn/Warp/Burn fly
+        /// off ManeuverNodeData and the game's own maneuver-plan solver directly, never off this
+        /// gizmo. So this NRE never affected whether a burn actually flew correctly - but a
+        /// stale-looking, unpositioned gizmo on the map reads as "this node is wrong" even when it
+        /// isn't, which is reason enough to get it right rather than firing once and letting it
+        /// silently fail.
+        /// </summary>
+        private IEnumerator UpdateMapGizmoWhenReady_Co(ManeuverNodeData nodeData)
         {
+            // Game.GlobalGameState.GetGameState() returns a value type - like K2D2_Plugin.cs's own
+            // ValidScene() check, this reads it with plain dots (not ?.) once Game itself is
+            // confirmed non-null, rather than null-conditional-chaining through a struct return.
+            float waited = 0f;
+            while (true)
+            {
+                if (Game == null || waited >= MapGizmoReadyTimeoutSeconds)
+                {
+                    waiting_for_map_view = false;
+                    yield break;
+                }
+
+                if (Game.GlobalGameState.GetGameState().GameState == GameState.Map3DView)
+                    break;
+
+                waiting_for_map_view = true;
+                waited += 0.5f;
+                yield return new WaitForSeconds(0.5f);
+            }
+
+            waiting_for_map_view = false;
+
             yield return new WaitForFixedUpdate();
 
             MapCore mapCore = null;

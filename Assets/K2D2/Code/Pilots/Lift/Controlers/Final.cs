@@ -144,6 +144,13 @@ namespace K2D2.Lift
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
             st.Status(string.IsNullOrEmpty(status_line) ? "Circularizing..." : status_line);
+
+            // See ManeuverCreator.waiting_for_map_view's own comment - the node and its burn are
+            // already fully set up at this point regardless, this is purely about the map's visual
+            // gizmo/conic-patch preview not being positioned correctly until the player actually
+            // opens Map view at least once after this node was created.
+            if (maneuver_creator.waiting_for_map_view)
+                st.Console("Open Map View to finish displaying this maneuver node (the burn itself isn't affected either way).");
         }
     }
 }

@@ -49,6 +49,33 @@ namespace K2D2.Lift
 
         public Setting<int> destination_Ap_km = new("lift.destination_Ap_km", 100);
 
+        // ASCENT PROFILE (see AscentProfile.cs) - which ExecuteController flies the Ascent phase.
+        // Bound to the ascent_profile_drop DropdownField in the Profile foldout (see setupUI
+        // below); LiftPilot.ascent reads this live to pick between Ascent (Guided) and
+        // ReactiveAscent (GravityTurn).
+        public EnumSetting<AscentProfile> ascent_profile = new("lift.ascent_profile", AscentProfile.Guided);
+
+        // GRAVITY TURN tunables (see ReactiveAscent.cs) - only shown/used when ascent_profile is
+        // GravityTurn.
+
+        // How fast the rocket needs to be rising (vertical speed) before it performs its pitch
+        // kick and starts the actual turn - player-tunable since heavier/higher-TWR rockets reach
+        // a good kick speed at very different times.
+        public ClampSetting<float> gravity_turn_kick_speed_mps = new("lift.gravity_turn_kick_speed_mps", 100f, 10f, 300f);
+
+        public ClampSetting<float> gravity_turn_pitch_kick_deg = new("lift.gravity_turn_pitch_kick_deg", 7.5f, 1f, 15f);
+        public ClampSetting<float> gravity_turn_hold_time_s = new("lift.gravity_turn_hold_time_s", 45f, 10f, 120f);
+        public ClampSetting<float> gravity_turn_min_throttle = new("lift.gravity_turn_min_throttle", 0.05f, 0f, 0.5f);
+
+        // Pitch-down bias "second actuator" (see ReactiveAscent.cs's pitch_down_bias_deg) - leans
+        // the nose below true prograde when throttle alone can't hold the turn's target apoapsis
+        // time. Both were fixed constants at first; made player-tunable since how much lean is
+        // appropriate, and how early it should start sharing the work with throttle, both depend
+        // heavily on the specific vehicle (a lightly-overpowered rocket needs much less of either
+        // than a heavily SRB-boosted one).
+        public ClampSetting<float> gravity_turn_pitch_bias_max_deg = new("lift.gravity_turn_pitch_bias_max_deg", 25f, 0f, 45f);
+        public ClampSetting<float> gravity_turn_pitch_bias_engage_margin = new("lift.gravity_turn_pitch_bias_engage_margin", 0.6f, 0f, 1f);
+
         public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0, 1);
         public ClampSetting<float> end_ascent_pc = new ("lift.end_ascent_pc", 0.1f, 0, 1);
 
@@ -80,7 +107,9 @@ namespace K2D2.Lift
         // ROLL PROGRAM (see Ascent.cs for the full reasoning). Lives in the Profile foldout
         // alongside Heading, not Advanced - it's a per-launch choice like heading, not a tuning
         // knob. Off by default; measured relative to the vessel's OWN launch orientation rather
-        // than an absolute compass/navball reading (see Ascent.cs).
+        // than an absolute compass/navball reading (see Ascent.cs). Guided-only for now - it's
+        // not wired into ReactiveAscent's prograde-hold steering (see Lift.uxml's
+        // guided_profile_settings), so its controls hide when GravityTurn is selected.
         public Setting<bool> roll_program = new("lift.roll_program", false);
         public ClampSetting<float> roll_program_altitude_km = new("lift.roll_program_altitude_km", 0.1f, 0, 5);
         public ClampSetting<float> roll_program_angle_deg = new("lift.roll_program_angle_deg", 0, -180, 180);
@@ -108,7 +137,50 @@ namespace K2D2.Lift
             end_adjust_alt = root.Q<Label>("end_adjust_alt");
             adjust_group = root.Q<K2UI.Group>("adjust_group");
 
-            root.Q<K2Toggle>("heading_correction").Bind(heading_correction);  
+            // ASCENT PROFILE - a real DropdownField. The oversized height seen in-game was a
+            // K2UI.uss bug (.unity-popup-field__input's height: 100% resolving against this
+            // Foldout's flex-grow: 1 container, not something specific to this field - see
+            // K2UI.uss's own comment), now fixed at the shared stylesheet level.
+            // guided_profile_settings holds every control that's Guided-only (rotate ratios, 90°
+            // alt, and the roll program - see its own comment above); gravity_turn_settings holds
+            // GravityTurn's own tunables. Both live side by side in the Profile foldout and only
+            // one shows at a time.
+            var ascent_profile_drop = root.Q<DropdownField>("ascent_profile_drop");
+            var guided_profile_settings = root.Q<VisualElement>("guided_profile_settings");
+            var gravity_turn_settings = root.Q<VisualElement>("gravity_turn_settings");
+            var graph = root.Q<VisualElement>("graph");
+
+            void ShowProfileSettings(AscentProfile profile)
+            {
+                guided_profile_settings.Show(profile == AscentProfile.Guided);
+                gravity_turn_settings.Show(profile == AscentProfile.GravityTurn);
+                // The ascent path graph only ever plots Guided's fixed pitch curve
+                // (LiftAscentPath.compute_elevation) - under Gravity Turn the live green altitude
+                // marker doesn't track that curve at all (the throttle-modulated trajectory has
+                // nothing to do with it), so it just reads as constant, meaningless motion.
+                // Hidden here rather than shown-but-wrong until the graph learns to plot Gravity
+                // Turn's own trajectory.
+                graph.Show(profile == AscentProfile.Guided);
+            }
+
+            ascent_profile_drop.SetValueWithoutNotify(ascent_profile.V == AscentProfile.GravityTurn ? "Gravity Turn" : "Guided");
+            ShowProfileSettings(ascent_profile.V);
+
+            ascent_profile_drop.RegisterCallback<ChangeEvent<string>>(evt =>
+            {
+                var profile = evt.newValue == "Gravity Turn" ? AscentProfile.GravityTurn : AscentProfile.Guided;
+                ascent_profile.V = profile;
+                ShowProfileSettings(profile);
+            });
+
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_kick_speed_mps").Bind(gravity_turn_kick_speed_mps);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_kick_deg").Bind(gravity_turn_pitch_kick_deg);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_hold_time_s").Bind(gravity_turn_hold_time_s);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_min_throttle").Bind(gravity_turn_min_throttle);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_max_deg").Bind(gravity_turn_pitch_bias_max_deg);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_engage_margin").Bind(gravity_turn_pitch_bias_engage_margin);
+
+            root.Q<K2Toggle>("heading_correction").Bind(heading_correction);
 
             // bind to settings and add listener on the same line !
             root.Q<K2Slider>("end_ascent_pc").Bind(end_ascent_pc);
