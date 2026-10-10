@@ -229,11 +229,13 @@ namespace K2D2
 
         private static bool ValidScene()
         {
-            if (GeneralTools.Game == null) return false;
+            // Game and its state machine aren't set up yet for the first few frames after loading.
+            var game_state = GeneralTools.Game?.GlobalGameState?.GetGameState();
+            if (game_state == null) return false;
 
             // GameStateMachine has no GetState() method on Redux's current assemblies; the current
             // GameState comes from GetGameState().GameState instead.
-            var state = GeneralTools.Game.GlobalGameState.GetGameState().GameState;
+            var state = game_state.GameState;
             bool is_valid = validScenes.Contains(state);
             if (!is_valid)
             {

@@ -1,44 +1,15 @@
 using System;
 using KSP.Sim;
-using KSP.Sim.impl;
-using KTools;
 using KSP2FlightAssistant.MathLibrary;
 
 namespace K2D2.Landing
 {
-    // Precision landing's deorbit math. See the comment block above FindBestDeorbitBurn for the
-    // current approach. DeorbitBurn/MidCourseCorrection aim straight at the true target, and
-    // TouchDown's own closed-loop steering (see TouchDown.cs) handles the descent from Brake
-    // onward.
+    // Small orbit helpers shared across K2D2, plus the burn planning for vacuum precision landing:
+    // which deorbit burn (and later, which small correction burn) makes the coast come down on
+    // the target. The actual "where does this coast land" prediction is ImpactModel.
     public static class LandingTargeting
     {
-        // ------------------------------------------------------------------------------------
-        // Shared helpers
-        // ------------------------------------------------------------------------------------
-
-        // Raw longitude (degrees) of a body-relative Zup position vector, using the same frame
-        // math as LandingPilot.compute_real_collision() (Zup->Yup swap, Position built against
-        // body.SimulationObject.transform.celestialFrame). "Raw" here means: not yet corrected for
-        // how much the body will have additionally rotated between now and whatever future moment
-        // this position corresponds to - see WrapDegrees180/the rotation-compensation note on
-        // PredictImpactLongitude below for why that correction matters once the time horizon is
-        // more than a couple of minutes.
-        static double RawLongitudeOfPosition(CelestialBodyComponent body, Vector3d rel_pos_zup)
-        {
-            Vector3d rel_pos_yup = new Vector3d(rel_pos_zup.x, rel_pos_zup.z, rel_pos_zup.y);
-            Position pos = new Position(body.SimulationObject.transform.celestialFrame, rel_pos_yup);
-            body.GetLatLonAltFromRadius(pos, out _, out double lon, out _);
-            return lon;
-        }
-
-        // Longitude (degrees) of the vessel's position at UT, using the same Zup->Yup swap and
-        // body-relative Position construction as compute_real_collision(). "Raw" - see above.
-        public static double GetLongitudeAtUT(IKeplerPatch orbit, CelestialBodyComponent body, double UT)
-        {
-            return RawLongitudeOfPosition(body, orbit.GetRelativePositionAtUTZup(UT));
-        }
-
-        static double WrapDegrees180(double deg)
+        internal static double WrapDegrees180(double deg)
         {
             deg %= 360.0;
             if (deg > 180.0) deg -= 360.0;
@@ -47,8 +18,7 @@ namespace K2D2.Landing
         }
 
         // Current orbital period from a state vector pair (vis-viva -> semi-major axis ->
-        // Kepler's third law). Used to size the deorbit-timing search window below to "about one
-        // of our own orbits" regardless of what body/altitude we're at.
+        // Kepler's third law).
         public static double OrbitalPeriodFromStateVectors(Vector3d r0, Vector3d v0, double gravParameter)
         {
             double r0mag = r0.magnitude;
@@ -57,10 +27,9 @@ namespace K2D2.Landing
             return 2.0 * Math.PI * Math.Sqrt(sma * sma * sma / gravParameter);
         }
 
-        // For Circularize.cs (precision landing's precondition phase - circularize before
-        // deorbiting, rather than teaching the deorbit search to handle eccentric starting
-        // orbits). Semi-major axis from vis-viva (same formula as OrbitalPeriodFromStateVectors
-        // above), apoapsis/periapsis radii from the standard eccentricity vector
+        // For Circularize.cs (precision landing's precondition phase - the deorbit planning
+        // assumes a roughly circular starting orbit). Semi-major axis from vis-viva (same formula
+        // as OrbitalPeriodFromStateVectors above), apoapsis/periapsis radii from the standard eccentricity vector
         // (e = ((v^2 - mu/r) r - (r.v) v) / mu) rather than anything engine-specific - deliberately
         // avoids IKeplerPatch/PatchedConicsOrbit member access entirely (unlike ManeuverCreator's
         // existing Circularize* methods, which read orbit.Apoapsis/orbit.Periapsis off a
@@ -193,465 +162,296 @@ namespace K2D2.Landing
             return 0;
         }
 
+
         // ------------------------------------------------------------------------------------
-        // Deorbit-timing search
+        // Targeted burns
         // ------------------------------------------------------------------------------------
+
+        // Where the coast is aimed: a point above the target, not the target itself.
         //
-        // From a stable parking orbit, precision landing needs TWO things at once: an actual
-        // deorbit (periapsis dropped below terrain) AND an impact point that lands on the
-        // target's longitude. This searches continuously over WHEN, within roughly the next one of
-        // our own orbits, to perform a normal-sized deorbit burn (retrograde, dropping periapsis
-        // to a safe-below-terrain altitude - same vis-viva idea as the existing
-        // ManeuverCreator.ChangePeriapsis, phrased in raw state vectors instead of touching the
-        // live orbit's own Apoapsis/Periapsis properties). Because the search sweeps continuously
-        // through a full 360 degrees of "where we are when we burn," the resulting impact point
-        // sweeps past the target longitude exactly once per orbit (up to the sampling resolution
-        // below), and the search just has to find it. KeplerPropagator.cs does the "where would a
-        // hypothetical burn end up" math without touching the live vessel's orbit.
-        //
-        // Assumes a roughly circular starting orbit (treats the burn point as both apoapsis and
-        // periapsis of the current orbit when sizing the deorbit burn) - true for the normal
-        // "park in a circular orbit, then land" flow this is built for. A genuinely eccentric
-        // starting orbit would need a proper eccentricity-vector-based version of
-        // ComputeDeorbitDeltaV instead.
-
-        // Vis-viva retrograde delta-v to drop periapsis to targetPeriapsisRadius, burning at a
-        // point of radius r0mag / speed v0mag (treated as the current near-circular orbit's
-        // apoapsis-equivalent, per the note above).
-        public static double ComputeDeorbitDeltaV(double r0mag, double v0mag, double gravParameter, double targetPeriapsisRadius)
+        // A coast that comes down right on the target leaves the powered descent no good option:
+        // the vessel is still moving at nearly orbital speed when it's already low, so the burn
+        // ends up being a last-moment brake a few hundred meters above the ground. Aiming the coast
+        // to pass over the target at aim_height instead (it then comes down some way beyond)
+        // keeps the vessel high while it brakes, and the descent drops onto the target from above.
+        internal class TargetSite
         {
-            double newSMA = (r0mag + targetPeriapsisRadius) / 2.0;
-            double newSpeed = VisVivaEquation.CalculateVelocityFromSMA(r0mag, newSMA, gravParameter);
-            return newSpeed - v0mag;
-        }
+            public readonly Vector3d point;        // body-fixed aim point, aim_height above the target
+            public readonly double radius;         // distance of the aim point from the body's center
+            public readonly double ground_radius;  // distance of the target's terrain from the body's center
+            public readonly double aim_height;
+            readonly Vector3d up, axis1, axis2;
 
-        // Reprojects a Zup-frame body-relative position vector that's only valid AT futureUT (a
-        // hypothetical future/past instant) into an equivalent vector expressed as if it were
-        // RIGHT NOW instead - i.e. the same physical point on the rotating body, re-described
-        // through the body's current orientation. UniverseModel.ZupAtUT(UT, body, ref frame)
-        // gives the body's real CelestialFrame at any UT; WorldToLocal at the future frame
-        // followed by LocalToWorld at "now"'s frame does the reprojection using nothing but that
-        // struct's own math. This lets the existing Position/celestialFrame("now")-based terrain
-        // and lat/lon calls below keep working unchanged - they just receive an input vector
-        // that's already been corrected for rotation.
-        static Vector3d ReprojectToNow(CelestialBodyComponent body, double futureUT, Vector3d rel_pos_zup_at_futureUT)
-        {
-            CelestialFrame frameAtFuture = default;
-            GeneralTools.Game.UniverseModel.ZupAtUT(futureUT, body, ref frameAtFuture);
-
-            CelestialFrame frameNow = default;
-            GeneralTools.Game.UniverseModel.ZupAtUT(GeneralTools.Current_UT, body, ref frameNow);
-
-            Vector3d localBodyFixed = frameAtFuture.WorldToLocal(rel_pos_zup_at_futureUT);
-            return frameNow.LocalToWorld(localBodyFixed);
-        }
-
-        // Propagates (r0, v0) forward with our own standalone Kepler propagator (not the live
-        // orbit - this lets us evaluate a hypothetical burn without performing it) until it
-        // crosses the terrain, using the same bisection search compute_real_collision() uses.
-        // Returns the impact lat/lon.
-        //
-        // Rotation compensation: the body keeps rotating during the coast to impact, so the raw
-        // longitude at impactUT has to be corrected by how far the body has turned since now. The
-        // rotation rate is scaled by an empirical calibration factor rather than applied at face
-        // value - see empirical_calibration below.
-        public static bool PredictImpactLongitude(Vector3d r0, Vector3d v0, CelestialBodyComponent body, double startUT,
-            out double lon, out double lat, out double impactUT)
-        {
-            double mu = body.gravParameter;
-            double t = 30; // small offset past the burn itself, same idea as compute_real_collision()'s 2-minute head start
-            double deltaTime = 60;
-            int maxOccurrences = 150;
-            double terrainAltitude = 0;
-            bool collide = false;
-
-            for (int i = 0; i < maxOccurrences; i++)
+            public TargetSite(ImpactModel model, double latitude, double longitude)
             {
-                KeplerPropagator.Propagate(r0, v0, mu, t, out Vector3d r_zup, out _);
-                Vector3d r_yup = new Vector3d(r_zup.x, r_zup.z, r_zup.y);
-                Position ps = new Position(body.SimulationObject.transform.celestialFrame, r_yup);
-                body.GetAltitudeFromTerrain(ps, out terrainAltitude, out double sceneryOffset);
+                up = model.SurfaceUp(latitude, longitude);
+                ground_radius = model.TerrainRadius(latitude, longitude);
+                aim_height = AimHeight(model.body.radius);
+                radius = ground_radius + aim_height;
+                point = up * radius;
 
-                if (terrainAltitude < 0)
-                {
-                    collide = true;
-                    if (deltaTime > 0) deltaTime = -deltaTime / 2;
-                    t += deltaTime;
-                }
-                else
-                {
-                    if (deltaTime < 0) deltaTime = -deltaTime / 2;
-                    t += deltaTime;
-                }
-
-                if (Math.Abs(terrainAltitude) < 1)
-                    break;
+                Vector3d reference = Math.Abs(up.y) < 0.9 ? new Vector3d(0, 1, 0) : new Vector3d(1, 0, 0);
+                axis1 = Vector3d.Cross(up, reference).normalized;
+                axis2 = Vector3d.Cross(up, axis1);
             }
 
-            impactUT = startUT + t;
-
-            KeplerPropagator.Propagate(r0, v0, mu, t, out Vector3d final_zup, out _);
-            double raw_lon = RawLongitudeOfPosition(body, final_zup);
-            Vector3d final_yup = new Vector3d(final_zup.x, final_zup.z, final_zup.y);
-            Position finalPos = new Position(body.SimulationObject.transform.celestialFrame, final_yup);
-            body.GetLatLonAltFromRadius(finalPos, out lat, out _, out _);
-
-            // Empirical calibration on top of the naive linear rotation-rate correction - keeps
-            // real accuracy in the tens-of-km ballpark. See ReprojectToNow above for the
-            // alternative (ZupAtUT-based) approach kept in reserve if this needs revisiting.
-            const double empirical_calibration = 1.307;
-            double rotation_deg = (impactUT - GeneralTools.Current_UT) * 360.0 / body.rotationPeriod * empirical_calibration;
-            lon = WrapDegrees180(raw_lon - rotation_deg);
-
-            return collide;
+            // Where a body-fixed point is relative to the target, as distances along the ground in
+            // two perpendicular directions - the length of (a, b) is the distance over the surface.
+            // Measured as an angle around the body rather than a straight-line offset, so a point
+            // on the far side of the body reads as far away instead of folding back onto the target.
+            public void Offset(Vector3d body_fixed, out double a, out double b)
+            {
+                Vector3d d = body_fixed.normalized;
+                double x = Vector3d.Dot(d, axis1), y = Vector3d.Dot(d, axis2);
+                double sideways = Math.Sqrt(x * x + y * y);
+                if (sideways < 1e-12)
+                {
+                    a = b = 0;
+                    return;
+                }
+                double distance = radius * Math.Atan2(sideways, Vector3d.Dot(d, up));
+                a = distance * x / sideways;
+                b = distance * y / sideways;
+            }
         }
 
-        // Same bisection-search-for-a-terrain-altitude-crossing as PredictImpactLongitude above,
-        // targeting an arbitrary altitude threshold instead of exactly 0 - used by
-        // LandingPilot.compute_startBurn() to find the REAL UT the current trajectory crosses
-        // start_touchdown_altitude + min_correction_altitude_margin, instead of estimating it from
-        // a speed division. A speed-based estimate has to pick between two bad options: divide by
-        // the full orbital speed (safe, but underestimates real descent time, since altitude only
-        // drops via the much smaller vertical component of that speed) or divide by vertical speed
-        // at the eventual impact point (blows up near periapsis, where vertical speed is ~0 by
-        // definition). Directly searching the propagated trajectory for the real crossing avoids
-        // both failure modes.
-        public static bool PredictUTAtAltitude(Vector3d r0, Vector3d v0, CelestialBodyComponent body, double startUT,
-            double targetAltitudeM, out double crossingUT)
+        // A few percent of the body's radius: about 6 km on the Mun, 2 km on Minmus.
+        static double AimHeight(double body_radius) => Math.Max(2000, Math.Min(10000, 0.03 * body_radius));
+
+        internal struct TargetedBurn
         {
-            double mu = body.gravParameter;
-            double t = 30; // same small head-start as PredictImpactLongitude above
-            double deltaTime = 60;
-            int maxOccurrences = 150;
-            double terrainAltitude = 0;
-            bool crossed = false;
-
-            for (int i = 0; i < maxOccurrences; i++)
-            {
-                KeplerPropagator.Propagate(r0, v0, mu, t, out Vector3d r_zup, out _);
-                Vector3d r_yup = new Vector3d(r_zup.x, r_zup.z, r_zup.y);
-                Position ps = new Position(body.SimulationObject.transform.celestialFrame, r_yup);
-                body.GetAltitudeFromTerrain(ps, out terrainAltitude, out double sceneryOffset);
-
-                if (terrainAltitude < targetAltitudeM)
-                {
-                    crossed = true;
-                    if (deltaTime > 0) deltaTime = -deltaTime / 2;
-                    t += deltaTime;
-                }
-                else
-                {
-                    if (deltaTime < 0) deltaTime = -deltaTime / 2;
-                    t += deltaTime;
-                }
-
-                if (Math.Abs(terrainAltitude - targetAltitudeM) < 1)
-                    break;
-            }
-
-            crossingUT = startUT + t;
-            return crossed;
+            public bool found;
+            public double UT;
+            public double prograde;     // m/s along the orbital velocity at UT
+            public double normal;       // m/s along Cross(r, v) in ImpactModel's axes - not necessarily the game's "normal" sign
+            public double miss_m;       // how far from the aim point the coast passes, measured along the ground
+            public double impact_UT;
+            public Vector3d impact;     // body-fixed
+            public double clearance_m;  // lowest height above terrain on the way down, away from the impact point
         }
 
-        // The actual search: samples candidate burn times across roughly one orbit, evaluates the
-        // resulting impact point for each (via ComputeDeorbitDeltaV + PredictImpactLongitude
-        // above) against BOTH target latitude and longitude, and refines around whichever sample
-        // came out best for a tighter final answer.
-        //
-        // Worth being honest about what this can and can't do: one burn from one fixed-inclination
-        // orbit is really one degree of freedom (when in the orbit to burn), which determines both
-        // the resulting latitude and longitude together, not independently - so this searches for
-        // the single best-achievable point across the orbit, not a guaranteed exact hit on an
-        // arbitrary target. If the target's latitude is outside the orbit's inclination band, no
-        // burn timing reaches it at all; that's a real plane mismatch the player has to fix, not
-        // something this search (or the descent-phase steering) can paper over.
-        //
-        // Returns false if no candidate produced a terrain impact at all (shouldn't normally
-        // happen given targetPeriapsisRadius is meant to be safely below terrain, but an unusual
-        // body/orbit combination could still miss).
-        // bestLon/bestLat/bestErrorM/bestImpactUT are the search's own prediction for whichever
-        // candidate it picked - exposed so the caller can log them for comparison against the real
-        // in-game landing result.
-        // maxPlaneTrimDv (m/s, player-tunable via the Max Plane Trim slider - 0 disables this
-        // entirely) is a SMALL normal/antinormal component added on top of the usual
-        // prograde/retrograde deorbit burn - see the plane-trim block at the end of this method.
-        // Time-distance penalty for the search below: without it, a candidate burn time that's
-        // numerically a hair better on raw ground-miss distance but sits almost a full orbit away
-        // can win outright over a much nearer candidate, even though the "improvement" is usually
-        // within the search's own noise floor. Multiplying elapsed wait time by this constant and
-        // adding it ONLY to the score used to pick a winner (bestScoredErrorM below - never to
-        // bestErrorM/errors[], which stay the true predicted miss distance for logging, the
-        // in-game readout, and the parabola refinement's own vertex fit) pushes ties and near-ties
-        // toward the nearest usable candidate instead.
-        const double distance_penalty_per_second = 0.2;
+        // Height above terrain the coast has to keep on its way to the aim point, except within
+        // clearance_skip_near_m of it. The guided descent ignites somewhere along this stretch.
+        public const double required_clearance_m = 300;
+        public const double clearance_skip_near_m = 3000;
 
-        public static bool FindBestDeorbitBurn(IKeplerPatch orbit, CelestialBodyComponent body,
-            double searchStartUT, double searchDuration, double targetPeriapsisRadius,
-            double targetLatitudeDeg, double targetLongitudeDeg, double maxPlaneTrimDv,
-            out double bestUT, out double bestDeltaV, out double bestNormalDeltaV,
-            out double bestLon, out double bestLat, out double bestErrorM,
-            out double bestImpactUT)
+        static Vector3d AfterBurn(Vector3d r, Vector3d v, double prograde, double normal)
         {
-            const int samples = 36;
+            return v + v.normalized * prograde + Vector3d.Cross(r, v).normalized * normal;
+        }
 
-            bestUT = searchStartUT;
-            bestDeltaV = 0;
-            bestNormalDeltaV = 0;
-            bestLon = 0;
-            bestLat = 0;
-            bestErrorM = double.MaxValue;
-            bestImpactUT = 0;
-            int bestIndex = -1;
-            // Tracks the distance-penalized score used for every comparison below - kept
-            // separate from bestErrorM (the true, unpenalized miss distance) so the penalty never
-            // leaks into anything reported to the player or fed into the parabola fits.
-            double bestScoredErrorM = double.MaxValue;
+        // Prograde delta-v (negative = retrograde) that puts periapsis at `periapsis` radius.
+        static double ProgradeForPeriapsis(Vector3d r, Vector3d v, double normal, double periapsis, double mu)
+        {
+            double hi = 0, lo = -0.9 * v.magnitude;
+            if (ImpactModel.PeriapsisRadius(r, AfterBurn(r, v, hi, normal), mu) <= periapsis)
+                return 0;
 
-            // Only the per-sample error needs to survive the whole loop (to look back at the
-            // winning sample's neighbors for refinement below) - everything else about the
-            // winning candidate is already captured into best* as soon as it's found.
-            double[] errors = new double[samples];
-            bool[] valid = new bool[samples];
-
-            for (int i = 0; i < samples; i++)
+            for (int i = 0; i < 50; i++)
             {
-                double candidateUT = searchStartUT + searchDuration * i / (samples - 1);
-
-                if (TryEvaluateCandidate(orbit, body, candidateUT, targetPeriapsisRadius,
-                        targetLatitudeDeg, targetLongitudeDeg, 0,
-                        out double dv, out double lon, out double lat, out double errorM, out double impactUT))
-                {
-                    valid[i] = true;
-                    errors[i] = errorM;
-
-                    double scoredErrorM = errorM + distance_penalty_per_second * (candidateUT - searchStartUT);
-                    if (scoredErrorM < bestScoredErrorM)
-                    {
-                        bestScoredErrorM = scoredErrorM;
-                        bestErrorM = errorM;
-                        bestIndex = i;
-                        bestUT = candidateUT;
-                        bestDeltaV = dv;
-                        bestLon = lon;
-                        bestLat = lat;
-                        bestImpactUT = impactUT;
-                    }
-                }
+                double mid = 0.5 * (lo + hi);
+                if (ImpactModel.PeriapsisRadius(r, AfterBurn(r, v, mid, normal), mu) > periapsis) hi = mid; else lo = mid;
             }
+            return 0.5 * (lo + hi);
+        }
 
-            if (bestIndex < 0)
+        // Where a burn of (prograde, normal) from (r, v) at UT makes the coast come down,
+        // relative to the target.
+        static bool Miss(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
+            double prograde, double normal, out double a, out double b, out double impact_UT, out Vector3d impact)
+        {
+            a = b = 0;
+            impact = Vector3d.zero;
+            if (!model.Impact(r, AfterBurn(r, v, prograde, normal), UT, site.radius, out impact_UT, out Vector3d p))
                 return false;
 
-            // Refine around the winning sample by fitting a parabola through the winner and its
-            // two neighbors and jumping to that parabola's vertex - standard 1D local-minimum
-            // refinement (an unsigned lat/lon distance never crosses zero, it just dips toward a
-            // minimum, so a signed zero-crossing search doesn't apply here), and cheap (one extra
-            // candidate evaluation).
-            if (bestIndex > 0 && bestIndex < samples - 1 && valid[bestIndex - 1] && valid[bestIndex + 1])
-            {
-                double h = searchDuration / (samples - 1);
-                double y0 = errors[bestIndex - 1];
-                double y1 = errors[bestIndex];
-                double y2 = errors[bestIndex + 1];
-                double denom = y0 - 2 * y1 + y2;
-
-                // denom > 0 means the three samples genuinely curve upward around the winner (a
-                // real local minimum, not noise or a flat run) - only trust the parabola then.
-                if (denom > 1e-9)
-                {
-                    double offset = 0.5 * (y0 - y2) / denom;
-                    // A parabola fit to three samples can still suggest stepping outside their
-                    // own span on a shallow or asymmetric error curve - clamp to the sample
-                    // spacing itself so this can only interpolate between the three points it was
-                    // fit to, never extrapolate past them.
-                    offset = Math.Clamp(offset, -1.0, 1.0);
-                    double refinedUT = bestUT + offset * h;
-
-                    if (TryEvaluateCandidate(orbit, body, refinedUT, targetPeriapsisRadius,
-                            targetLatitudeDeg, targetLongitudeDeg, 0,
-                            out double dvR, out double lonR, out double latR, out double errorR, out double impactUTR))
-                    {
-                        double scoredErrorR = errorR + distance_penalty_per_second * (refinedUT - searchStartUT);
-                        if (scoredErrorR < bestScoredErrorM)
-                        {
-                            bestScoredErrorM = scoredErrorR;
-                            bestErrorM = errorR;
-                            bestUT = refinedUT;
-                            bestDeltaV = dvR;
-                            bestLon = lonR;
-                            bestLat = latR;
-                            bestImpactUT = impactUTR;
-                        }
-                    }
-                }
-            }
-
-            // Optional small plane trim, on top of the timing search above. A normal/antinormal
-            // component added to the burn nudges the orbital PLANE itself (unlike the
-            // prograde/retrograde component, which can only move you along the plane you're
-            // already on) - so unlike the timing search, this gives the search a second degree of
-            // freedom, and could in principle drive the error arbitrarily close to zero with
-            // enough of it. Deliberately kept small and player-capped (maxPlaneTrimDv, the Max
-            // Plane Trim slider) rather than searched for "however much closes the gap
-            // completely" - a real plane MISMATCH is still the player's job to fly close in the
-            // first place; this only trims the last bit away so the descent-phase steering doesn't
-            // have to work so hard. 0 (the slider's floor) disables this entirely and reproduces
-            // the old in-plane-only behavior exactly.
-            //
-            // JOINTLY re-optimizes burn TIME together with each sampled trim value, rather than
-            // only sampling trim at the untrimmed search's own fixed-optimal time: bestUT above
-            // was picked specifically to minimize error at dvNormal=0, so nudging the plane while
-            // holding that exact time fixed usually makes things worse, not better, even when a
-            // real plane mismatch exists and a different (time, trim) pair would genuinely help.
-            // Each candidate trim value below gets its own small local time search (centered on
-            // the untrimmed bestUT, not the whole orbit again - trim this small shouldn't move the
-            // optimal time far) so it gets a fair, independent shot at beating the untrimmed
-            // result instead of being evaluated at the wrong instant.
-            //
-            // SIGN CONVENTION: NormalBurnVector's positive direction (see ManeuverCreator.cs) is
-            // assumed to match Cross(r, v) here (the standard orbital angular-momentum
-            // convention). If plane trim ever makes the real in-game error worse instead of
-            // better, that sign is the first thing to flip and re-test.
-            if (maxPlaneTrimDv > 0 && bestIndex >= 0)
-            {
-                const int trimSamples = 9;
-                const int localTimeSamples = 13;
-                double untrimmedBestUT = bestUT;
-                // +/-3 of the original grid's own step size - narrow (cheap: 13 samples instead
-                // of another full-orbit 36), but wide enough that a trim-shifted optimal time a
-                // few sample-steps away from the untrimmed one is still well within range.
-                double localWindow = 6.0 * (searchDuration / (samples - 1));
-                double localStart = untrimmedBestUT - localWindow / 2.0;
-
-                for (int ti = 0; ti < trimSamples; ti++)
-                {
-                    double dvNormal = maxPlaneTrimDv * (2.0 * ti / (trimSamples - 1) - 1.0); // -max .. +max
-                    if (dvNormal == 0)
-                        continue; // already have the untrimmed result as the baseline in best*
-
-                    double[] localErrors = new double[localTimeSamples];
-                    bool[] localValid = new bool[localTimeSamples];
-                    int localBestIndex = -1;
-                    double localBestUT = 0, localBestDv = 0, localBestLon = 0, localBestLat = 0,
-                        localBestErrorM = double.MaxValue, localBestImpactUT = 0;
-                    // Same score/report split as the untrimmed search above.
-                    double localBestScoredErrorM = double.MaxValue;
-
-                    for (int i = 0; i < localTimeSamples; i++)
-                    {
-                        double candidateUT = localStart + localWindow * i / (localTimeSamples - 1);
-
-                        if (TryEvaluateCandidate(orbit, body, candidateUT, targetPeriapsisRadius,
-                                targetLatitudeDeg, targetLongitudeDeg, dvNormal,
-                                out double dv, out double lon, out double lat, out double errorM, out double impactUT))
-                        {
-                            localValid[i] = true;
-                            localErrors[i] = errorM;
-
-                            double scoredErrorM = errorM + distance_penalty_per_second * (candidateUT - searchStartUT);
-                            if (scoredErrorM < localBestScoredErrorM)
-                            {
-                                localBestScoredErrorM = scoredErrorM;
-                                localBestErrorM = errorM;
-                                localBestIndex = i;
-                                localBestUT = candidateUT;
-                                localBestDv = dv;
-                                localBestLon = lon;
-                                localBestLat = lat;
-                                localBestImpactUT = impactUT;
-                            }
-                        }
-                    }
-
-                    if (localBestIndex < 0)
-                        continue;
-
-                    // Same parabola-vertex refinement as the untrimmed pass above, just against
-                    // this trim value's own local samples.
-                    if (localBestIndex > 0 && localBestIndex < localTimeSamples - 1
-                        && localValid[localBestIndex - 1] && localValid[localBestIndex + 1])
-                    {
-                        double h = localWindow / (localTimeSamples - 1);
-                        double y0 = localErrors[localBestIndex - 1];
-                        double y1 = localErrors[localBestIndex];
-                        double y2 = localErrors[localBestIndex + 1];
-                        double denom = y0 - 2 * y1 + y2;
-
-                        if (denom > 1e-9)
-                        {
-                            double offset = Math.Clamp(0.5 * (y0 - y2) / denom, -1.0, 1.0);
-                            double refinedUT = localBestUT + offset * h;
-
-                            if (TryEvaluateCandidate(orbit, body, refinedUT, targetPeriapsisRadius,
-                                    targetLatitudeDeg, targetLongitudeDeg, dvNormal,
-                                    out double dvR, out double lonR, out double latR, out double errorR, out double impactUTR))
-                            {
-                                double scoredErrorR = errorR + distance_penalty_per_second * (refinedUT - searchStartUT);
-                                if (scoredErrorR < localBestScoredErrorM)
-                                {
-                                    localBestScoredErrorM = scoredErrorR;
-                                    localBestErrorM = errorR;
-                                    localBestUT = refinedUT;
-                                    localBestDv = dvR;
-                                    localBestLon = lonR;
-                                    localBestLat = latR;
-                                    localBestImpactUT = impactUTR;
-                                }
-                            }
-                        }
-                    }
-
-                    if (localBestScoredErrorM < bestScoredErrorM)
-                    {
-                        bestScoredErrorM = localBestScoredErrorM;
-                        bestErrorM = localBestErrorM;
-                        bestUT = localBestUT;
-                        bestDeltaV = localBestDv;
-                        bestNormalDeltaV = dvNormal;
-                        bestLon = localBestLon;
-                        bestLat = localBestLat;
-                        bestImpactUT = localBestImpactUT;
-                    }
-                }
-            }
-
+            impact = model.BodyFixed(p, impact_UT);
+            site.Offset(impact, out a, out b);
             return true;
         }
 
-        static bool TryEvaluateCandidate(IKeplerPatch orbit, CelestialBodyComponent body, double candidateUT,
-            double targetPeriapsisRadius, double targetLatitudeDeg, double targetLongitudeDeg, double dvNormal,
-            out double dv, out double lon, out double lat, out double errorM, out double impactUT)
+        static TargetedBurn Finish(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
+            double prograde, double normal)
         {
-            Vector3d r0 = orbit.GetRelativePositionAtUTZup(candidateUT);
-            Vector3d v0 = orbit.GetOrbitalVelocityAtUTZup(candidateUT);
+            var burn = new TargetedBurn { UT = UT, prograde = prograde, normal = normal };
+            if (!Miss(model, site, r, v, UT, prograde, normal, out double a, out double b, out burn.impact_UT, out burn.impact))
+                return burn;
 
-            dv = ComputeDeorbitDeltaV(r0.magnitude, v0.magnitude, body.gravParameter, targetPeriapsisRadius);
-            Vector3d v1 = v0 + v0.normalized * dv;
-
-            if (dvNormal != 0)
-            {
-                Vector3d orbitNormal = Vector3d.Cross(r0, v0).normalized;
-                v1 += orbitNormal * dvNormal;
-            }
-
-            if (!PredictImpactLongitude(r0, v1, body, candidateUT, out lon, out lat, out impactUT))
-            {
-                errorM = 0;
-                return false;
-            }
-
-            // Real ground distance to the target, not just a longitude difference.
-            errorM = LandingPilot.HaversineDistanceMeters(lat, lon, targetLatitudeDeg, targetLongitudeDeg, body.radius);
-            return true;
+            burn.found = true;
+            burn.miss_m = Math.Sqrt(a * a + b * b);
+            burn.clearance_m = model.MinTerrainClearance(r, AfterBurn(r, v, prograde, normal), UT, burn.impact_UT,
+                burn.impact, clearance_skip_near_m, out _);
+            return burn;
         }
 
-        // A "shift node longitude by resonance orbit" deorbit-timing approach (an earlier version
-        // of this search) is deliberately NOT implemented here: it's a direct port of Flight
-        // Plan's algorithm (github.com/schlosrat/FlightPlan), and Flight Plan is GPLv3, which
-        // cannot be incorporated into a CC BY-SA 4.0 project like K2D2Redux (compatibility only
-        // runs CC BY-SA -> GPLv3, never the other direction). A resonance/phasing-orbit approach to
-        // shifting a ground track's target-longitude crossing is standard, widely-published
-        // orbital mechanics and is fine to reimplement independently from scratch if ever needed -
-        // it's specifically porting Flight Plan's own implementation that must not happen.
+        // A solve step that may run into the normal delta-v cap: solve for both unknowns, and if
+        // the second one would go past the cap, hold it at the cap and fit the first one alone.
+        // Returns the change to apply to the first unknown and the new value of the second.
+        static void Step2(double a, double b, double da1, double db1, double da2, double db2,
+            double second, double second_cap, out double step_first, out double new_second)
+        {
+            new_second = second;
+            double det = da1 * db2 - da2 * db1;
+            if (second_cap > 0 && Math.Abs(det) > 1e-12)
+            {
+                step_first = (-a * db2 + b * da2) / det;
+                double step_second = (-da1 * b + db1 * a) / det;
+                double wanted = second + step_second;
+                if (Math.Abs(wanted) <= second_cap)
+                {
+                    new_second = wanted;
+                    return;
+                }
+                new_second = Math.Max(-second_cap, Math.Min(second_cap, wanted));
+            }
+
+            // Least squares in the first unknown only.
+            double norm = da1 * da1 + db1 * db1;
+            step_first = norm > 1e-12 ? -(a * da1 + b * db1) / norm : 0;
+        }
+
+        // Deorbit burn from a roughly circular orbit, after start_UT, within `revolutions` orbits.
+        //
+        // The burn lowers periapsis to `periapsis_depth_m` below the target's terrain height, so
+        // the coast comes down steeply enough to clear the terrain before the target. What's left
+        // to choose is WHEN to burn - that slides the landing point along the ground track - plus
+        // an optional sideways (normal) part, up to max_normal, to shift the track toward the target.
+        //
+        // The ground track only passes close to the target on some orbits (the body turns
+        // underneath), so several orbits are checked. Waiting a whole orbit has to buy a landing
+        // at least `wait_penalty_m` closer to be worth it - the powered descent fixes a sideways
+        // miss of a few km for very little fuel.
+        internal static TargetedBurn PlanDeorbit(ImpactModel model, IKeplerPatch orbit, TargetSite site,
+            double start_UT, int revolutions, double periapsis_depth_m, double max_normal)
+        {
+            const int samples_per_orbit = 48;
+            const double wait_penalty_m = 3000;
+            double periapsis = site.ground_radius - periapsis_depth_m;
+
+            model.StateAt(orbit, start_UT, out Vector3d r0, out Vector3d v0);
+            double period = model.Period(r0, v0);
+            double step = period / samples_per_orbit;
+            int count = revolutions * samples_per_orbit + 1;
+
+            var distance = new double[count];
+            for (int i = 0; i < count; i++)
+            {
+                double UT = start_UT + i * step;
+                model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+                double prograde = ProgradeForPeriapsis(r, v, 0, periapsis, model.mu);
+                distance[i] = Miss(model, site, r, v, UT, prograde, 0, out double a, out double b, out _, out _)
+                    ? Math.Sqrt(a * a + b * b) : double.PositiveInfinity;
+            }
+
+            var best = new TargetedBurn();
+            double best_score = double.PositiveInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                bool local_min = !double.IsInfinity(distance[i])
+                    && (i == 0 || distance[i] <= distance[i - 1])
+                    && (i == count - 1 || distance[i] <= distance[i + 1]);
+                if (!local_min)
+                    continue;
+
+                TargetedBurn burn = RefineDeorbit(model, orbit, site, start_UT + i * step, step, periapsis, max_normal);
+                if (!burn.found || burn.UT < start_UT)
+                    continue;
+
+                double score = burn.miss_m + wait_penalty_m * (burn.UT - start_UT) / period;
+                if (burn.clearance_m < required_clearance_m)
+                    score += 1e9; // only if nothing else clears the terrain
+                if (score < best_score)
+                {
+                    best_score = score;
+                    best = burn;
+                }
+            }
+            return best;
+        }
+
+        static TargetedBurn RefineDeorbit(ImpactModel model, IKeplerPatch orbit, TargetSite site,
+            double UT, double max_shift, double periapsis, double max_normal)
+        {
+            const double dt = 1, dn = 0.2;
+            double normal = 0;
+            double start = UT;
+
+            bool Eval(double t, double n, out double a, out double b)
+            {
+                model.StateAt(orbit, t, out Vector3d r, out Vector3d v);
+                double prograde = ProgradeForPeriapsis(r, v, n, periapsis, model.mu);
+                return Miss(model, site, r, v, t, prograde, n, out a, out b, out _, out _);
+            }
+
+            for (int iteration = 0; iteration < 15; iteration++)
+            {
+                if (!Eval(UT, normal, out double a, out double b))
+                    break;
+                if (a * a + b * b < 1)
+                    break;
+
+                Eval(UT + dt, normal, out double at, out double bt);
+                double an = a, bn = b;
+                if (max_normal > 0)
+                    Eval(UT, normal + dn, out an, out bn);
+
+                Step2(a, b, (at - a) / dt, (bt - b) / dt, (an - a) / dn, (bn - b) / dn,
+                    normal, max_normal, out double shift, out normal);
+                shift = Math.Max(-max_shift, Math.Min(max_shift, shift));
+                UT += shift;
+                if (Math.Abs(UT - start) > 2 * max_shift)
+                    break;
+            }
+
+            model.StateAt(orbit, UT, out Vector3d r1, out Vector3d v1);
+            return Finish(model, site, r1, v1, UT, ProgradeForPeriapsis(r1, v1, normal, periapsis, model.mu), normal);
+        }
+
+        // Small correction burn at UT on an orbit that's already coming down near the target:
+        // prograde/retrograde moves the landing point along the ground track, normal moves it
+        // sideways (up to max_normal).
+        internal static TargetedBurn PlanCorrection(ImpactModel model, IKeplerPatch orbit, TargetSite site,
+            double UT, double max_normal)
+        {
+            const double dp = 0.05, dn = 0.2, max_step = 20;
+            model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+
+            double prograde = 0, normal = 0;
+            for (int iteration = 0; iteration < 15; iteration++)
+            {
+                if (!Miss(model, site, r, v, UT, prograde, normal, out double a, out double b, out _, out _))
+                    break;
+                if (a * a + b * b < 1)
+                    break;
+
+                Miss(model, site, r, v, UT, prograde + dp, normal, out double ap, out double bp, out _, out _);
+                double an = a, bn = b;
+                if (max_normal > 0)
+                    Miss(model, site, r, v, UT, prograde, normal + dn, out an, out bn, out _, out _);
+
+                Step2(a, b, (ap - a) / dp, (bp - b) / dp, (an - a) / dn, (bn - b) / dn,
+                    normal, max_normal, out double step, out normal);
+                prograde += Math.Max(-max_step, Math.Min(max_step, step));
+            }
+
+            return Finish(model, site, r, v, UT, prograde, normal);
+        }
+
+        // How far from the aim point the orbit passes as it is right now - Coast without the
+        // terrain check, cheap enough to run every frame.
+        internal static bool CoastMiss(ImpactModel model, IKeplerPatch orbit, TargetSite site, double UT, out double miss_m)
+        {
+            model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+            bool found = Miss(model, site, r, v, UT, 0, 0, out double a, out double b, out _, out _);
+            miss_m = found ? Math.Sqrt(a * a + b * b) : 0;
+            return found;
+        }
+
+        // Where the orbit comes down as it is right now, without any burn.
+        internal static TargetedBurn Coast(ImpactModel model, IKeplerPatch orbit, TargetSite site, double UT)
+        {
+            model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+            return Finish(model, site, r, v, UT, 0, 0);
+        }
     }
 }

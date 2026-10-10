@@ -72,10 +72,7 @@ namespace K2D2.Landing
             waypoint_drop.RegisterCallback<ChangeEvent<string>>(evt =>
             {
                 if (waypoint_choices.TryGetValue(evt.newValue, out var waypoint))
-                {
-                    pilot.settings_vac.target_latitude.V = (float)waypoint.latitude;
-                    pilot.settings_vac.target_longitude.V = (float)waypoint.longitude;
-                }
+                    SelectWaypoint(waypoint);
             });
 
             pilot.is_running_event += is_running => run_button.Value = is_running;
@@ -183,48 +180,74 @@ namespace K2D2.Landing
             vac_settings_panel.Show(!atmo);
         }
 
+        // The waypoint the target was last taken from, by Redux's waypoint id - labels can't
+        // identify it, since they include the coordinates and change if the waypoint is moved -
+        // and where it was at that moment, to notice it moving.
+        string selected_waypoint_id;
+        double selected_latitude, selected_longitude;
+
+        void SelectWaypoint(ReduxWaypoint waypoint)
+        {
+            selected_waypoint_id = waypoint.id;
+            selected_latitude = waypoint.latitude;
+            selected_longitude = waypoint.longitude;
+            pilot.settings_vac.target_latitude.V = (float)waypoint.latitude;
+            pilot.settings_vac.target_longitude.V = (float)waypoint.longitude;
+        }
+
+        static string WaypointLabel(ReduxWaypoint waypoint) =>
+            $"{waypoint.name} ({waypoint.latitude:n2}, {waypoint.longitude:n2})";
+
         void buildWaypointList()
         {
             waypoint_choices.Clear();
 
             var body = pilot.current_vessel?.currentBody();
             var choices = new List<string>();
+            ReduxWaypoint? selected = null;
 
             if (body != null && ReduxWaypoints.available)
             {
                 foreach (var waypoint in ReduxWaypoints.GetWaypointsForBody(body.Name))
                 {
-                    string label = $"{waypoint.name} ({waypoint.latitude:n2}, {waypoint.longitude:n2})";
+                    string label = WaypointLabel(waypoint);
                     waypoint_choices[label] = waypoint;
                     choices.Add(label);
+                    if (waypoint.id == selected_waypoint_id)
+                        selected = waypoint;
                 }
             }
 
             if (choices.Count == 0)
                 choices.Add(body == null ? "No body" : "No waypoints on " + body.Name);
 
-            // This runs every UI tick (see onUpdateUI()) so the list stays current if a waypoint's
-            // added while this tab's open - preserve whatever's currently selected across the
-            // rebuild instead of resetting it every frame, via SetValueWithoutNotify so this doesn't
-            // re-fire the ChangeEvent handler above.
-            string current = waypoint_drop.value;
             waypoint_drop.choices = choices;
 
-            if (choices.Contains(current))
+            // This runs every UI tick (see onUpdateUI()), so it also keeps the target in step with
+            // the waypoint list: the selected waypoint moved, a first waypoint appeared on this body,
+            // or the selection belongs to another body. The target is written here directly rather
+            // than through the dropdown's ChangeEvent - that event isn't sent while the tab isn't
+            // shown, which used to leave the dropdown showing a new waypoint while the target
+            // still held the previous one.
+            if (selected is ReduxWaypoint still_there)
             {
-                waypoint_drop.SetValueWithoutNotify(current);
+                // Only when the waypoint itself moved, so a lat/lon typed in by hand stays.
+                if (still_there.latitude != selected_latitude || still_there.longitude != selected_longitude)
+                    SelectWaypoint(still_there);
+                waypoint_drop.SetValueWithoutNotify(WaypointLabel(still_there));
             }
             else if (waypoint_choices.Count > 0)
             {
-                // Whatever was selected doesn't exist for this body (e.g. after teleporting
-                // between planets) - auto-select the new body's first real waypoint instead,
-                // through the normal .value setter (not SetValueWithoutNotify) so the ChangeEvent
-                // handler above actually fires and updates target_latitude/longitude, same as if
-                // the player had clicked it themselves.
-                waypoint_drop.value = choices[0];
+                // Nothing selected on this body yet - take its first waypoint.
+                SelectWaypoint(waypoint_choices[choices[0]]);
+                waypoint_drop.SetValueWithoutNotify(choices[0]);
             }
-            // else: no real waypoints on this body at all (just the "No body"/"No waypoints on
-            // X" placeholder) - leave target_latitude/longitude alone, nothing sensible to select.
+            else
+            {
+                // No waypoints on this body. The target keeps whatever was typed in (or picked on
+                // another body), but the dropdown stops showing a waypoint that isn't here.
+                waypoint_drop.SetValueWithoutNotify(choices[0]);
+            }
         }
 
         void AddInfoRow(string label, string value)
@@ -288,7 +311,7 @@ namespace K2D2.Landing
             // max_starting_altitude_m for a big chunk of a normal descent (Circularize/DeorbitBurn
             // only lower periapsis at first - apoapsis doesn't come down until much later, if at
             // all). Without this guard the check would fire mid-descent too and silently flip
-            // precision_landing off, which would mean TouchDown's closed-loop steering never
+            // precision_landing off, which would mean the guided descent never
             // engages for the rest of that descent. This check is only meaningful as a pre-flight
             // gate; once the sequence has committed (isRunning), the orbit is EXPECTED to move
             // around and must not retroactively cancel precision landing.
@@ -310,11 +333,14 @@ namespace K2D2.Landing
                 AddInfoRow("Start Burn In", StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime));
                 AddInfoRow("Burn Duration", $"{pilot.burn_duration:n2} s");
 
-                // Precision landing readouts - informational only, nothing steers toward this
-                // yet. Predicted Landing lets players confirm the lat/lon math is sane in-game
-                // (compare it against where the ship actually comes down).
+                // Predicted Landing lets players check the prediction against where the ship
+                // actually comes down; Prediction says which predictor produced it.
                 AddInfoRow("Predicted Landing", $"{pilot.predicted_landing_lat:n2}, {pilot.predicted_landing_lon:n2}");
-                if (pilot.settings_vac.precision_landing.V)
+                AddInfoRow("Prediction", pilot.using_redux_prediction ? "Redux" : "K2D2");
+                // Where the vessel would land with the engine off - meaningless once the guided
+                // descent is burning, which shows its own distance to the target instead.
+                bool guided_burn = pilot.vacuum_precision && pilot.mode == LandingPilot.Mode.Brake;
+                if (pilot.settings_vac.precision_landing.V && !guided_burn)
                     AddInfoRow("Target Error", StrTool.DistanceToString((float)pilot.target_error_m));
             }
 
@@ -376,7 +402,7 @@ namespace K2D2.Landing
                         status_bar.Status($"Waiting : {StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime)}");
                         break;
                     case LandingPilot.Mode.Brake:
-                        status_bar.Warning($"Brake !");
+                        status_bar.Warning(pilot.vacuum_precision ? "Powered Descent" : "Brake !");
                         break;
                     case LandingPilot.Mode.TouchDown:
                         status_bar.Warning($"Touch Down...");
@@ -390,7 +416,10 @@ namespace K2D2.Landing
             {
                 // Idle placeholder, same idea as Node's "No Node Created"/Lift's "Lift autopilot
                 // not enabled".
-                status_bar.Status("Landing autopilot not enabled");
+                if (!string.IsNullOrEmpty(pilot.stop_reason))
+                    status_bar.Warning(pilot.stop_reason);
+                else
+                    status_bar.Status("Landing autopilot not enabled");
             }
 
             //    UI_Tools.Console("SurfaceVelocity" + StrTool.VectorToString(SurfaceVelocity.vector));

@@ -80,11 +80,21 @@ namespace K2D2.KSPService
             for (int i = 0; i < engineInfos.Count; i++)
             {
                 DeltaVEngineInfo engineInfo = engineInfos[i];
+                if (engineInfo.Engine == null || engineInfo.PartInfo?.PartRef == null)
+                    continue;
 
-                Vector3 vector = ((engineInfo.Engine != null) ? engineInfo.Engine.ThrustDirRelativePartWorldSpace : (1f * Vector3.back));
-
-                actual_thrust += vector * engineInfo.Engine.FinalThrustValue;
-                full_thrust += vector * compute_full_thrust(engineInfo);
+                // The delta-v list can still hold an engine for a frame after it's destroyed (in a
+                // crash, say), and the game's own thrust getters then throw on its missing data.
+                // That engine has no thrust to count either way.
+                try
+                {
+                    Vector3 vector = engineInfo.Engine.ThrustDirRelativePartWorldSpace;
+                    actual_thrust += vector * engineInfo.Engine.FinalThrustValue;
+                    full_thrust += vector * compute_full_thrust(engineInfo);
+                }
+                catch (System.NullReferenceException)
+                {
+                }
             }
 
             actual_dv = (float)(actual_thrust.magnitude / totalMass);

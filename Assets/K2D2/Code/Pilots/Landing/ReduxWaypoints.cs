@@ -21,6 +21,7 @@ namespace K2D2.Landing
     // going in alongside everything else here.
     public struct ReduxWaypoint
     {
+        public string id;
         public string name;
         public string body_name;
         public double latitude;
@@ -85,6 +86,7 @@ namespace K2D2.Landing
 
                 result.Add(new ReduxWaypoint
                 {
+                    id = record_type.GetField("Id")?.GetValue(record) as string,
                     name = record_type.GetField("Name")?.GetValue(record) as string,
                     body_name = this_body,
                     latitude = (double)(record_type.GetField("Latitude")?.GetValue(record) ?? 0.0),

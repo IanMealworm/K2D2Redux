@@ -1,208 +1,75 @@
+using System;
 using KSP.Sim;
-using KSP.Sim.Maneuver;
 using KSP.Sim.impl;
 using KTools;
-using UnityEngine.UIElements;
-using K2D2.UI;
-using K2D2.Controller;
-using K2D2.KSPService;
-using K2D2.Node;
-using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    // Precision landing's second phase, run right after DeorbitBurn finishes and before the
-    // normal Pause -> QuickWarp -> RotationWarp -> Waiting -> Brake -> TouchDown sequence starts.
-    //
-    // The deorbit burn's targeting has to commit to a burn based on a PREDICTION (where
-    // FindBestDeorbitBurn's search thinks the resulting trajectory will land), so any error in
-    // that prediction, or in flying the burn itself, otherwise falls entirely on the descent-phase
-    // steering (TouchDown.ComputeSteeredDirection) to fix late, close to the ground, where there's
-    // the least room (time, altitude, fuel budget) left to correct. This phase does that
-    // correcting soon after the deorbit burn instead, while there's still plenty of altitude and
-    // time, so the descent only has to mop up whatever small residual is left.
-    //
-    // Re-runs the exact same search DeorbitBurn already uses (LandingTargeting.
-    // FindBestDeorbitBurn) - not new math - but against the REAL, already-flown post-deorbit-burn
-    // orbit instead of a pre-burn prediction, over a short, near-term window instead of a full
-    // orbit. Since periapsis is already set close to the target depth by the deorbit burn,
-    // ComputeDeorbitDeltaV's prograde/retrograde component for these candidates should come out
-    // small - this is mostly the plane-trim component doing real work a second time, now against
-    // whatever the deorbit burn actually achieved (including its own execution error). If the
-    // deorbit burn already nailed it, this phase finds nothing useful to do and falls straight
-    // through to Pause (see the "nothing meaningful to correct" branch in Start() below) - it
-    // should never make things worse, only sometimes do nothing.
-    //
-    // NOT a substitute for starting Brake earlier - checkDirection() in TouchDown.cs deliberately
-    // holds the engine off (SetThrottle(0), no steering at all) until the vessel's actual velocity
-    // is already predominantly downward (see its "Waiting for speed Down" branch), specifically to
-    // avoid thrusting into a climb on a low-gravity body. Right after a deorbit burn the vessel is
-    // still mostly horizontal/outbound for a good stretch, so entering Brake early would just idle
-    // doing nothing until the same natural falling point Brake already starts near today - it
-    // wouldn't buy any extra correction time. A real, separately-sized burn (this phase) is what
-    // actually spends dV early instead of late.
-    //
-    // Mirrors DeorbitBurn.cs's own structure (own Turn/Warp/Burn instances rather than
-    // NodeExPilot, for the same K2D2_Plugin.ResetControllers() reason - see DeorbitBurn's comment).
-    public class MidCourseCorrection : ExecuteController
+    // Small burn right after the deorbit burn, fixing how far the burn as flown missed the plan
+    // (the engine never delivers exactly the planned delta-v, at exactly the planned moment). A
+    // small change this early moves the landing point a long way, so it's much cheaper here than
+    // during the powered descent.
+    public class MidCourseCorrection : TargetedBurnController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.MidCourseCorrection");
+        public MidCourseCorrection() : base("K2D2.MidCourseCorrection") { }
 
-        public enum Mode
+        protected override string label => "Mid-course correction";
+
+        const double lead_time_s = 60;
+
+        // A miss this small is left to the powered descent.
+        const double acceptable_miss_m = 250;
+
+        const double smallest_burn_mps = 0.3;
+
+        private protected override bool Plan(ImpactModel model, IKeplerPatch orbit, LandingTargeting.TargetSite site,
+            double max_normal, out LandingTargeting.TargetedBurn planned)
         {
-            Turn,
-            Warp,
-            Burn
-        }
-
-        public Mode mode = Mode.Turn;
-
-        TurnTo turn = new TurnTo();
-        WarpTo warp = new WarpTo();
-        BurnManeuver burn = new BurnManeuver();
-        ManeuverCreator maneuver_creator = new ManeuverCreator();
-
-        public SingleExecuteController current_executor = new SingleExecuteController();
-
-        ManeuverNodeData node;
-
-        public MidCourseCorrection()
-        {
-            sub_contollers.Add(current_executor);
-        }
-
-        // Same depth-below-terrain target as DeorbitBurn - see its own comment. Kept identical so
-        // this correction is "true up the SAME target periapsis, now against real post-burn
-        // state" rather than something that could disagree with what the deorbit burn was aiming
-        // for in the first place.
-        const double periapsis_safety_margin = 2000;
-
-        // How much of the remaining coast (from right now to wherever the CURRENT, uncorrected
-        // trajectory would land) this phase's own search is allowed to consider for its burn
-        // time. Deliberately small - this only exists to fire the correction SOON after the
-        // deorbit burn, not to re-run a full deorbit-style search across the whole remaining
-        // flight (TouchDown's own steering already owns the close-in part of the descent).
-        const double searchWindowFraction = 0.25;
-        // Always leave at least this much real time in the window, even on a short hop, so a
-        // very-soon impact prediction can't collapse the search down to a handful of seconds.
-        const double minSearchWindowSeconds = 60;
-
-        // Below this, treat the found correction as "nothing meaningful to do" and skip flying a
-        // node entirely - a burn this small isn't worth turning the vessel for, and the deorbit
-        // burn evidently already got this close on its own.
-        const double negligibleDeltaV = 0.05;
-
-        public override void Start()
-        {
-            finished = false;
-            node = null;
-
-            var current_vessel = K2D2_Plugin.Instance.current_vessel;
-            if (current_vessel == null)
-            {
-                finished = true;
-                return;
-            }
-
-            IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
-            var body = orbit.referenceBody;
-
             double now = GeneralTools.Current_UT;
-            Vector3d r_now = orbit.GetRelativePositionAtUTZup(now);
-            Vector3d v_now = orbit.GetOrbitalVelocityAtUTZup(now);
+            var coast = LandingTargeting.Coast(model, orbit, site, now);
+            planned = default;
 
-            double target_latitude = LandingPilot.Instance.settings.target_latitude.V;
-            double target_longitude = LandingPilot.Instance.settings.target_longitude.V;
-            double target_periapsis_radius = body.radius - periapsis_safety_margin;
-            double max_plane_trim_dv = LandingPilot.Instance.settings.max_plane_trim_dv.V;
-
-            // Where would we land with NO further correction? Only used to size the search
-            // window below (see searchWindowFraction) - if this fails to find a crossing at all
-            // (shouldn't normally happen right after a real deorbit burn), fall back to a fixed,
-            // conservative window instead of guessing something unbounded.
-            bool stillOnCourse = LandingTargeting.PredictImpactLongitude(r_now, v_now, body, now,
-                out _, out _, out double uncorrectedImpactUT);
-            double timeToImpact = stillOnCourse ? uncorrectedImpactUT - now : 600;
-
-            double search_start = now + 30;
-            double search_duration = System.Math.Max(minSearchWindowSeconds, timeToImpact * searchWindowFraction);
-
-            bool found = LandingTargeting.FindBestDeorbitBurn(orbit, body, search_start, search_duration,
-                target_periapsis_radius, target_latitude, target_longitude, max_plane_trim_dv,
-                out double burn_UT, out double deltaV, out double normalDeltaV,
-                out double predicted_lon, out double predicted_lat, out double predicted_error_m,
-                out double predicted_impact_UT);
-
-            if (!found)
+            if (coast.found)
             {
-                status_line = "Mid-course correction: no valid window found - skipping.";
-                logger.LogInfo("[MidCourseCorrection] search found no valid candidate - skipping, falling through unchanged.");
-                finished = true;
-                return;
+                // Redux's prediction for where the same coast hits the ground, against ImpactModel's,
+                // as a cross-check. Redux uses the real terrain there rather than the target's
+                // height, so the two can differ by the slope of the ground.
+                var redux = ReduxImpactPrediction.GetFlown(K2D2_Plugin.Instance.current_vessel.VesselComponent);
+                model.StateAt(orbit, now, out Vector3d r, out Vector3d v);
+                string comparison = $"Redux: {redux.state}";
+                if (redux.usable && model.Impact(r, v, now, site.ground_radius, out double ground_UT, out Vector3d ground))
+                {
+                    model.LatLon(model.BodyFixed(ground, ground_UT), out double lat, out double lon);
+                    comparison = $"ground impact ({lat:n4}, {lon:n4}) vs Redux ({redux.latitude:n4}, {redux.longitude:n4}): " +
+                        $"{LandingPilot.HaversineDistanceMeters(lat, lon, redux.latitude, redux.longitude, model.body.radius):n0}m apart";
+                }
+                logger.LogInfo($"[{label}] coast passes {coast.miss_m:n0}m from the aim point | {comparison}");
+
+                if (coast.miss_m <= acceptable_miss_m)
+                {
+                    status_line = $"{label}: already on target, no burn needed.";
+                    return false;
+                }
             }
 
-            logger.LogInfo($"[MidCourseCorrection] now={now:n1} search_start={search_start:n1} " +
-                $"search_duration={search_duration:n1}s (uncorrected time-to-impact={timeToImpact:n1}s) | " +
-                $"burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s " +
-                $"normalDeltaV={normalDeltaV:n2}m/s (max_plane_trim_dv={max_plane_trim_dv:n2}m/s) | " +
-                $"target=({target_latitude:n3}, {target_longitude:n3}) predicted=({predicted_lat:n3}, {predicted_lon:n3}) " +
-                $"predicted_error={predicted_error_m:n1}m");
-
-            if (System.Math.Abs(deltaV) < negligibleDeltaV && System.Math.Abs(normalDeltaV) < negligibleDeltaV)
+            planned = LandingTargeting.PlanCorrection(model, orbit, site, now + lead_time_s, max_normal);
+            if (!planned.found || (coast.found && planned.miss_m >= coast.miss_m))
             {
-                status_line = "Mid-course correction: deorbit burn already on target, nothing to do.";
-                logger.LogInfo("[MidCourseCorrection] found correction is negligible - skipping the burn, falling through unchanged.");
-                finished = true;
-                return;
+                status_line = $"{label}: no improvement possible, skipping.";
+                logger.LogInfo($"[{label}] correction wouldn't improve the landing point - skipping");
+                return false;
             }
 
-            maneuver_creator.Update();
-            // Same reasoning as DeorbitBurn.Start() - clear any lingering node (there shouldn't be
-            // one at this point, since DeorbitBurn already cleans up its own, but this is cheap
-            // insurance against a second node ever getting created alongside a stale first one)
-            // before adding ours.
-            status_line = normalDeltaV != 0
-                ? $"Mid-course correction planned: {deltaV:n1} m/s (+ {normalDeltaV:n1} m/s plane trim)"
-                : $"Mid-course correction planned: {deltaV:n1} m/s";
-            maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
+            // BurnManeuver stops once less than its tolerance (0.1 m/s by default) is left, so a
+            // burn about that size would end before doing anything.
+            double delta_v = Math.Sqrt(planned.prograde * planned.prograde + planned.normal * planned.normal);
+            if (delta_v < smallest_burn_mps)
             {
-                node = created_node;
-                mode = Mode.Turn;
-                current_executor.setController(turn);
-                turn.StartManeuver(node);
-            }, normalDeltaV);
-        }
-
-        public override void Update()
-        {
-            // Start() already decided there was nothing worth flying (not found, or negligible)
-            // and set finished = true itself in that case - nothing else to do here either way.
-            if (node == null)
-                return;
-
-            base.Update();
-
-            if (!current_executor.finished)
-                return;
-
-            switch (mode)
-            {
-                case Mode.Turn:
-                    mode = Mode.Warp;
-                    current_executor.setController(warp);
-                    warp.StartManeuver(node);
-                    break;
-                case Mode.Warp:
-                    mode = Mode.Burn;
-                    current_executor.setController(burn);
-                    burn.StartManeuver(node);
-                    break;
-                case Mode.Burn:
-                    maneuver_creator.RemoveAllNodes();
-                    status_line = "Mid-course correction complete";
-                    finished = true;
-                    break;
+                status_line = $"{label}: correction too small to fly, leaving it to the powered descent.";
+                logger.LogInfo($"[{label}] correction of {delta_v:n2}m/s is too small to fly accurately - skipping");
+                return false;
             }
+            return true;
         }
     }
 }
