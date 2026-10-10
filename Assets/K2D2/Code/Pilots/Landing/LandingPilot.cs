@@ -31,11 +31,13 @@ namespace K2D2.Landing
 
         public WarpTo warp_to = new WarpTo();
 
-        // Passed to TouchDown so its closed-loop steering (see TouchDown.ComputeSteeredDirection)
-        // can read predicted_landing_lat/lon, settings.target_latitude/longitude, and altitude
-        // directly off this pilot. Constructed in the constructor body, not as a field
-        // initializer - 'this' isn't available there.
+        // Speed-limited retrograde burn: the whole Brake/TouchDown descent for a regular landing,
+        // and only the final vertical drop below the gate for a vacuum precision landing.
         public TouchDown brake;
+
+        // Vacuum precision landing's powered descent, from ignition to the gate above the target
+        // (see VacuumDescentGuidance.cs). Constructed in the constructor body, since it needs 'this'.
+        public VacuumDescentGuidance guidance;
 
         // Precondition phase for precision landing, run before deorbit_burn: circularizes the
         // starting orbit if it isn't already close to circular, or refuses if it's too high.
@@ -47,7 +49,7 @@ namespace K2D2.Landing
 
         // Small correction burn against the real post-deorbit-burn trajectory, run right after
         // deorbit_burn and before the normal Pause -> QuickWarp -> ... sequence, so the
-        // descent-phase steering isn't left doing all the correcting close to the ground. See
+        // powered descent isn't left doing all the correcting close to the ground. See
         // MidCourseCorrection.cs.
         public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
 
@@ -60,7 +62,8 @@ namespace K2D2.Landing
             var vac_file = SettingsFile.Get("land_vac");
             settings_atmo = new LandingSettings(atmo_file);
             settings_vac = new LandingSettings(vac_file);
-            brake = new TouchDown(this, atmo_file, vac_file);
+            brake = new TouchDown(atmo_file, vac_file);
+            guidance = new VacuumDescentGuidance(this);
             _page = new LandingUI(this);
 
             Instance = this;
@@ -157,9 +160,24 @@ namespace K2D2.Landing
                     break;
                 case Mode.Waiting:
                     current_vessel.SetThrottle(0);
-                    current_executor.setController(null);
+                    if (vacuum_precision)
+                    {
+                        // Turns the vessel to the planned burn direction while waiting.
+                        current_executor.setController(guidance);
+                        guidance.Start();
+                    }
+                    else
+                        current_executor.setController(null);
                     break;
                 case Mode.Brake:
+                    if (vacuum_precision)
+                    {
+                        current_executor.setController(guidance);
+                        guidance.Ignite();
+                    }
+                    else
+                        current_executor.setController(brake);
+                    break;
                 case Mode.TouchDown:
                     current_executor.setController(brake);
                     break;
@@ -200,6 +218,8 @@ namespace K2D2.Landing
                 }
                 else
                 {
+                    stop_reason = null;
+
                     // Start total burn counter
                     burn_dV.reset();
 
@@ -229,6 +249,9 @@ namespace K2D2.Landing
             }
         }
 
+        // Why the last precision landing stopped by itself, for the UI; null when it didn't.
+        internal string stop_reason;
+
         public override void onReset()
         {
             isRunning = false;
@@ -244,6 +267,14 @@ namespace K2D2.Landing
         internal double speed_collision;
         internal double burn_duration;
 
+        // Precision landing on an airless body - the guided powered descent. The atmospheric
+        // profile gets its own precision landing later; until then it always lands the regular way.
+        internal bool vacuum_precision => settings.precision_landing.V && !LandingProfile.IsAtmospheric;
+
+        // Unpowered phases, where nothing but gravity changes the trajectory.
+        bool coasting => mode == Mode.Pause || mode == Mode.QuickWarp
+            || mode == Mode.RotationWarp || mode == Mode.Waiting;
+
         // Logging throttle for compute_real_collision() below - it runs every Update() frame, so
         // logging its result unconditionally is far too much log volume. Logs immediately
         // whenever converged flips true<->false, plus a periodic heartbeat regardless.
@@ -251,13 +282,13 @@ namespace K2D2.Landing
         int collision_search_log_counter = 0;
         const int CollisionSearchHeartbeatFrames = 60;
 
-        // Precision landing (settings/UI side in LandingSettings.cs). Predicted lat/lon is
-        // computed alongside the collision check below, since it already has the terrain-
-        // crossing time and position. target_error_m is only meaningful once a target's been set
-        // and precision_landing is on - it's purely informational, not used to steer anything.
+        // Predicted landing point, from Redux's impact prediction when it has a usable one for
+        // this vessel, otherwise from compute_real_collision (see computeValues).
+        // target_error_m is only meaningful once a target's been set and precision_landing is on.
         internal double predicted_landing_lat = 0;
         internal double predicted_landing_lon = 0;
         internal double target_error_m = 0;
+        internal bool using_redux_prediction = false;
 
         public void computeValues()
         {
@@ -274,101 +305,110 @@ namespace K2D2.Landing
             // GetOrbitalVelocityAtUTZup is on IOrbit (which IKeplerPatch extends), so no concrete
             // cast is needed here.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
+            var body = orbit.referenceBody;
 
+            // K2D2's own prediction always runs: it's the fallback whenever Redux has nothing
+            // usable (its impact prediction settings off, the map focused on another vessel, a
+            // calculation restarting, or the gaps it leaves late in a descent), and the
+            // comparison log below needs it either way.
             collision_detected = compute_real_collision();
+
+            // Redux's prediction accounts for drag, and it accounts for the body's rotation more
+            // accurately than compute_real_collision's correction. It's an unpowered prediction,
+            // the same assumption compute_real_collision makes.
+            var redux = ReduxImpactPrediction.GetFlown(current_vessel.VesselComponent);
+            using_redux_prediction = redux.usable;
+            LogReduxComparison(redux, body);
+
+            if (using_redux_prediction)
+            {
+                collision_detected = true;
+                adjusted_collision_UT = redux.impact_UT;
+                predicted_landing_lat = redux.latitude;
+                predicted_landing_lon = redux.longitude;
+            }
+
+            // Vacuum precision landing aims the coast over the target rather than at it (see
+            // LandingTargeting.TargetSite), so its error is measured against that aim point;
+            // otherwise it's the ground distance from the predicted landing point to the target.
+            if (vacuum_precision)
+            {
+                var model = new ImpactModel(body, GeneralTools.Current_UT);
+                var site = new LandingTargeting.TargetSite(model, settings.target_latitude.V, settings.target_longitude.V);
+                if (LandingTargeting.CoastMiss(model, orbit, site, GeneralTools.Current_UT, out double miss_m))
+                    target_error_m = miss_m;
+            }
+            else if (settings.precision_landing.V)
+            {
+                target_error_m = HaversineDistanceMeters(predicted_landing_lat, predicted_landing_lon,
+                    settings.target_latitude.V, settings.target_longitude.V, body.radius);
+            }
+
             speed_collision = orbit.GetOrbitalVelocityAtUTZup(adjusted_collision_UT).magnitude;
             burn_duration = (speed_collision / burn_dV.full_dv);
+
+            // The guidance plans ignition from the coast ahead; once the burn has started (or
+            // before the coast toward the surface has begun) there's nothing to plan.
+            if (vacuum_precision && coasting && collision_detected)
+                guidance.Plan(adjusted_collision_UT);
+            else
+                guidance.ClearPlan();
 
             compute_startBurn();
         }
 
+        // Logs Redux's impact prediction next to K2D2's own (compute_real_collision's, before
+        // Redux's replaces it) and which one is in use, so the two can keep being compared on real
+        // flights. Same throttle as compute_real_collision's logging: immediately when Redux's
+        // state changes, plus a heartbeat.
+        ReduxImpactState? redux_compare_last_state = null;
+        int redux_compare_log_counter = 0;
+
+        void LogReduxComparison(ReduxImpact redux, CelestialBodyComponent body)
+        {
+            bool state_changed = redux.state != redux_compare_last_state;
+            redux_compare_last_state = redux.state;
+            redux_compare_log_counter++;
+            if (!state_changed && redux_compare_log_counter % CollisionSearchHeartbeatFrames != 0)
+                return;
+
+            double now = GeneralTools.Current_UT;
+            string ours = collision_detected
+                ? $"lat={predicted_landing_lat:n4} lon={predicted_landing_lon:n4} T-{adjusted_collision_UT - now:n0}s"
+                : "no collision";
+
+            string source = using_redux_prediction ? "redux" : "k2d2";
+
+            if (redux.state != ReduxImpactState.Impact)
+            {
+                logger.LogInfo($"[ReduxCompare] using={source} redux={redux.state} | k2d2: {ours}");
+                return;
+            }
+
+            string theirs = $"lat={redux.latitude:n4} lon={redux.longitude:n4} T-{redux.impact_UT - now:n0}s " +
+                $"age={redux.age:n1}s approximate={redux.approximate}";
+            string delta = collision_detected
+                ? $" | delta: {HaversineDistanceMeters(redux.latitude, redux.longitude, predicted_landing_lat, predicted_landing_lon, body.radius):n0}m, " +
+                  $"{redux.impact_UT - adjusted_collision_UT:n1}s"
+                : "";
+            logger.LogInfo($"[ReduxCompare] using={source} redux: {theirs} | k2d2: {ours}{delta}");
+        }
+
         public void compute_startBurn()
         {
-            double burn_before = settings.burn_before.V;
-
-            // TouchDown's closed-loop steering (see ComputeSteeredDirection) needs real time to
-            // act before touchdown, not just the right direction - a correction attempted only in
-            // the last couple seconds before collision barely moves a large miss, however
-            // correctly aimed. Closing a lateral error needs lateral_deltaV * time_remaining >=
-            // error, so back out how much EXTRA margin (beyond the efficiency-only burn_before
-            // setting) buys enough time for the maximum lateral deltaV the steering angle cap
-            // allows to actually close the gap - a bigger miss earns an earlier burn start, a
-            // small one barely changes anything. First-pass heuristic (treats it as one lateral
-            // kick + coast rather than modeling the whole burn), not exact, but ties "start
-            // sooner/later" directly to how far off target we actually are.
-            //
-            // Uses whichever of the three correction caps is smallest (steering, extend, or
-            // shorten), not steering_max_angle alone - target_error_m is a straight-line miss
-            // distance and doesn't say whether the miss is left/right (heading's job) or long/
-            // short (the arc correction's job, see TouchDown.ComputeSteeredDirection), and the arc
-            // shorten cap is deliberately much tighter than the heading budget (tilting toward
-            // horizontal spends braking margin). Sizing the margin off the worst case rather than
-            // the best case keeps this correct even when the miss is mostly along-track.
-            double min_correction_angle_deg = Math.Min(brake.steering_max_angle.V,
-                Math.Min(brake.arc_extend_max_angle.V, brake.arc_shorten_max_angle.V));
-
-            if (settings.precision_landing.V && target_error_m > 0 && min_correction_angle_deg > 0)
+            if (vacuum_precision && guidance.has_plan)
             {
-                double min_correction_angle_rad = min_correction_angle_deg * Math.PI / 180.0;
-                double lateral_dv_budget = speed_collision * Math.Sin(min_correction_angle_rad);
-
-                if (lateral_dv_budget > 0.1) // avoid a near-zero budget blowing this up
-                {
-                    double correction_time_needed = target_error_m / lateral_dv_budget;
-                    burn_before = Math.Max(burn_before, correction_time_needed);
-                }
+                startBurn_UT = guidance.ignition_UT;
+                burn_duration = guidance.planned_burn_s;
+            }
+            else
+            {
+                startBurn_UT = adjusted_collision_UT - burn_duration - settings.burn_before.V;
             }
 
-            // Also keep real ALTITUDE margin above the touchdown phase's own threshold
-            // (start_touchdown_altitude), not just enough TIME for the lateral correction above.
-            // The lateral floor above only sizes itself off how big the miss is, so a well-aimed
-            // deorbit burn (small target_error_m) could still leave the correction starting
-            // uncomfortably close to start_touchdown_altitude. This floor doesn't care how big the
-            // miss is - it always wants at least this much clearance - and Math.Max's with the
-            // lateral floor above so whichever asks for more wins.
-            //
-            // Found by directly searching the propagated trajectory for the UT it actually
-            // crosses target_start_altitude (LandingTargeting.PredictUTAtAltitude), not estimated
-            // via a speed division - see PredictUTAtAltitude's own comment for why a speed-based
-            // estimate has no good single choice (dividing by the full orbital speed
-            // underestimates real descent time; dividing by vertical speed at the impact point
-            // blows up near periapsis, where it's ~0 by definition). Directly searching for the
-            // real crossing avoids both failure modes.
-            // Gated on collision_detected - this search costs about the same as
-            // compute_real_collision()'s own bisection (both run every Update() tick), so it's
-            // skipped before there's even an impacting trajectory to search.
-            if (settings.precision_landing.V && collision_detected)
-            {
-                double target_start_altitude = settings.start_touchdown_altitude.V
-                    + LandingSettings.min_correction_altitude_margin;
-
-                var current_vessel = K2D2_Plugin.Instance.current_vessel;
-                if (current_vessel != null)
-                {
-                    IKeplerPatch startBurn_orbit = current_vessel.VesselComponent.Orbit;
-                    var startBurn_body = startBurn_orbit.referenceBody;
-                    double startBurn_now = GeneralTools.Current_UT;
-                    Vector3d startBurn_r0 = startBurn_orbit.GetRelativePositionAtUTZup(startBurn_now);
-                    Vector3d startBurn_v0 = startBurn_orbit.GetOrbitalVelocityAtUTZup(startBurn_now);
-
-                    if (LandingTargeting.PredictUTAtAltitude(startBurn_r0, startBurn_v0, startBurn_body, startBurn_now,
-                            target_start_altitude, out double crossingUT))
-                    {
-                        double altitude_lead_time = adjusted_collision_UT - crossingUT;
-                        if (altitude_lead_time > 0)
-                            burn_before = Math.Max(burn_before, altitude_lead_time);
-                    }
-                }
-            }
-
-            startBurn_UT = adjusted_collision_UT - burn_duration - burn_before;
-
-            // Backstop: whatever combination of the floors above, never schedule the burn as
-            // already overdue. WarpTo silently no-ops the instant its target time is in the past,
-            // so an overshot burn_before wouldn't just start the burn a bit early, it would skip
-            // the warp entirely and force a real-time wait for however long was actually left.
-            // Clamping here means the worst case is "start braking immediately", not "silently
-            // stop warping while still minutes out".
+            // Never schedule the burn as already overdue: WarpTo silently does nothing once its
+            // target time is in the past, so the worst case here is "start braking immediately",
+            // not "stop warping while still minutes out".
             double now_ut = GeneralTools.Game.UniverseModel.UniverseTime;
             if (startBurn_UT < now_ut)
                 startBurn_UT = now_ut;
@@ -491,9 +531,7 @@ namespace K2D2.Landing
             // almost certainly means this frame's search skipped past the real near crossing and
             // landed on a later one. Only meaningful when the orbit is actually bound (a
             // hyperbolic capture trajectory has no "next orbit" to alias onto).
-            bool coasting_unpowered = mode == Mode.Pause || mode == Mode.QuickWarp
-                || mode == Mode.RotationWarp || mode == Mode.Waiting;
-            if (coasting_unpowered && adjusted_collision_UT > 0)
+            if (coasting && adjusted_collision_UT > 0)
             {
                 Vector3d r_now = orbit.GetRelativePositionAtUTZup(current_time_ut);
                 Vector3d v_now = orbit.GetOrbitalVelocityAtUTZup(current_time_ut);
@@ -511,20 +549,17 @@ namespace K2D2.Landing
             adjusted_collision_UT = time;
 
             // Predicted landing lat/lon, reusing the same Zup->Yup swap and celestialFrame-
-            // relative Position as above, handed to GetLatLonAltFromRadius. target_error_m is
-            // straight-line lat/lon (haversine) against the player's chosen target, not a 3D
-            // position diff, to avoid needing to also confirm which lat/lon <-> position
-            // conversion (GetSurfacePosition vs GetRelSurfacePosition) applies body rotation.
+            // relative Position as above, handed to GetLatLonAltFromRadius.
             Vector3d final_rel_pos_zup = orbit.GetRelativePositionAtUTZup(time);
             Vector3d final_rel_pos = new Vector3d(final_rel_pos_zup.x, final_rel_pos_zup.z, final_rel_pos_zup.y);
             Position final_position = new Position(body.SimulationObject.transform.celestialFrame, final_rel_pos);
             body.GetLatLonAltFromRadius(final_position, out predicted_landing_lat, out predicted_landing_lon, out _);
 
-            if (settings.precision_landing.V)
-            {
-                target_error_m = HaversineDistanceMeters(predicted_landing_lat, predicted_landing_lon,
-                    settings.target_latitude.V, settings.target_longitude.V, body.radius);
-            }
+            // That lat/lon is read against the body's orientation right now, but the surface keeps
+            // turning until impact, so shift the longitude back by how far the body rotates in the
+            // remaining time.
+            double rotation_deg = (time - current_time_ut) * 360.0 / body.rotationPeriod;
+            predicted_landing_lon = LandingTargeting.WrapDegrees180(predicted_landing_lon - rotation_deg);
 
             return collide;
         }
@@ -580,7 +615,11 @@ namespace K2D2.Landing
                 // collision course.
                 if (isRunning)
                 {
-                    if (altitude < settings.start_touchdown_altitude.V)
+                    // The guided descent deliberately flattens its path toward the target, which
+                    // can make an unpowered prediction stop seeing an impact - it hands over to
+                    // TouchDown itself at the gate.
+                    bool guided_burn = vacuum_precision && mode == Mode.Brake;
+                    if (altitude < settings.start_touchdown_altitude.V && !guided_burn)
                         setMode(Mode.TouchDown);
                 }
                 else
@@ -626,44 +665,25 @@ namespace K2D2.Landing
                     return;
                 }
             }
-            else if (mode == Mode.Brake)
+            else if (mode == Mode.Brake && !vacuum_precision)
             {
+                // The guided descent runs its own Brake phase and finishes itself at the gate.
                 brake.gravity_compensation = true;
-
-                if (settings.precision_landing.V)
+                brake.max_speed = 0;
+                if (current_falling_speed < settings.brake_speed)
                 {
-                    // Precision landing skips the brake-to-near-stop / Pause / re-brake cycle
-                    // below entirely. That cycle repeatedly zeroes throttle (Mode.Pause does
-                    // current_vessel.SetThrottle(0) outright), and TouchDown's closed-loop
-                    // steering only runs while actually burning (see checkDirection), so every
-                    // Pause cycle would kill the steering's authority right along with the
-                    // throttle. Using the exact same speed-limit profile TouchDown itself uses
-                    // turns Brake and TouchDown into one continuous burn split only by an altitude
-                    // threshold, instead of two different behaviors, so steering stays live the
-                    // whole way down.
-                    brake.max_speed = settings.compute_limit_speed(altitude);
-
+                    // we reached the speed to stop brake
+                    // check next phase
                     if (altitude < settings.start_touchdown_altitude.V)
-                        setMode(Mode.TouchDown);
-                }
-                else
-                {
-                    brake.max_speed = 0;
-                    if (current_falling_speed < settings.brake_speed)
                     {
-                        // we reached the speed to stop brake
-                        // check next phase
-                        if (altitude < settings.start_touchdown_altitude.V)
-                        {
-                            setMode(Mode.TouchDown);
-                        }
-                        else
-                        {
-                            // too high altitude retry.... very worng burn time ......
-                            setMode(Mode.Pause);
-                        }
-                        return;
+                        setMode(Mode.TouchDown);
                     }
+                    else
+                    {
+                        // too high altitude retry.... very worng burn time ......
+                        setMode(Mode.Pause);
+                    }
+                    return;
                 }
             }
             else if (mode == Mode.TouchDown)
@@ -678,6 +698,13 @@ namespace K2D2.Landing
 
             if (current_executor.finished)
             {
+                if (mode == Mode.DeorbitBurn && deorbit_burn.abort_reason != null)
+                {
+                    stop_reason = deorbit_burn.abort_reason;
+                    isRunning = false;
+                    return;
+                }
+
                 // auto next
                 nextMode();
             }
