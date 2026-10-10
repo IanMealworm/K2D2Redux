@@ -98,7 +98,6 @@ namespace K2D2.Landing
                 $"at T+{planned.impact_UT - now:n0}s | lowest terrain clearance {planned.clearance_m:n0}m");
 
             status_line = $"{label}: {delta_v:n1} m/s, predicted to pass {StrTool.DistanceToString(planned.miss_m)} from the target";
-            checked_game_plan = false;
 
             maneuver_creator.Update();
             maneuver_creator.RemoveAllNodesThenCreate(node_UT, planned.prograde, created_node =>
@@ -125,9 +124,6 @@ namespace K2D2.Landing
             if (finished || node == null)
                 return;
 
-            if (!checked_game_plan)
-                checked_game_plan = LogGamePlan();
-
             base.Update();
 
             if (!current_executor.finished)
@@ -151,37 +147,6 @@ namespace K2D2.Landing
                     finished = true;
                     break;
             }
-        }
-
-        bool checked_game_plan;
-
-        // Where the game's own plan for the node (the orbit drawn after it on the map) passes,
-        // compared with this plan. A difference here means the node isn't being read the way it
-        // was meant (its time, or its prograde/normal directions); a difference only in the
-        // after-burn result means the burn wasn't flown as planned. Returns false until the game
-        // has worked out its plan.
-        bool LogGamePlan()
-        {
-            var vessel = K2D2_Plugin.Instance.current_vessel?.VesselComponent;
-            var solver = vessel?.Orbiter?.ManeuverPlanSolver;
-            if (solver?.PatchedConicsList == null || solver.PatchedConicsList.Count == 0)
-                return false;
-
-            double after_burn_UT = node.Time + node.BurnDuration + 1;
-            // The patches run in time order; the one in effect is the last to have started.
-            PatchedConicsOrbit orbit = null;
-            foreach (var patch in solver.PatchedConicsList)
-                if (patch.StartUT <= after_burn_UT)
-                    orbit = patch;
-            if (orbit == null || orbit.referenceBody != model.body)
-                return false;
-
-            double now = GeneralTools.Current_UT;
-            bool found = LandingTargeting.CoastMiss(new ImpactModel(model.body, now), orbit, site, after_burn_UT, out double miss_m);
-            logger.LogInfo(found
-                ? $"[{label}] the game's plan for this node passes {miss_m:n0}m from the aim point (burn {node.BurnDuration:n1}s)"
-                : $"[{label}] the game's plan for this node doesn't come down at the aim point (burn {node.BurnDuration:n1}s)");
-            return true;
         }
 
         // Where the orbit comes down now that the burn is done - the difference from the plan is

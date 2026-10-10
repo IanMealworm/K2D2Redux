@@ -279,11 +279,10 @@ namespace K2D2.KSPService
 
         /// <summary>
         /// New for precision landing (LandingTargeting.cs / DeorbitBurn.cs): creates a real,
-        /// visible maneuver node at a specific UT with a pure prograde/retrograde burn, rather
-        /// than deriving the UT from a TrueAnomaly like CreateManeuverNode_Co above does. The
-        /// deorbit/phasing burn needs to happen at a UT we've already computed ourselves (the
-        /// resonance search in LandingTargeting.DeltaVToShiftNodeLongitude), not one implied by
-        /// a true anomaly.
+        /// visible maneuver node at a specific UT, rather than deriving the UT from a TrueAnomaly
+        /// like CreateManeuverNode_Co above does. Precision landing's burns need to happen at a UT
+        /// computed ahead of time (LandingTargeting.PlanDeorbit/PlanCorrection), not one implied
+        /// by a true anomaly.
         ///
         /// Unlike CreateManeuverNode_Co, this does not cast the vessel's Orbit to
         /// PatchedConicsOrbit: under Redux, the actively-flown vessel's Orbit is a
@@ -301,8 +300,8 @@ namespace K2D2.KSPService
         /// instances without waiting a frame - only the map/gizmo bookkeeping is deferred to a
         /// coroutine, same as the original.
         /// </summary>
-        // normalDeltaV added for precision landing's optional small plane trim (see
-        // LandingTargeting.FindBestDeorbitBurn) - defaults to 0 so every existing caller
+        // normalDeltaV added for precision landing's optional plane trim (see
+        // LandingTargeting.PlanDeorbit) - defaults to 0 so every existing caller
         // (Circularize.cs, Final.cs) keeps behaving exactly as before, pure prograde/retrograde.
         public ManeuverNodeData CreateManeuverNodeAtUT(double UT, double progradeDeltaV, double normalDeltaV = 0)
         {

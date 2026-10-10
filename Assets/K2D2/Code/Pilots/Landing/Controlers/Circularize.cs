@@ -50,7 +50,10 @@ namespace K2D2.Landing
         public const double circular_tolerance_m = 1500;
         public const double max_starting_altitude_m = 100000;
 
-        public enum OrbitCheck { AlreadyCircular, NeedsCircularizing, TooHigh, NoVessel }
+        // Suborbital: periapsis below the surface, so the vessel is already coming down. The
+        // circularize burn would go at the next apoapsis, which may come after hitting the
+        // ground - adding a node there made the game throw.
+        public enum OrbitCheck { AlreadyCircular, NeedsCircularizing, TooHigh, Suborbital, NoVessel }
 
         public static OrbitCheck CheckOrbit(out double apoapsisAlt_m, out double periapsisAlt_m)
         {
@@ -77,16 +80,24 @@ namespace K2D2.Landing
             if (apoapsisAlt_m > max_starting_altitude_m || periapsisAlt_m > max_starting_altitude_m)
                 return OrbitCheck.TooHigh;
 
+            if (periapsisAlt_m < 0)
+                return OrbitCheck.Suborbital;
+
             if (System.Math.Abs(apoapsisRadius - periapsisRadius) <= circular_tolerance_m)
                 return OrbitCheck.AlreadyCircular;
 
             return OrbitCheck.NeedsCircularizing;
         }
 
+        // Set when precision landing can't start from this orbit; LandingPilot then stops and
+        // shows it (same as TargetedBurnController.abort_reason).
+        public string abort_reason { get; private set; }
+
         public override void Start()
         {
             finished = false;
             node = null;
+            abort_reason = null;
 
             var current_vessel = K2D2_Plugin.Instance.current_vessel;
             if (current_vessel == null) { finished = true; return; }
@@ -104,7 +115,17 @@ namespace K2D2.Landing
             if (check == OrbitCheck.TooHigh)
             {
                 logger.LogInfo($"[Circularize] starting orbit too high (Ap {apoapsisAlt_m:n0}m / Pe {periapsisAlt_m:n0}m, max {max_starting_altitude_m:n0}m).");
-                status_line = $"Starting orbit too high for precision landing (Ap {apoapsisAlt_m / 1000:n0}km / Pe {periapsisAlt_m / 1000:n0}km, max {max_starting_altitude_m / 1000:n0}km) - circularize to a lower orbit first.";
+                abort_reason = $"Starting orbit too high for precision landing (Ap {apoapsisAlt_m / 1000:n0}km / Pe {periapsisAlt_m / 1000:n0}km, max {max_starting_altitude_m / 1000:n0}km) - circularize to a lower orbit first.";
+                status_line = abort_reason;
+                finished = true;
+                return;
+            }
+
+            if (check == OrbitCheck.Suborbital)
+            {
+                logger.LogInfo($"[Circularize] already coming down (Pe {periapsisAlt_m:n0}m) - precision landing needs to start from orbit.");
+                abort_reason = "Already coming down - precision landing needs to start from a stable orbit.";
+                status_line = abort_reason;
                 finished = true;
                 return;
             }

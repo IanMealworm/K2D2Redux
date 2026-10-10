@@ -698,9 +698,12 @@ namespace K2D2.Landing
 
             if (current_executor.finished)
             {
-                if (mode == Mode.DeorbitBurn && deorbit_burn.abort_reason != null)
+                string abort_reason = mode == Mode.Circularize ? circularize.abort_reason
+                    : mode == Mode.DeorbitBurn ? deorbit_burn.abort_reason
+                    : null;
+                if (abort_reason != null)
                 {
-                    stop_reason = deorbit_burn.abort_reason;
+                    stop_reason = abort_reason;
                     isRunning = false;
                     return;
                 }
