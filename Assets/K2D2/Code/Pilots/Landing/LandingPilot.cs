@@ -53,6 +53,13 @@ namespace K2D2.Landing
         // MidCourseCorrection.cs.
         public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
 
+        // Atmospheric precision landing: deorbit toward the target, correct the entry with Redux's
+        // prediction, then steer the reentry with lift, before the regular powered landing.
+        public AtmoDeorbitBurn atmo_deorbit = new AtmoDeorbitBurn();
+        public AtmoEntryCorrection atmo_correction = new AtmoEntryCorrection();
+        // Needs 'this', so it's constructed in the constructor body.
+        public AtmoEntryGuidance atmo_guidance;
+
         public SingleExecuteController current_executor = new SingleExecuteController();
 
         public LandingPilot()
@@ -64,6 +71,7 @@ namespace K2D2.Landing
             settings_vac = new LandingSettings(vac_file);
             brake = new TouchDown(atmo_file, vac_file);
             guidance = new VacuumDescentGuidance(this);
+            atmo_guidance = new AtmoEntryGuidance(this);
             _page = new LandingUI(this);
 
             Instance = this;
@@ -87,6 +95,11 @@ namespace K2D2.Landing
             Circularize,
             DeorbitBurn,
             MidCourseCorrection,
+            // Atmospheric precision landing only - after Circularize these run instead of the
+            // vacuum burns above, and go on to Pause like they do.
+            AtmoDeorbit,
+            AtmoCorrection,
+            AtmoReentry,
             Pause,
             QuickWarp,
             RotationWarp,
@@ -131,6 +144,18 @@ namespace K2D2.Landing
                 case Mode.MidCourseCorrection:
                     current_executor.setController(mid_course_correction);
                     mid_course_correction.Start();
+                    break;
+                case Mode.AtmoDeorbit:
+                    current_executor.setController(atmo_deorbit);
+                    atmo_deorbit.Start();
+                    break;
+                case Mode.AtmoCorrection:
+                    current_executor.setController(atmo_correction);
+                    atmo_correction.Start();
+                    break;
+                case Mode.AtmoReentry:
+                    current_executor.setController(atmo_guidance);
+                    atmo_guidance.Start();
                     break;
                 case Mode.Pause:
                     end_pause_Ut = GeneralTools.Current_UT + settings.pause_time;
@@ -196,6 +221,17 @@ namespace K2D2.Landing
             }
 
             var next = this.mode + 1;
+            // Atmospheric precision landing swaps the vacuum burns for its own after Circularize;
+            // the vacuum sequence goes straight from MidCourseCorrection to Pause. Its entry
+            // guidance ends when the landing burn is due (planned with drag, see AtmoBurnPlanner),
+            // so it goes straight to braking rather than through the regular landing's warps and
+            // its airless burn timing.
+            if (atmo_precision && mode == Mode.Circularize)
+                next = Mode.AtmoDeorbit;
+            else if (atmo_precision && mode == Mode.AtmoReentry)
+                next = Mode.Brake;
+            else if (!atmo_precision && next == Mode.AtmoDeorbit)
+                next = Mode.Pause;
             setMode(next);
         }
 
@@ -212,6 +248,12 @@ namespace K2D2.Landing
                     // stop
                     if (current_vessel != null)
                         current_vessel.SetThrottle(0);
+                    if (mode == Mode.AtmoReentry || mode == Mode.AtmoCorrection || mode == Mode.AtmoDeorbit)
+                    {
+                        atmo_guidance.Release();
+                        atmo_correction.Release();
+                        atmo_deorbit.Release();
+                    }
 
                     setMode(Mode.Off);
                     _active = false;
@@ -228,18 +270,25 @@ namespace K2D2.Landing
 
                     _active = true;
 
-                    // Precision landing starts with Circularize (a no-op if the orbit's already
-                    // close enough to circular, or a refusal if it's too high - see Circularize.cs),
-                    // then plans and flies a real, visible deorbit/phasing node, before falling
-                    // into the normal Pause->QuickWarp->...->TouchDown sequence.
-                    //
-                    // !LandingProfile.IsAtmospheric is defense in depth, not the main gate - the
-                    // Atmo profile's precision_landing setting has no UI control (see
-                    // LandingUI.cs's atmo panel), so there's normally no way for it to read true
-                    // here at all. This just guarantees Circularize/DeorbitBurn (which assume a
-                    // vacuum trajectory) can never run on an atmospheric body even if that changes.
-                    if (settings.precision_landing.V && !LandingProfile.IsAtmospheric)
+                    // Vacuum precision landing starts with Circularize (a no-op if the orbit's
+                    // already close enough to circular, or a refusal if it's too high - see
+                    // Circularize.cs), then plans and flies a real, visible deorbit node, before
+                    // falling into the normal Pause->QuickWarp->...->TouchDown sequence.
+                    // Atmospheric precision landing does the same with its own burns and entry
+                    // guidance, as long as Redux's prediction is set up the way it needs.
+                    if (vacuum_precision)
                         setMode(Mode.Circularize);
+                    else if (atmo_precision)
+                    {
+                        string problem = ReduxImpactPrediction.AtmoSettingsProblem();
+                        if (problem != null)
+                        {
+                            stop_reason = problem;
+                            isRunning = false;
+                            return;
+                        }
+                        setMode(Mode.Circularize);
+                    }
                     else
                         setMode(Mode.QuickWarp);
                 }
@@ -270,6 +319,7 @@ namespace K2D2.Landing
         // Precision landing on an airless body - the guided powered descent. The atmospheric
         // profile gets its own precision landing later; until then it always lands the regular way.
         internal bool vacuum_precision => settings.precision_landing.V && !LandingProfile.IsAtmospheric;
+        internal bool atmo_precision => settings.precision_landing.V && LandingProfile.IsAtmospheric;
 
         // Unpowered phases, where nothing but gravity changes the trajectory.
         bool coasting => mode == Mode.Pause || mode == Mode.QuickWarp
@@ -567,6 +617,13 @@ namespace K2D2.Landing
         // Great-circle distance between two lat/lon points on a sphere of the given radius. Used
         // for target_error_m instead of a 3D position diff. internal (not private) so
         // LandingTargeting.cs's deorbit search can score candidates on the same distance metric.
+        double DistanceToTarget()
+        {
+            var vessel = current_vessel.VesselComponent;
+            return HaversineDistanceMeters(vessel.Latitude, vessel.Longitude,
+                settings.target_latitude.V, settings.target_longitude.V, vessel.mainBody.radius);
+        }
+
         internal static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
         {
             double toRad = Math.PI / 180.0;
@@ -636,6 +693,8 @@ namespace K2D2.Landing
             if (altitude < 5 && current_falling_speed < 1)
             {
                 //current_vessel.SetThrottle(0);
+                if (settings.precision_landing.V)
+                    logger.LogInfo($"[Landing] landed {DistanceToTarget():n0}m from the target");
                 isRunning = false;
                 return;
             }
@@ -672,6 +731,9 @@ namespace K2D2.Landing
                 brake.max_speed = 0;
                 if (current_falling_speed < settings.brake_speed)
                 {
+                    if (atmo_precision)
+                        logger.LogInfo($"[Landing] braking done at {altitude:n0}m, {SurfaceVelocity.vector.magnitude:n0}m/s, " +
+                            $"{DistanceToTarget():n0}m from the target");
                     // we reached the speed to stop brake
                     // check next phase
                     if (altitude < settings.start_touchdown_altitude.V)
@@ -700,6 +762,7 @@ namespace K2D2.Landing
             {
                 string abort_reason = mode == Mode.Circularize ? circularize.abort_reason
                     : mode == Mode.DeorbitBurn ? deorbit_burn.abort_reason
+                    : mode == Mode.AtmoDeorbit ? atmo_deorbit.abort_reason
                     : null;
                 if (abort_reason != null)
                 {

@@ -182,11 +182,13 @@ namespace K2D2.Landing
             public readonly double aim_height;
             readonly Vector3d up, axis1, axis2;
 
-            public TargetSite(ImpactModel model, double latitude, double longitude)
+            // aim_height_m: how high over the target the coast is aimed; by default a few percent
+            // of the body's radius (see AimHeight).
+            public TargetSite(ImpactModel model, double latitude, double longitude, double aim_height_m = double.NaN)
             {
                 up = model.SurfaceUp(latitude, longitude);
                 ground_radius = model.TerrainRadius(latitude, longitude);
-                aim_height = AimHeight(model.body.radius);
+                aim_height = double.IsNaN(aim_height_m) ? AimHeight(model.body.radius) : aim_height_m;
                 radius = ground_radius + aim_height;
                 point = up * radius;
 
@@ -235,7 +237,7 @@ namespace K2D2.Landing
         public const double required_clearance_m = 300;
         public const double clearance_skip_near_m = 3000;
 
-        static Vector3d AfterBurn(Vector3d r, Vector3d v, double prograde, double normal)
+        internal static Vector3d AfterBurn(Vector3d r, Vector3d v, double prograde, double normal)
         {
             return v + v.normalized * prograde + Vector3d.Cross(r, v).normalized * normal;
         }
@@ -243,7 +245,7 @@ namespace K2D2.Landing
         // Prograde delta-v (negative = retrograde) that puts periapsis at `periapsis` radius.
         static double ProgradeForPeriapsis(Vector3d r, Vector3d v, double normal, double periapsis, double mu)
         {
-            double hi = 0, lo = -0.9 * v.magnitude;
+            double hi = 0, lo = -0.99 * v.magnitude;
             if (ImpactModel.PeriapsisRadius(r, AfterBurn(r, v, hi, normal), mu) <= periapsis)
                 return 0;
 
@@ -255,9 +257,45 @@ namespace K2D2.Landing
             return 0.5 * (lo + hi);
         }
 
+        // Prograde delta-v (negative: retrograde) at (r, v) that brings the coast into the atmosphere
+        // entry_angle_deg below the horizon, measured against the air. More retrograde comes in
+        // steeper. Returns the most retrograde tried if even that isn't steep enough.
+        internal static double ProgradeForEntryAngle(ImpactModel model, Vector3d r, Vector3d v, double UT, double entry_angle_deg)
+        {
+            double hi = 0, lo = -0.99 * v.magnitude;
+            for (int i = 0; i < 50; i++)
+            {
+                double mid = 0.5 * (lo + hi);
+                if (EntryAngle(model, r, AfterBurn(r, v, mid, 0), UT, out _) < entry_angle_deg) hi = mid; else lo = mid;
+            }
+            return 0.5 * (lo + hi);
+        }
+
+        // Degrees below the horizon (against the air) where the coast from (r, v) at UT comes into
+        // the atmosphere, and how fast through the air. 0 if it doesn't.
+        internal static double EntryAngle(ImpactModel model, Vector3d r, Vector3d v, double UT, out double air_speed)
+        {
+            air_speed = 0;
+            if (r.magnitude <= model.body.radius + model.body.atmosphereDepth
+                || !model.EntryState(r, v, UT, out Vector3d entry_r, out Vector3d entry_v))
+                return 0;
+            Vector3d air = model.AirVelocity(entry_r, entry_v);
+            air_speed = air.magnitude;
+            return -Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(air, entry_r.normalized) / air_speed))) * 180 / Math.PI;
+        }
+
+        // Periapsis depth below the target's ground (for PlanDeorbit) that a burn from (r, v) needs
+        // for an entry this steep.
+        internal static double PeriapsisDepthForEntryAngle(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
+            double entry_angle_deg, out double prograde)
+        {
+            prograde = ProgradeForEntryAngle(model, r, v, UT, entry_angle_deg);
+            return site.ground_radius - ImpactModel.PeriapsisRadius(r, AfterBurn(r, v, prograde, 0), model.mu);
+        }
+
         // Where a burn of (prograde, normal) from (r, v) at UT makes the coast come down,
         // relative to the target.
-        static bool Miss(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
+        internal static bool Miss(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
             double prograde, double normal, out double a, out double b, out double impact_UT, out Vector3d impact)
         {
             a = b = 0;
@@ -445,6 +483,44 @@ namespace K2D2.Landing
             bool found = Miss(model, site, r, v, UT, 0, 0, out double a, out double b, out _, out _);
             miss_m = found ? Math.Sqrt(a * a + b * b) : 0;
             return found;
+        }
+
+        // How the point where the coast reaches the aim height moves for each m/s of prograde and
+        // of normal delta-v burned at UT (same two ground directions as TargetSite.Offset). Used
+        // where the miss itself comes from somewhere else - Redux's prediction with drag - and only
+        // the response to a burn is taken from the airless coast.
+        internal static bool BurnSensitivity(ImpactModel model, IKeplerPatch orbit, TargetSite site, double UT,
+            out double da_prograde, out double db_prograde, out double da_normal, out double db_normal)
+        {
+            const double dp = 0.5, dn = 1;
+            da_prograde = db_prograde = da_normal = db_normal = 0;
+            model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+            if (!Miss(model, site, r, v, UT, 0, 0, out double a, out double b, out _, out _)
+                || !Miss(model, site, r, v, UT, dp, 0, out double ap, out double bp, out _, out _)
+                || !Miss(model, site, r, v, UT, 0, dn, out double an, out double bn, out _, out _))
+                return false;
+
+            da_prograde = (ap - a) / dp;
+            db_prograde = (bp - b) / dp;
+            da_normal = (an - a) / dn;
+            db_normal = (bn - b) / dn;
+            return true;
+        }
+
+        // The prograde/normal burn that moves a miss of (a, b) to zero given those sensitivities,
+        // holding normal within max_normal (and fitting prograde alone if that bites).
+        internal static void SolveCorrection(double a, double b, double da_prograde, double db_prograde,
+            double da_normal, double db_normal, double max_normal, out double prograde, out double normal)
+        {
+            Step2(a, b, da_prograde, db_prograde, da_normal, db_normal, 0, max_normal, out prograde, out normal);
+        }
+
+        // A burn of (prograde, normal) at UT, with where it leaves the airless coast.
+        internal static TargetedBurn Burn(ImpactModel model, IKeplerPatch orbit, TargetSite site, double UT,
+            double prograde, double normal)
+        {
+            model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
+            return Finish(model, site, r, v, UT, prograde, normal);
         }
 
         // Where the orbit comes down as it is right now, without any burn.

@@ -13,9 +13,8 @@ namespace K2D2.Landing
     // The UI side is split into two methods: setupUI (the full binding, used for the Vacuum
     // panel) and setupBasicUI (a smaller subset for the Atmo panel: warp timing, brake timing, and
     // touchdown speed profile - the settings that are actually meaningful on an atmospheric body
-    // today). Target lat/lon, the precision landing toggle and plane trim all still exist as real,
-    // independently-persisted settings on the Atmo profile too - they're just not wired to a
-    // visible control yet, since atmospheric precision landing isn't built.
+    // today), plus precision landing's toggle, target and plane trim on each. The entry guidance's
+    // angle of attack only has a control on the Atmo panel.
     // TouchDown's own tunables (touch_down_max_angle etc.) are bound from TouchDown.cs's own
     // SetupFullUI/SetupBasicUI, not here.
     public class LandingSettings
@@ -42,9 +41,7 @@ namespace K2D2.Landing
 
         public ClampSetting<float> touch_down_speed;
 
-        // TARGET (precision landing). Manual lat/lon entry only for now. Vacuum bodies only (see
-        // LandingPilot.cs's atmosphere guard and LandingUI.cs's atmo panel note) - the Atmo
-        // profile's own copy of these three exists (see class comment) but has no UI yet.
+        // TARGET (precision landing): picked from a Redux waypoint or typed in, per profile.
         public Setting<bool> precision_landing;
         public Setting<float> target_latitude;
         public Setting<float> target_longitude;
@@ -53,6 +50,17 @@ namespace K2D2.Landing
         // may each add to move the ground track toward the target (see LandingTargeting.PlanDeorbit).
         // Whatever sideways miss is left over, the powered descent flies out. 0 disables it.
         public ClampSetting<float> max_plane_trim_dv;
+
+        // Atmospheric entry guidance (AtmoEntryGuidance) - Atmo profile only. How far the vessel
+        // is held off retrograde during reentry to make lift: more lift means more steering, but
+        // also exposes more of the vessel to reentry heat.
+        public ClampSetting<float> entry_angle_of_attack;
+
+        // How steeply (degrees below the horizon, against the air) the deorbit burn brings the
+        // vessel into the atmosphere - Atmo profile only. Steeper costs more delta-v but means less
+        // time in the air: less heat soaked up and less time for the landing point to drift. 0
+        // keeps the gentlest entry (periapsis at the target's height).
+        public ClampSetting<float> entry_flight_path_angle;
 
         public LandingSettings(SettingsFile file)
         {
@@ -70,6 +78,9 @@ namespace K2D2.Landing
             target_longitude = new("land.target_longitude", 0f, file);
 
             max_plane_trim_dv = new("land.max_plane_trim_dv", 20, 0, 200, file);
+
+            entry_angle_of_attack = new("land.entry_angle_of_attack", 10, 0, 30, file);
+            entry_flight_path_angle = new("land.entry_flight_path_angle", 10, 0, 60, file);
         }
 
         // Full binding - Vacuum panel. Element names carry a "_vac" suffix in Landing.uxml so they
@@ -117,13 +128,24 @@ namespace K2D2.Landing
             root.Q<K2Slider>("max_plane_trim_dv_vac").Bind(max_plane_trim_dv);
         }
 
-        // Reduced binding - Atmo panel. Only the settings that are actually meaningful on an
-        // atmospheric body today: warp timing, brake timing, and touchdown speed profile. No
-        // target/precision-landing controls here (see class comment) - those fields still
-        // exist and persist independently on this profile, just without a visible control until
-        // atmospheric precision landing is built.
+        // Atmo panel binding: warp timing, brake timing, touchdown speed profile, and precision
+        // landing's toggle, target, plane trim and entry angle of attack.
         public void setupBasicUI(VisualElement root)
         {
+            root.Q<K2Toggle>("precision_landing_atmo").Bind(precision_landing);
+            var target_settings = root.Q<VisualElement>("target_settings_atmo");
+            var precision_settings = root.Q<VisualElement>("PrecisionLanding_atmo");
+            precision_landing.listen(v =>
+            {
+                target_settings.Show(v);
+                precision_settings.Show(v);
+            });
+            target_settings.Q<FloatField>("target_latitude_atmo").Bind(target_latitude);
+            target_settings.Q<FloatField>("target_longitude_atmo").Bind(target_longitude);
+            precision_settings.Q<K2Slider>("entry_angle_of_attack_atmo").Bind(entry_angle_of_attack);
+            precision_settings.Q<K2Slider>("entry_flight_path_angle_atmo").Bind(entry_flight_path_angle);
+            precision_settings.Q<K2Slider>("max_plane_trim_dv_atmo").Bind(max_plane_trim_dv);
+
             root.Q<K2Toggle>("auto_warp_atmo").Bind(auto_warp);
             var warp_settings = root.Q<VisualElement>("warp_settings_atmo");
             auto_warp.listen(v => warp_settings.Show(v));

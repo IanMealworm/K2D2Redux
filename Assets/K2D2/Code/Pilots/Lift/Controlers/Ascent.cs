@@ -263,7 +263,7 @@ namespace K2D2.Lift
         // aren't exactly perpendicular). Standard rotation-matrix-to-quaternion conversion
         // (Shepperd's method) rather than QuaternionD.FromToRotation/LookRotation, since neither can
         // pin two axes in one call.
-        static QuaternionD RotationFromNoseAndDorsal(Vector3d nose_ex, Vector3d dorsal_ez)
+        internal static QuaternionD RotationFromNoseAndDorsal(Vector3d nose_ex, Vector3d dorsal_ez)
         {
             Vector3d ey = nose_ex.normalized;
             Vector3d ez = (dorsal_ez - ey * Vector3d.Dot(dorsal_ez, ey)).normalized;
