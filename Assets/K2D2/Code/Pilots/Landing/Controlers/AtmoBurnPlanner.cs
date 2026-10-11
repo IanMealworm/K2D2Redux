@@ -4,8 +4,7 @@ using KSP.Sim.impl;
 namespace K2D2.Landing
 {
     // Plans the landing burn for atmospheric precision landing: when to light the engines so that
-    // K2D2's regular braking (TouchDown in Brake mode: full thrust against the surface velocity
-    // until the fall is slow) ends a little above the ground, and how much shorter that burn makes
+    // the braking (AtmoLandingBurn) ends a little above the ground, and how much shorter that burn makes
     // the flight than the unpowered fall Redux predicts - the overshoot the entry guidance has to
     // aim for so the burn ends on the target.
     //
@@ -35,8 +34,8 @@ namespace K2D2.Landing
         // The engines light this long after the handover - the vessel turns to retrograde first
         // (TouchDown only burns once it's pointing within its max angle).
         public const double turn_delay_s = 3;
-        // Ignition is planned on this fraction of the engines' full thrust, as a reserve; the burn
-        // itself uses all of it, so it normally stops higher than planned.
+        // Ignition is planned on this fraction of the engines' full thrust, so the landing burn
+        // (which sets its throttle as it goes) has some left to make up for a plan that was off.
         const double planning_thrust_fraction = 0.9;
         // k is measured while the vessel flies at an angle of attack, which drags more than the
         // engines-first attitude it brakes in. Less drag during the burn means lighting earlier,
@@ -211,16 +210,40 @@ namespace K2D2.Landing
         void Burn(CelestialBodyComponent body, double ground_altitude, State start, double thrust,
             double stop_falling_speed, out double stop_height, out double stop_x)
         {
+            Burn(body, ground_altitude, start, turn_delay_s, thrust, stop_falling_speed, out stop_height, out stop_x, out _);
+        }
+
+        // The braking from the vessel's state right now, already pointing into the airflow, at
+        // `thrust` (m/s^2): where the fall gets down to stop_falling_speed - height above the
+        // ground, distance downrange - and how long that takes. The landing burn re-plans its
+        // throttle and steering from this while it burns.
+        public void Brake(CelestialBodyComponent body, double height, double ground_altitude,
+            double v_horizontal, double v_vertical, double thrust, double stop_falling_speed,
+            out double stop_height, out double stop_x, out double duration_s)
+        {
+            var start = new State { x = 0, h = height, vx = v_horizontal, vz = v_vertical };
+            Burn(body, ground_altitude, start, 0, thrust, stop_falling_speed, out stop_height, out stop_x, out duration_s);
+        }
+
+        void Burn(CelestialBodyComponent body, double ground_altitude, State start, double turn_s, double thrust,
+            double stop_falling_speed, out double stop_height, out double stop_x, out double duration_s)
+        {
             var s = start;
             double t = 0;
-            for (; t < turn_delay_s && s.h > 0; t += step_s)
+            for (; t < turn_s && s.h > 0; t += step_s)
                 Step(body, ground_altitude, ref s, 0, burn_drag_fraction, 0);
             for (; t < max_burn_s && s.h > 0 && s.vz < -stop_falling_speed; t += step_s)
                 Step(body, ground_altitude, ref s, thrust, burn_drag_fraction, 0);
             // Still falling fast when the time ran out counts as not stopping at all.
             stop_height = s.vz < -stop_falling_speed ? 0 : Math.Max(0, s.h);
             stop_x = s.x;
+            duration_s = t;
         }
+
+        // The drag deceleration (m/s^2) at a height above sea level and speed through the air, as
+        // measured so far (0 before any measurement).
+        public double DragAccel(CelestialBodyComponent body, double sea_altitude, double air_speed) =>
+            (has_drag ? drag_k : 0) * Density(body, sea_altitude) * air_speed * air_speed;
 
         // Midpoint (second-order) step.
         void Step(CelestialBodyComponent body, double ground_altitude, ref State s, double thrust, double drag_fraction,
@@ -248,7 +271,10 @@ namespace K2D2.Landing
             double r = body.radius + sea_altitude;
             double g = body.gravParameter / (r * r);
             double v = Math.Sqrt(s.vx * s.vx + s.vz * s.vz);
-            double drag_per_speed = drag_fraction * drag_k * Density(body, sea_altitude) * v;
+            // No drag measured (the landing burn can start without one): leaving it out only makes
+            // the burn plan for more braking than it needs.
+            double k = has_drag ? drag_k : 0;
+            double drag_per_speed = drag_fraction * k * Density(body, sea_altitude) * v;
             double thrust_per_speed = v > 1e-3 ? thrust / v : 0;
             ax = -(drag_per_speed + thrust_per_speed) * s.vx;
             // Gravity, less the curve of the ground falling away under horizontal speed.

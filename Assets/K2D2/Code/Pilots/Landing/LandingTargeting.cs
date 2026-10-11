@@ -226,6 +226,7 @@ namespace K2D2.Landing
             public double UT;
             public double prograde;     // m/s along the orbital velocity at UT
             public double normal;       // m/s along Cross(r, v) in ImpactModel's axes - not necessarily the game's "normal" sign
+            public double radial;       // m/s radial-out: at right angles to the velocity, in the orbit's plane, away from the body
             public double miss_m;       // how far from the aim point the coast passes, measured along the ground
             public double impact_UT;
             public Vector3d impact;     // body-fixed
@@ -237,9 +238,13 @@ namespace K2D2.Landing
         public const double required_clearance_m = 300;
         public const double clearance_skip_near_m = 3000;
 
-        internal static Vector3d AfterBurn(Vector3d r, Vector3d v, double prograde, double normal)
+        internal static Vector3d AfterBurn(Vector3d r, Vector3d v, double prograde, double normal, double radial = 0)
         {
-            return v + v.normalized * prograde + Vector3d.Cross(r, v).normalized * normal;
+            Vector3d along = v.normalized;
+            Vector3d after = v + along * prograde + Vector3d.Cross(r, v).normalized * normal;
+            if (radial != 0)
+                after += (r - along * Vector3d.Dot(r, along)).normalized * radial;
+            return after;
         }
 
         // Prograde delta-v (negative = retrograde) that puts periapsis at `periapsis` radius.
@@ -296,11 +301,12 @@ namespace K2D2.Landing
         // Where a burn of (prograde, normal) from (r, v) at UT makes the coast come down,
         // relative to the target.
         internal static bool Miss(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
-            double prograde, double normal, out double a, out double b, out double impact_UT, out Vector3d impact)
+            double prograde, double normal, out double a, out double b, out double impact_UT, out Vector3d impact,
+            double radial = 0)
         {
             a = b = 0;
             impact = Vector3d.zero;
-            if (!model.Impact(r, AfterBurn(r, v, prograde, normal), UT, site.radius, out impact_UT, out Vector3d p))
+            if (!model.Impact(r, AfterBurn(r, v, prograde, normal, radial), UT, site.radius, out impact_UT, out Vector3d p))
                 return false;
 
             impact = model.BodyFixed(p, impact_UT);
@@ -309,15 +315,15 @@ namespace K2D2.Landing
         }
 
         static TargetedBurn Finish(ImpactModel model, TargetSite site, Vector3d r, Vector3d v, double UT,
-            double prograde, double normal)
+            double prograde, double normal, double radial = 0)
         {
-            var burn = new TargetedBurn { UT = UT, prograde = prograde, normal = normal };
-            if (!Miss(model, site, r, v, UT, prograde, normal, out double a, out double b, out burn.impact_UT, out burn.impact))
+            var burn = new TargetedBurn { UT = UT, prograde = prograde, normal = normal, radial = radial };
+            if (!Miss(model, site, r, v, UT, prograde, normal, out double a, out double b, out burn.impact_UT, out burn.impact, radial))
                 return burn;
 
             burn.found = true;
             burn.miss_m = Math.Sqrt(a * a + b * b);
-            burn.clearance_m = model.MinTerrainClearance(r, AfterBurn(r, v, prograde, normal), UT, burn.impact_UT,
+            burn.clearance_m = model.MinTerrainClearance(r, AfterBurn(r, v, prograde, normal, radial), UT, burn.impact_UT,
                 burn.impact, clearance_skip_near_m, out _);
             return burn;
         }
@@ -517,10 +523,10 @@ namespace K2D2.Landing
 
         // A burn of (prograde, normal) at UT, with where it leaves the airless coast.
         internal static TargetedBurn Burn(ImpactModel model, IKeplerPatch orbit, TargetSite site, double UT,
-            double prograde, double normal)
+            double prograde, double normal, double radial = 0)
         {
             model.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
-            return Finish(model, site, r, v, UT, prograde, normal);
+            return Finish(model, site, r, v, UT, prograde, normal, radial);
         }
 
         // Where the orbit comes down as it is right now, without any burn.

@@ -26,7 +26,7 @@ namespace K2D2.Landing
 
         protected override string label => "Deorbit burn";
         protected override bool refine_with_redux => true;
-        protected override bool refine_timing => true;
+        protected override RefineAlong refine_along => RefineAlong.Timing;
 
         const double earliest_burn_s = 60;
         const int revolutions = 4;

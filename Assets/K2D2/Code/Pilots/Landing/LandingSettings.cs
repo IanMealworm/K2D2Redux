@@ -4,6 +4,15 @@ using K2UI;
 
 namespace K2D2.Landing
 {
+    // How the boost-back turns the vessel round before its burn (see BoostBackBurn).
+    public enum FlipStyle
+    {
+        // Engines lit from the start, so their gimbals help turn (like Super Heavy).
+        Powered,
+        // Turn first, then burn (like Falcon 9).
+        Unpowered,
+    }
+
     // Atmo/Vacuum profile split: LandingPilot constructs TWO of these (settings_atmo/
     // settings_vac), one per SettingsFile (k2d2_landing_atmo.json / k2d2_landing_vac.json), so
     // tuning one profile can never touch the other's saved values or UI. Every field keeps its
@@ -62,6 +71,9 @@ namespace K2D2.Landing
         // keeps the gentlest entry (periapsis at the target's height).
         public ClampSetting<float> entry_flight_path_angle;
 
+        // Boost-back landing (Atmo profile): see FlipStyle.
+        public EnumSetting<FlipStyle> boost_back_flip;
+
         public LandingSettings(SettingsFile file)
         {
             auto_warp = new("land.auto_warp", true, file);
@@ -81,6 +93,7 @@ namespace K2D2.Landing
 
             entry_angle_of_attack = new("land.entry_angle_of_attack", 10, 0, 30, file);
             entry_flight_path_angle = new("land.entry_flight_path_angle", 10, 0, 60, file);
+            boost_back_flip = new("land.boost_back_flip", FlipStyle.Powered, file);
         }
 
         // Full binding - Vacuum panel. Element names carry a "_vac" suffix in Landing.uxml so they
@@ -129,7 +142,8 @@ namespace K2D2.Landing
         }
 
         // Atmo panel binding: warp timing, brake timing, touchdown speed profile, and precision
-        // landing's toggle, target, plane trim and entry angle of attack.
+        // landing's toggle, target, plane trim, entry angle of attack and steepness, and the
+        // boost-back's flip.
         public void setupBasicUI(VisualElement root)
         {
             root.Q<K2Toggle>("precision_landing_atmo").Bind(precision_landing);
@@ -144,6 +158,7 @@ namespace K2D2.Landing
             target_settings.Q<FloatField>("target_longitude_atmo").Bind(target_longitude);
             precision_settings.Q<K2Slider>("entry_angle_of_attack_atmo").Bind(entry_angle_of_attack);
             precision_settings.Q<K2Slider>("entry_flight_path_angle_atmo").Bind(entry_flight_path_angle);
+            precision_settings.Q<InlineEnum>("boost_back_flip_atmo").Bind(boost_back_flip);
             precision_settings.Q<K2Slider>("max_plane_trim_dv_atmo").Bind(max_plane_trim_dv);
 
             root.Q<K2Toggle>("auto_warp_atmo").Bind(auto_warp);

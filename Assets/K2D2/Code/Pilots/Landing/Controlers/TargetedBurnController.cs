@@ -74,15 +74,15 @@ namespace K2D2.Landing
         // before they're flown.
         protected virtual bool refine_with_redux => false;
         // What the refinement changes to move the landing point along the ground track: the burn's
-        // timing (true - the same burn earlier or later lands the same way, just further along)
-        // or its prograde size. Across the track it changes the normal part.
-        protected virtual bool refine_timing => false;
-        // What the refinement adds to Redux's Planned (ballistic) landing point to get the point it
-        // puts on the target - a ground offset along the target site's a and b axes.
-        private protected virtual void RefineAimOffset(out double a, out double b)
-        {
-            a = b = 0;
-        }
+        // prograde part; its timing (the same burn earlier or later lands the same way, just
+        // further along); or its size, keeping its direction (for burns aimed in a direction
+        // other than prograde, like the boost-back). Across the track it changes the normal part.
+        protected enum RefineAlong { Prograde, Timing, Size }
+        protected virtual RefineAlong refine_along => RefineAlong.Prograde;
+        // Whether the normal part is held to the Max Plane Trim setting.
+        protected virtual bool cap_normal_to_plane_trim => true;
+        // The burn has to stay at least this far ahead for the refinement to keep moving it.
+        protected virtual double min_refine_lead_s => 30;
 
         bool waiting_to_plan;
 
@@ -119,7 +119,7 @@ namespace K2D2.Landing
             // The sideways part is computed along Cross(r, v); the game's own "normal" direction may
             // point either way relative to that, so it's checked against what SAS calls normal.
             normal_sign = GameNormalSign(model, orbit);
-            max_normal = normal_sign == 0 ? 0 : settings.max_plane_trim_dv.V;
+            max_normal = normal_sign == 0 ? 0 : cap_normal_to_plane_trim ? settings.max_plane_trim_dv.V : double.MaxValue;
 
             if (!Plan(model, orbit, site, max_normal, out var planned))
             {
@@ -138,7 +138,7 @@ namespace K2D2.Landing
             double now = GeneralTools.Current_UT;
             var settings = LandingPilot.Instance.settings;
             double node_normal = planned.normal * normal_sign;
-            double delta_v = Math.Sqrt(planned.prograde * planned.prograde + planned.normal * planned.normal);
+            double delta_v = Math.Sqrt(planned.prograde * planned.prograde + planned.normal * planned.normal + planned.radial * planned.radial);
 
             // The game plans a node as a burn that starts at the node's time and lasts as long as the
             // engines need (ManeuverPlanSolver.CalculateOdeManeuverNodes), and BurnManeuver flies
@@ -149,6 +149,7 @@ namespace K2D2.Landing
 
             model.LatLon(planned.impact, out double aim_lat, out double aim_lon);
             logger.LogInfo($"[{label}] burn at T+{planned.UT - now:n1}s (node T+{node_UT - now:n1}s): prograde {planned.prograde:n2}m/s " +
+                (planned.radial != 0 ? $"radial {planned.radial:n2}m/s " : "") +
                 $"normal {node_normal:n2}m/s (cap {max_normal:n1}) | passes {site.aim_height:n0}m up over ({aim_lat:n4}, {aim_lon:n4}), " +
                 $"{planned.miss_m:n0}m from the aim point over the target ({settings.target_latitude.V:n4}, {settings.target_longitude.V:n4}) " +
                 $"at T+{planned.impact_UT - now:n0}s | lowest terrain clearance {planned.clearance_m:n0}m");
@@ -168,7 +169,7 @@ namespace K2D2.Landing
                 }
                 else
                     StartTurn();
-            }, node_normal);
+            }, node_normal, planned.radial);
         }
 
         void StartTurn()
@@ -216,8 +217,8 @@ namespace K2D2.Landing
             var model_now = new ImpactModel(vessel.mainBody, now);
 
             model_now.StateAt(vessel.Orbit, current_plan.UT, out Vector3d r, out Vector3d v);
-            refine_hold.HoldBallistic(model_now, r, LandingTargeting.AfterBurn(r, v, current_plan.prograde, current_plan.normal),
-                current_plan.UT);
+            refine_hold.HoldBallistic(model_now, r,
+                LandingTargeting.AfterBurn(r, v, current_plan.prograde, current_plan.normal, current_plan.radial), current_plan.UT);
             status_line = $"{label}: checking the burn against Redux's prediction (round {refine_round + 1})";
             if (!refine_reading.Update(ReduxImpactPrediction.GetPlanned(vessel), refine_hold.attitude_error_deg,
                     vessel.mainBody.radius, node_placed_UT + node_settle_s, require_steady: false))
@@ -233,9 +234,6 @@ namespace K2D2.Landing
 
             var ground = new LandingTargeting.TargetSite(model_now, settings.target_latitude.V, settings.target_longitude.V, 0);
             ground.Offset(model_now.SurfaceUp(impact.latitude, impact.longitude) * ground.radius, out double a, out double b);
-            RefineAimOffset(out double aim_a, out double aim_b);
-            a += aim_a;
-            b += aim_b;
             double miss = Math.Sqrt(a * a + b * b);
             logger.LogInfo($"[{label}] round {refine_round + 1}: Redux has the planned trajectory landing at ({impact.latitude:n4}, {impact.longitude:n4}), " +
                 $"{miss:n0}m from where it should ({a:n0}, {b:n0}){(impact.approximate ? " (approximate)" : "")}");
@@ -261,16 +259,15 @@ namespace K2D2.Landing
                 return;
             }
 
-            double UT = current_plan.UT + (refine_timing ? d_along : 0);
-            double prograde = current_plan.prograde + (refine_timing ? 0 : d_along);
+            Adjust(d_along, out double UT, out double prograde, out double radial);
             double normal = current_plan.normal + d_normal;
-            if (UT < now + 30)
+            if (UT < now + min_refine_lead_s)
             {
                 logger.LogInfo($"[{label}] the adjusted burn would be too soon - flying it as planned");
                 FinishRefine();
                 return;
             }
-            var adjusted = LandingTargeting.Burn(model_now, vessel.Orbit, site, UT, prograde, normal);
+            var adjusted = LandingTargeting.Burn(model_now, vessel.Orbit, site, UT, prograde, normal, radial);
             if (!adjusted.found)
             {
                 FinishRefine();
@@ -295,29 +292,45 @@ namespace K2D2.Landing
             StartTurn();
         }
 
+        // The burn moved along the ground track by d_along (seconds or m/s, per refine_along).
+        void Adjust(double d_along, out double UT, out double prograde, out double radial)
+        {
+            UT = current_plan.UT;
+            prograde = current_plan.prograde;
+            radial = current_plan.radial;
+            switch (refine_along)
+            {
+                case RefineAlong.Timing:
+                    UT += d_along;
+                    break;
+                case RefineAlong.Prograde:
+                    prograde += d_along;
+                    break;
+                case RefineAlong.Size:
+                    double size = Math.Sqrt(prograde * prograde + radial * radial);
+                    double scale = size > 1e-6 ? (size + d_along) / size : 1;
+                    prograde *= scale;
+                    radial *= scale;
+                    break;
+            }
+        }
+
         bool AirlessSensitivity(ImpactModel model_now, IKeplerPatch orbit)
         {
-            const double dt = 10, dp = 0.5, dn = 1;
-            double UT = current_plan.UT, p = current_plan.prograde, n = current_plan.normal;
-            model_now.StateAt(orbit, UT, out Vector3d r, out Vector3d v);
-            if (!LandingTargeting.Miss(model_now, site, r, v, UT, p, n, out double a, out double b, out _, out _)
-                || !LandingTargeting.Miss(model_now, site, r, v, UT, p, n + dn, out double an, out double bn, out _, out _))
+            const double dn = 1;
+            double step = refine_along == RefineAlong.Timing ? 10 : refine_along == RefineAlong.Size ? 2 : 0.5;
+            double n = current_plan.normal;
+            model_now.StateAt(orbit, current_plan.UT, out Vector3d r, out Vector3d v);
+            if (!LandingTargeting.Miss(model_now, site, r, v, current_plan.UT, current_plan.prograde, n,
+                    out double a, out double b, out _, out _, current_plan.radial)
+                || !LandingTargeting.Miss(model_now, site, r, v, current_plan.UT, current_plan.prograde, n + dn,
+                    out double an, out double bn, out _, out _, current_plan.radial))
                 return false;
 
-            double aa, ba, step;
-            if (refine_timing)
-            {
-                model_now.StateAt(orbit, UT + dt, out Vector3d r2, out Vector3d v2);
-                if (!LandingTargeting.Miss(model_now, site, r2, v2, UT + dt, p, n, out aa, out ba, out _, out _))
-                    return false;
-                step = dt;
-            }
-            else
-            {
-                if (!LandingTargeting.Miss(model_now, site, r, v, UT, p + dp, n, out aa, out ba, out _, out _))
-                    return false;
-                step = dp;
-            }
+            Adjust(step, out double UT2, out double p2, out double rad2);
+            model_now.StateAt(orbit, UT2, out Vector3d r2, out Vector3d v2);
+            if (!LandingTargeting.Miss(model_now, site, r2, v2, UT2, p2, n, out double aa, out double ba, out _, out _, rad2))
+                return false;
             da_along = (aa - a) / step;
             db_along = (ba - b) / step;
             da_normal = (an - a) / dn;
@@ -365,7 +378,7 @@ namespace K2D2.Landing
                     return false;
                 d_along = -(ra * da_along + rb * db_along) / along2;
             }
-            double max_step = refine_timing ? max_timing_step_s : max_prograde_step_mps;
+            double max_step = refine_along == RefineAlong.Timing ? max_timing_step_s : max_prograde_step_mps;
             d_along = Math.Max(-max_step, Math.Min(max_step, d_along));
             return true;
         }

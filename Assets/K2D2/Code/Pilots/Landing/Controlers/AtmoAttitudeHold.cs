@@ -42,6 +42,30 @@ namespace K2D2.Landing
         // Largest of the nose and roll errors, in degrees - Redux restarts its prediction whenever
         // the held attitude moves by more than 2°.
         public double attitude_error_deg { get; private set; }
+        public double nose_error_deg { get; private set; }
+        public double roll_error_deg { get; private set; }
+
+        // How far the nose moved against the airflow over the last drift_window_s - measured only
+        // since the attitude asked for last changed, so a vessel still swinging round to a new
+        // attitude doesn't count as steady (NaN until then). A vessel that can't quite reach the attitude asked for - aerodynamic forces
+        // stronger than its reaction wheels, or no way to roll with the engines off - can still sit
+        // steadily a few degrees off it, which is all Redux needs: on two booster flights the
+        // entry guidance waited the whole way down for an attitude error under 2° and never steered.
+        public double nose_drift_deg { get; private set; } = double.NaN;
+        const double drift_window_s = 1;
+        const double steady_drift_deg = 0.5;
+        const double max_steady_offset_deg = 15;
+        Vector3d drift_reference;
+        double drift_reference_UT = double.NaN;
+        // The nose asked for, against the airflow; a change bigger than this restarts the drift
+        // measurement.
+        Vector3d last_wanted_nose;
+        const double wanted_change_deg = 0.5;
+
+        // Holding the attitude asked for, or steady close enough to it.
+        public bool Settled(double tolerance_deg) =>
+            attitude_error_deg < tolerance_deg
+            || (nose_drift_deg < steady_drift_deg && nose_error_deg < max_steady_offset_deg);
 
         readonly KSPVessel current_vessel;
 
@@ -122,6 +146,28 @@ namespace K2D2.Landing
             Lock(angle_of_attack_deg, bank_deg, model.body.transform.bodyFrame);
         }
 
+        // Against the airflow where the vessel's coast comes back down through altitude_m - for a
+        // stage still climbing after its boost-back. Its burn leaves it pointing back toward the
+        // target; the airflow right there is close to the other way, but the one it will be
+        // falling through is close to straight up - a much smaller turn, and the right way round
+        // already. (Turning to the airflow where it was took the test booster 60-80 s on reaction
+        // wheels alone, half of it turning one way only to swing back as the fall steepened.)
+        public void HoldForDescent(double altitude_m, double angle_of_attack_deg, double bank_deg)
+        {
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null)
+                return;
+            var model = new ImpactModel(vessel.mainBody, KTools.GeneralTools.Current_UT);
+            model.StateAt(vessel.Orbit, model.epoch_UT, out Vector3d r, out Vector3d v);
+            if (!model.DescentState(r, v, model.epoch_UT, vessel.mainBody.radius + altitude_m, out Vector3d entry_r, out Vector3d entry_v)
+                || !SetAxes(model.body, entry_r, entry_v, out _))
+            {
+                Hold(angle_of_attack_deg, bank_deg);
+                return;
+            }
+            Lock(angle_of_attack_deg, bank_deg, model.body.transform.bodyFrame);
+        }
+
         // For a ballistic prediction (no lift). With Redux's Assumed attitude set to SAS, SAS's own
         // Retrograde mode makes Redux assume exactly retrograde at entry whatever the vessel is
         // doing - a held attitude's last degree or two of wobble moved the predicted landing point
@@ -155,6 +201,28 @@ namespace K2D2.Landing
             return true;
         }
 
+        // Points the nose (where the engines push) along `direction` - in ImpactModel's axes, i.e.
+        // the body frame's axes at this moment - keeping whatever roll the vessel has, since a burn
+        // doesn't care about it and rolling a big booster round only slows its turn. For burns
+        // steered by K2D2 itself rather than through a maneuver node.
+        public void HoldDirection(Vector3d direction)
+        {
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null || direction.magnitude < 1e-9)
+                return;
+            ITransformFrame frame = vessel.mainBody.transform.bodyFrame;
+            Vector3d nose = direction.normalized;
+            Rotation current = Rotation.Reframed(current_vessel.GetRotation(), frame);
+            Vector3d current_dorsal = (current.localRotation * Vector3.forward).normalized;
+            Vector3d dorsal = current_dorsal - nose * Vector3d.Dot(current_dorsal, nose);
+            if (dorsal.magnitude < 1e-3)
+            {
+                Vector3d any = Math.Abs(nose.y) < 0.9 ? new Vector3d(0, 1, 0) : new Vector3d(1, 0, 0);
+                dorsal = any - nose * Vector3d.Dot(any, nose);
+            }
+            Lock(nose, dorsal.normalized, frame);
+        }
+
         void Lock(double angle_of_attack_deg, double bank_deg, ITransformFrame frame)
         {
             double bank = bank_deg * Math.PI / 180;
@@ -162,7 +230,35 @@ namespace K2D2.Landing
             Vector3d tilt = lift_up * Math.Cos(bank) + side * Math.Sin(bank);
             Vector3d nose = -flow * Math.Cos(alpha) + tilt * Math.Sin(alpha);
             Vector3d dorsal = tilt - nose * Vector3d.Dot(tilt, nose);
+            if (keep_roll)
+            {
+                // Whatever roll the vessel had when this attitude was first asked for, held from
+                // then on.
+                if (double.IsNaN(kept_for_bank) || Math.Abs(LandingTargeting.WrapDegrees180(bank_deg - kept_for_bank)) > 0.5
+                    || Math.Abs(angle_of_attack_deg - kept_for_aoa) > 0.5)
+                {
+                    Rotation current = Rotation.Reframed(current_vessel.GetRotation(), frame);
+                    kept_dorsal = (current.localRotation * Vector3.forward).normalized;
+                    kept_for_bank = bank_deg;
+                    kept_for_aoa = angle_of_attack_deg;
+                }
+                Vector3d flat = kept_dorsal - nose * Vector3d.Dot(kept_dorsal, nose);
+                if (flat.magnitude > 1e-3)
+                    dorsal = flat;
+            }
+            Lock(nose, dorsal.normalized, frame);
+        }
 
+        // For a vessel whose roll doesn't matter (a round booster: its lift goes with the tilt of
+        // its nose, whichever way it's rolled), the roll is left as it is rather than turned to
+        // match the bank - with the lift steered as a vector, small changes can swing the bank a
+        // long way, and rolling a long booster round takes a while.
+        public bool keep_roll;
+        Vector3d kept_dorsal;
+        double kept_for_bank = double.NaN, kept_for_aoa;
+
+        void Lock(Vector3d nose, Vector3d dorsal, ITransformFrame frame)
+        {
             var autopilot = current_vessel.Autopilot;
             autopilot.Enabled = true;
             if (autopilot.AutopilotMode != AutopilotMode.StabilityAssist)
@@ -175,10 +271,28 @@ namespace K2D2.Landing
             Rotation current = Rotation.Reframed(current_vessel.GetRotation(), frame);
             Vector3d current_nose = (current.localRotation * Vector3.up).normalized;
             Vector3d current_dorsal = (current.localRotation * Vector3.forward).normalized;
-            double nose_error = Vector3d.Angle(nose, current_nose);
+            nose_error_deg = Vector3d.Angle(nose, current_nose);
             Vector3d dorsal_flat = current_dorsal - nose * Vector3d.Dot(current_dorsal, nose);
-            double roll_error = dorsal_flat.magnitude > 1e-6 ? Vector3d.Angle(dorsal, dorsal_flat) : 0;
-            attitude_error_deg = Math.Max(nose_error, roll_error);
+            roll_error_deg = dorsal_flat.magnitude > 1e-6 ? Vector3d.Angle(dorsal, dorsal_flat) : 0;
+            attitude_error_deg = Math.Max(nose_error_deg, roll_error_deg);
+
+            Vector3d nose_against_air = new Vector3d(Vector3d.Dot(current_nose, flow), Vector3d.Dot(current_nose, lift_up),
+                Vector3d.Dot(current_nose, side));
+            double now = KTools.GeneralTools.Current_UT;
+            Vector3d wanted_against_air = new Vector3d(Vector3d.Dot(nose, flow), Vector3d.Dot(nose, lift_up), Vector3d.Dot(nose, side));
+            if (Vector3d.Angle(wanted_against_air, last_wanted_nose) > wanted_change_deg)
+            {
+                last_wanted_nose = wanted_against_air;
+                nose_drift_deg = double.NaN;
+                drift_reference_UT = double.NaN;
+            }
+            if (double.IsNaN(drift_reference_UT) || now - drift_reference_UT >= drift_window_s)
+            {
+                if (!double.IsNaN(drift_reference_UT))
+                    nose_drift_deg = Vector3d.Angle(drift_reference, nose_against_air);
+                drift_reference = nose_against_air;
+                drift_reference_UT = now;
+            }
         }
 
         public void Release()

@@ -281,7 +281,7 @@ namespace K2D2.Landing
                 AddInfoRow("Prediction", pilot.using_redux_prediction ? "Redux" : "K2D2");
                 // Where the vessel would land with the engine off - meaningless once the guided
                 // descent is burning, which shows its own distance to the target instead.
-                bool guided_burn = pilot.vacuum_precision && pilot.mode == LandingPilot.Mode.Brake;
+                bool guided_burn = (pilot.vacuum_precision || pilot.atmo_precision) && pilot.mode == LandingPilot.Mode.Brake;
                 if (pilot.settings.precision_landing.V && !guided_burn)
                     AddInfoRow("Target Error", StrTool.DistanceToString((float)pilot.target_error_m));
             }
@@ -341,6 +341,9 @@ namespace K2D2.Landing
                     case LandingPilot.Mode.AtmoReentry:
                         status_bar.Warning("Entry guidance");
                         break;
+                    case LandingPilot.Mode.BoostBack:
+                        status_bar.Status("Boost-back");
+                        break;
                     case LandingPilot.Mode.Pause:
                         status_bar.Status("Pause");
                         break;
@@ -354,7 +357,7 @@ namespace K2D2.Landing
                         status_bar.Status($"Waiting : {StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime)}");
                         break;
                     case LandingPilot.Mode.Brake:
-                        status_bar.Warning(pilot.vacuum_precision ? "Powered Descent" : "Brake !");
+                        status_bar.Warning(pilot.vacuum_precision ? "Powered Descent" : pilot.atmo_precision ? "Landing Burn" : "Brake !");
                         break;
                     case LandingPilot.Mode.TouchDown:
                         status_bar.Warning($"Touch Down...");

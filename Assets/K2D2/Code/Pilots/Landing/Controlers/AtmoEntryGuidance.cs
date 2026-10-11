@@ -11,29 +11,32 @@ using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    // Entry guidance for atmospheric precision landing: steers the vessel's lift during reentry
+    // Entry guidance for atmospheric precision landing: steers a booster's lift on its way down
     // so Redux's predicted landing point stays on the target.
     //
-    // The vessel flies at a fixed angle of attack, which makes lift; turning that lift around the
-    // direction of travel (the bank angle) is the steering, as on Apollo or the Shuttle:
-    //  - Lift pointing up keeps the vessel higher for longer, so it lands further away; pointing
-    //    down brings it down sooner. The vertical part of the lift - from +1 (straight up) to -1
-    //    (straight down) - controls how far along the ground track it lands.
-    //  - Whatever lift isn't vertical points to one side and turns the vessel that way. Which
-    //    side is chosen by the sign of the bank, flipped (a "bank reversal") whenever the target
-    //    gets too far off to the other side of the path the vessel is flying now.
+    // Tilting the booster off the airflow makes lift, and a round booster can tilt any way by any
+    // amount. So the lift is steered as a vector, like the KSP 1 BoosterGuidance mod does:
+    //  - Lift pointing up keeps the booster higher for longer, so it lands further away; pointing
+    //    down brings it down sooner. Lift to one side moves the landing point that way.
+    //  - Each part is sized from Redux's miss on its own axis, and the angle of attack flown is in
+    //    proportion to how much lift is wanted - none at all when it's on target.
+    //
+    // (It used to fly a fixed angle of attack and steer by the bank alone, the way Apollo did.
+    // That can only take lift off the vertical by tipping it sideways - half the lift up means 87%
+    // of it pushing to one side - and on the booster tests it banked 40-90° most of the way down,
+    // drifting sideways away from the target.)
     //
     // Redux only predicts for the attitude being flown right now, and restarts its prediction
     // whenever that attitude changes by more than 2°. So the guidance works in steps: hold an
     // attitude, wait for a fresh prediction made after the vessel settled into it (Redux answers
     // within half a second, but turning the vessel takes a few), adjust, repeat.
     //
-    // How far a change in vertical lift moves the landing point isn't known in advance (it depends
-    // on the vessel, the speed and the air), so it's measured from each pair of steps (a secant
-    // estimate), starting from what the probe flights saw.
+    // How far a change in lift moves the landing point isn't known in advance (it depends on the
+    // vessel, the speed and the air), so it's measured from each pair of steps (a secant estimate)
+    // and taken to be the same for both axes - it's the same lift, turned.
     //
-    // It steers until the landing burn is due, then hands over to K2D2's braking (LandingPilot's
-    // Brake mode). AtmoBurnPlanner works out, with drag, when that is and how much shorter the
+    // It steers until the landing burn is due, then hands over to the landing burn
+    // (AtmoLandingBurn, LandingPilot's Brake mode). AtmoBurnPlanner works out, with drag, when that is and how much shorter the
     // burn makes the flight; the steering aims that far beyond the target so the burn ends on it.
     public class AtmoEntryGuidance : ExecuteController
     {
@@ -48,10 +51,6 @@ namespace K2D2.Landing
         // The planner's flat model only holds over the last stretch, so it's used below this.
         const double burn_planning_below_m = 35000;
         const double burn_plan_interval_s = 0.5;
-        // The braking is planned to bring the fall down to TouchDown's slow speed this fraction of
-        // the way down to its start height (start_touchdown_altitude) - a reserve on top of the
-        // planner's own.
-        const double stop_height_fraction = 0.7;
         // The overshoot is smoothed over about this long, so a noisy plan doesn't jerk the aim.
         const double shortfall_smoothing_s = 5;
         // Without a burn plan (no drag measured yet, or no thrust figure for the engines), hand
@@ -61,9 +60,9 @@ namespace K2D2.Landing
         const double end_altitude_m = 2000;
         const double end_speed_mps = 150;
 
-        // When the bank alone can't reach the target (lift already fully up, or fully down, and
-        // still missing), the angle of attack goes up in steps - more lift, and more drag - up to
-        // this, as far as heating allows. It comes back down once the bank has room again.
+        // When all the lift can't reach the target (still missing with the full angle of attack
+        // setting flown), the angle of attack goes up in steps - more lift, and more drag - up to
+        // this, as far as heating allows. It comes back down once the lift has room again.
         const double max_angle_of_attack_deg = 25;
         const double aoa_boost_step_deg = 2.5;
         const double aoa_boost_interval_s = 5;
@@ -73,33 +72,25 @@ namespace K2D2.Landing
         // Redux restarts its prediction when the held attitude moves more than this.
         const double redux_attitude_tolerance_deg = 2;
 
-        // Bigger bank changes are split into steps this size, so each one settles quickly.
-        const double max_bank_step_deg = 30;
-        // Smaller bank changes aren't worth making - each one restarts Redux's prediction and
-        // stirs the attitude (the seventh test flight wobbled between 90° and 94° every step).
-        const double min_bank_change_deg = 3;
+        // Bigger lift changes are split into steps this size (as a fraction of the full lift), so
+        // each one settles quickly; smaller ones than the second aren't worth making - each one
+        // stirs the attitude and makes Redux start over.
+        const double max_lift_step = 0.5, min_lift_change = 0.03;
 
-        // How far (m) the landing point moves per unit of vertical lift, to start from: the probe
+        // How far (m) the landing point moves per unit of lift, to start from: the probe
         // flights saw about 20 km between lift fully up and fully down.
         const double initial_range_per_lift_m = 10000;
         const double min_range_per_lift_m = 500;
         const double min_lift_change_to_measure = 0.2;
         const double range_per_lift_blend = 0.5;
         const double max_range_per_lift_m = 200000;
-
-        // Bank reversals go by the crossrange: how far the target sits to the side of the path the
-        // vessel is flying right now (Apollo's and the Shuttle's way). Redux's sideways miss can't
-        // be used for that: it assumes the bank is held all the way down, so it jumps from one
-        // side to the other with every reversal - 11 km either way for just 30° of bank on the
-        // seventh test flight, which flipped the bank between -30° and 0° for four minutes while
-        // the landing point sat 48 km long.
-        //
-        // The vessel leans toward the target's side until the target is more than this far off to
-        // the other side. Early on there's plenty of time to turn back, so the band is wide; it
-        // narrows with speed so the last reversal leaves little sideways miss.
-        const double reversal_deadband_s = 1.5;
-        const double min_reversal_deadband_m = 500;
-        const double max_reversal_deadband_m = 4000;
+        // When the along-track miss stays put - same side, not shrinking - for this many steps,
+        // the steering is too timid (the estimate above can't be measured while the vertical lift
+        // barely changes), so the estimate is cut by this factor. A low, slow boost-back moves
+        // the landing point far less per unit of lift than a reentry does.
+        const int stuck_steps = 4;
+        const double stuck_cut = 0.6;
+        const double along_good_enough_m = 150;
 
         // Measured lift has to be at least this big to tell which way it points, the vessel has
         // to be flying at least this angle of attack (near 0° there's hardly any lift and what's
@@ -125,15 +116,16 @@ namespace K2D2.Landing
 
         bool in_atmosphere;
 
-        // Where the lift should point, as a bank angle: 0 up, ±90 to either side, 180 down.
+        // The wanted lift: which way it points around the airflow (0 up, ±90 to either side, 180
+        // down) and how much of the angle of attack setting is flown for it (0 to 1).
         double lift_bank_deg;
-        // Which side the lift leans to (+1: positive bank). Kept separately from the bank angle so
-        // a reversal survives passing through 0° on its way over (the third test flight's
-        // reversals were undone at 0° every time, cycling 30° -> 0° -> 30° for minutes with the
-        // landing point 11 km off to the side).
-        double side_sign;
-        // How far the vessel has to be tilted from that for its lift to point there. A vessel flying
-        // engines-first (like the probe lander) lifts away from its tilt: 180. Checked in flight.
+        double lift_scale;
+        double last_side_lift, last_across_error;
+        int stuck_count;
+        double last_along_miss = double.NaN;
+
+        // How far the vessel has to be tilted from where its lift should point. A booster flying
+        // engines-first lifts away from its tilt: 180. Checked in flight.
         double tilt_offset_deg;
         bool lift_direction_checked;
         int lift_votes_same, lift_votes_flipped;
@@ -142,6 +134,12 @@ namespace K2D2.Landing
         double last_vertical_lift = double.NaN, last_along_error = double.NaN;
 
         double settled_UT;
+        // When the steering last had a fresh prediction to use; logged when it's been too long.
+        double last_steer_UT, last_stalled_log_UT;
+        // Set while a stage that started inside the air is still going over the top: steering
+        // starts once it comes back down through this height.
+        double steer_below_m;
+        const double stalled_log_interval_s = 10;
         // Each Redux result is steered on once; the next step waits for a newer one.
         double last_used_snapshot_UT;
         double angle_of_attack_deg;
@@ -154,7 +152,8 @@ namespace K2D2.Landing
         Vector3d previous_velocity;
         double previous_sample_UT;
 
-        readonly AtmoBurnPlanner planner = new AtmoBurnPlanner();
+        // Also used by the landing burn (AtmoLandingBurn), for the drag measured here.
+        public readonly AtmoBurnPlanner planner = new AtmoBurnPlanner();
         AtmoBurnPlanner.Plan burn_plan;
         double last_plan_UT;
         double shortfall_m;
@@ -173,14 +172,25 @@ namespace K2D2.Landing
             current_vessel = K2D2_Plugin.Instance.current_vessel;
         }
 
-        double vertical_lift => Math.Cos(lift_bank_deg * Math.PI / 180);
+        // The share of the lift pointing up (stretching the flight) and to the side (toward
+        // hold.side), as fractions of the lift the angle of attack setting gives.
+        double vertical_lift => lift_scale * Math.Cos(lift_bank_deg * Math.PI / 180);
+        double side_lift => lift_scale * Math.Sin(lift_bank_deg * Math.PI / 180);
+        // The angle of attack actually flown.
+        double flown_aoa_deg => angle_of_attack_deg * lift_scale;
+
 
         public override void Start()
         {
             finished = false;
             in_atmosphere = false;
-            lift_bank_deg = 90;
-            side_sign = 1;
+            // No lift to start with: straight into the airflow.
+            lift_bank_deg = 0;
+            lift_scale = 0;
+            hold.keep_roll = true;
+            last_side_lift = last_across_error = double.NaN;
+            stuck_count = 0;
+            last_along_miss = double.NaN;
             tilt_offset_deg = 180;
             lift_direction_checked = false;
             lift_votes_same = lift_votes_flipped = 0;
@@ -202,6 +212,9 @@ namespace K2D2.Landing
             last_redux_along = double.NaN;
             overshoot_out_of_reach = false;
             updates = 0;
+            last_steer_UT = GeneralTools.Current_UT;
+            last_stalled_log_UT = double.NegativeInfinity;
+            steer_below_m = double.NaN;
         }
 
         // Hands the attitude back to normal SAS - for when the landing is stopped mid-entry.
@@ -225,10 +238,31 @@ namespace K2D2.Landing
                     return;
                 }
                 in_atmosphere = true;
+                last_steer_UT = now;
                 TimeWarpTools.SetRateIndex(0, false);
                 ground_altitude = body.SurfaceProvider.GetTerrainAltitudeFromCenter(
                     landing.settings.target_latitude.V, landing.settings.target_longitude.V) - body.radius;
                 logger.LogInfo($"[EntryGuidance] entered the atmosphere at {altitude:n0}m, angle of attack {landing.settings.entry_angle_of_attack.V:n0}°");
+                // Started inside the air and still climbing (a boosted-back stage): nothing to steer
+                // until it comes back down through here (see CoastOverTheTop).
+                if (Climbing(vessel, now))
+                {
+                    steer_below_m = altitude;
+                    logger.LogInfo($"[EntryGuidance] still climbing: holding the attitude for coming back down through {altitude:n0}m");
+                }
+            }
+
+            if (!double.IsNaN(steer_below_m))
+            {
+                if (altitude > steer_below_m || Climbing(vessel, now))
+                {
+                    CoastOverTheTop(vessel, now);
+                    return;
+                }
+                logger.LogInfo($"[EntryGuidance] back down through {steer_below_m:n0}m: steering");
+                steer_below_m = double.NaN;
+                last_steer_UT = now;
+                settled_UT = double.NaN;
             }
 
             if (!hold.UpdateAxes(out Vector3d position, out Vector3d air_velocity, out _))
@@ -237,7 +271,11 @@ namespace K2D2.Landing
             PlanBurn(vessel, position, air_velocity, altitude, now);
             // The plan is from up to burn_plan_interval_s ago, so its countdown is run on to now.
             bool burn_due = burn_plan.found ? burn_plan.handover_in_s - (now - last_plan_UT) <= 0 : altitude < unplanned_handover_m;
-            if (burn_due || altitude < end_altitude_m || air_velocity.magnitude < end_speed_mps)
+            // Only low down and coming down: a boosted-back stage passes slowly over the top of its
+            // arc, 60+ km up, and handing over there sent it into the braking far too early.
+            bool slow = air_velocity.magnitude < end_speed_mps && Vector3d.Dot(air_velocity, position) < 0
+                && altitude < unplanned_handover_m;
+            if (burn_due || altitude < end_altitude_m || slow)
             {
                 var last = ReduxImpactPrediction.GetFlown(vessel);
                 string where = "";
@@ -259,8 +297,8 @@ namespace K2D2.Landing
             }
 
             UpdateAngleOfAttack(vessel, now);
-            hold.Hold(angle_of_attack_deg, lift_bank_deg + tilt_offset_deg);
-            if (double.IsNaN(settled_UT) && hold.attitude_error_deg < redux_attitude_tolerance_deg)
+            hold.Hold(flown_aoa_deg, lift_bank_deg + tilt_offset_deg);
+            if (double.IsNaN(settled_UT) && hold.Settled(redux_attitude_tolerance_deg))
                 settled_UT = now;
 
             if (MeasureAero(vessel, now, out Vector3d aero))
@@ -276,10 +314,34 @@ namespace K2D2.Landing
             if (fresh)
             {
                 last_used_snapshot_UT = impact.snapshot_UT;
+                last_steer_UT = now;
                 Steer(impact, position, body, altitude, air_velocity.magnitude);
+            }
+            else if (now - last_steer_UT >= stalled_log_interval_s && now - last_stalled_log_UT >= stalled_log_interval_s)
+            {
+                last_stalled_log_UT = now;
+                logger.LogInfo($"[EntryGuidance] no steering for {now - last_steer_UT:n0}s at {altitude:n0}m: nose {hold.nose_error_deg:n1}° " +
+                    $"and roll {hold.roll_error_deg:n1}° off the attitude asked for, nose drifting {hold.nose_drift_deg:n1}° a second | " +
+                    $"Redux {(impact.usable ? $"prediction from {now - impact.snapshot_UT:n0}s ago" : impact.state.ToString())}");
             }
 
             status_line = $"Entry guidance: lift {DescribeLift()}, angle of attack {angle_of_attack_deg:n1}°, attitude error {hold.attitude_error_deg:n1}°";
+        }
+
+        // Over the top of a climb inside the air: held for the airflow it will be falling through,
+        // without steering - there's too little air up there to matter, and Redux's prediction
+        // assumes the attitude against the airflow here is kept all the way down, which it isn't.
+        void CoastOverTheTop(VesselComponent vessel, double now)
+        {
+            hold.HoldForDescent(steer_below_m, flown_aoa_deg, lift_bank_deg + tilt_offset_deg);
+            status_line = $"Entry guidance: over the top, turning for the way down ({hold.nose_error_deg:n0}° to go)";
+        }
+
+        bool Climbing(VesselComponent vessel, double now)
+        {
+            var model = new ImpactModel(vessel.mainBody, now);
+            model.StateAt(vessel.Orbit, now, out Vector3d r, out Vector3d v);
+            return Vector3d.Dot(r, v) > 0;
         }
 
         void CoastToAtmosphere(VesselComponent vessel, double now)
@@ -310,7 +372,7 @@ namespace K2D2.Landing
             if (!double.IsNaN(last_coast_log_UT) && now - last_coast_log_UT < coast_log_interval_s)
                 return;
             var impact = ReduxImpactPrediction.GetFlown(vessel);
-            if (!impact.usable || hold.attitude_error_deg > redux_attitude_tolerance_deg)
+            if (!impact.usable || !hold.Settled(redux_attitude_tolerance_deg))
                 return;
             last_coast_log_UT = now;
             Miss(impact, vessel.mainBody, out double along, out double across);
@@ -319,7 +381,7 @@ namespace K2D2.Landing
         }
 
         // Miss split into along the direction of travel (positive: lands beyond the target) and
-        // across it (positive: lands toward the "side" axis that positive bank leans to).
+        // across it (positive: lands toward the "side" axis that side lift pushes to).
         void Miss(ReduxImpact impact, CelestialBodyComponent body, out double along, out double across)
         {
             var settings = landing.settings;
@@ -336,8 +398,6 @@ namespace K2D2.Landing
 
         void Steer(ReduxImpact impact, Vector3d position, CelestialBodyComponent body, double altitude, double speed)
         {
-            var settings = landing.settings;
-            Vector3d target_up = body.GetRelSurfaceNVector(settings.target_latitude.V, settings.target_longitude.V);
             Miss(impact, body, out double redux_along, out double across);
             last_redux_along = redux_along;
 
@@ -346,7 +406,7 @@ namespace K2D2.Landing
             // the burn plan rather than with the lift.
             // More lift up always means further (the tilt offset takes care of which way the vessel
             // has to lean for that), so a measurement saying otherwise is noise - the seventh test
-            // flight got a negative estimate from a small bank change and steered the wrong way for
+            // flight got a negative estimate from a small lift change and steered the wrong way for
             // the rest of the entry. Small changes are skipped, and measurements are blended in.
             double u = vertical_lift;
             if (!double.IsNaN(last_vertical_lift) && Math.Abs(u - last_vertical_lift) > min_lift_change_to_measure)
@@ -361,37 +421,67 @@ namespace K2D2.Landing
             // Aim beyond the target by however much shorter the landing burn will make the flight.
             double along = redux_along - shortfall_m;
 
+            if (Math.Abs(along) > along_good_enough_m && !double.IsNaN(last_along_miss)
+                && Math.Sign(along) == Math.Sign(last_along_miss) && Math.Abs(along) >= 0.9 * Math.Abs(last_along_miss))
+            {
+                if (++stuck_count >= stuck_steps)
+                {
+                    range_per_lift_m = Math.Max(min_range_per_lift_m, range_per_lift_m * stuck_cut);
+                    stuck_count = 0;
+                }
+            }
+            else
+                stuck_count = 0;
+            last_along_miss = along;
+
+            SteerLift(along, across, u, altitude, speed);
+        }
+
+        // The lift vector from the misses: up (along the flight: further or shorter) and to the side,
+        // each sized from the miss on its own axis.
+        void SteerLift(double along, double across, double u, double altitude, double speed)
+        {
+            double s = side_lift;
+            if (!double.IsNaN(last_side_lift) && Math.Abs(s - last_side_lift) > min_lift_change_to_measure)
+            {
+                double measured = (across - last_across_error) / (s - last_side_lift);
+                if (measured >= min_range_per_lift_m)
+                    range_per_lift_m += (Math.Min(measured, max_range_per_lift_m) - range_per_lift_m) * range_per_lift_blend;
+            }
+            last_side_lift = s;
+            last_across_error = across;
+
             double raw_u = u - along / range_per_lift_m;
-            double wanted_u = Math.Max(-1, Math.Min(1, raw_u));
+            double raw_s = s - across / range_per_lift_m;
+            double raw = Math.Sqrt(raw_u * raw_u + raw_s * raw_s);
             overshoot_out_of_reach = raw_u < -1 && along > aoa_boost_min_miss_m;
-            AdjustAoaBoost(raw_u, along);
+            AdjustAoaBoost(raw, Math.Sqrt(along * along + across * across));
 
-            // Lean toward the target's side of the current path, flipping only once it's clearly
-            // on the other side - every reversal costs a turn during which Redux can't predict.
-            // hold.side is the direction positive bank leans the lift to, at right angles to the
-            // path's vertical plane.
-            double crossrange = body.radius * Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(target_up, hold.side))));
-            double deadband = Math.Max(min_reversal_deadband_m, Math.Min(max_reversal_deadband_m, reversal_deadband_s * speed));
-            if (crossrange * side_sign < -deadband)
-                side_sign = -side_sign;
+            // No more than all the lift there is, and no bigger change per step than this (each
+            // one has to settle before Redux predicts it).
+            double wanted_u = raw > 1 ? raw_u / raw : raw_u, wanted_s = raw > 1 ? raw_s / raw : raw_s;
+            double du = wanted_u - u, ds = wanted_s - s;
+            double change = Math.Sqrt(du * du + ds * ds);
+            if (change > max_lift_step)
+            {
+                du *= max_lift_step / change;
+                ds *= max_lift_step / change;
+            }
+            double new_u = u + du, new_s = s + ds;
+            double new_scale = Math.Sqrt(new_u * new_u + new_s * new_s);
 
-            double wanted_bank = side_sign * Math.Acos(wanted_u) * 180 / Math.PI;
-            // The short way round: a reversal from mostly-down lift on one side to the other rolls
-            // through straight down rather than all the way over the top.
-            double step = Math.Max(-max_bank_step_deg, Math.Min(max_bank_step_deg,
-                LandingTargeting.WrapDegrees180(wanted_bank - lift_bank_deg)));
             updates++;
             logger.LogInfo($"[EntryGuidance] alt {altitude:n0}m speed {speed:n0}m/s | Redux lands {along + shortfall_m:n0}m along " +
-                $"(aim {shortfall_m:n0}m long: {along:n0}m off), {across:n0}m across | target {crossrange:n0}m to the side " +
-                $"(deadband {deadband:n0}m) | vertical lift {u:n2} -> {wanted_u:n2}, bank {lift_bank_deg:n0}° -> {LandingTargeting.WrapDegrees180(lift_bank_deg + step):n0}° | " +
-                $"{range_per_lift_m:n0}m per unit lift | AoA {angle_of_attack_deg:n1}°, hottest part {heat.hottest_part} at " +
-                $"{heat.hottest_fraction:P0} of its limit ({heat.hottest_predicted:P0} in {EntryHeatLimit.lookahead_s:n0}s)" +
-                (burn_plan.found ? $" | burn in {burn_plan.handover_in_s:n0}s" +
-                    (burn_plan.early ? $" (brought forward from {burn_plan.latest_handover_in_s:n0}s: {burn_plan.latest_overshoot_m:n0}m overshoot -> {burn_plan.expected_overshoot_m:n0}m)" : "") : ""));
+                $"(aim {shortfall_m:n0}m long: {along:n0}m off), {across:n0}m across | lift up {u:n2} -> {new_u:n2}, " +
+                $"to the side {s:n2} -> {new_s:n2} (angle of attack {flown_aoa_deg:n1}° -> {angle_of_attack_deg * Math.Min(1, new_scale):n1}°) | " +
+                $"{range_per_lift_m:n0}m per unit lift | hottest part {heat.hottest_part} at {heat.hottest_fraction:P0} of its limit" +
+                (burn_plan.found ? $" | burn in {burn_plan.handover_in_s:n0}s" : ""));
 
-            if (Math.Abs(step) >= min_bank_change_deg)
+            if (Math.Min(change, max_lift_step) >= min_lift_change)
             {
-                lift_bank_deg = LandingTargeting.WrapDegrees180(lift_bank_deg + step);
+                lift_scale = Math.Min(1, new_scale);
+                if (new_scale > 0.02)
+                    lift_bank_deg = Math.Atan2(new_s, new_u) * 180 / Math.PI;
                 settled_UT = double.NaN;
             }
         }
@@ -413,7 +503,7 @@ namespace K2D2.Landing
             last_boost_change_UT = now;
         }
 
-        // The angle of attack is the setting (plus any boost while the bank is out of reach),
+        // The angle of attack is the setting (plus any boost while the lift is out of reach),
         // lowered while parts are heating toward their limits (tilting off the engine end exposes
         // side-mounted parts to the hot flow) and raised back once they cool.
         void UpdateAngleOfAttack(VesselComponent vessel, double now)
@@ -456,7 +546,7 @@ namespace K2D2.Landing
             Vector3d accel_zup = (u - previous_velocity) / dt - gravity;
             previous_velocity = u;
             previous_sample_UT = now;
-            if (hold.attitude_error_deg > redux_attitude_tolerance_deg)
+            if (!hold.Settled(redux_attitude_tolerance_deg))
                 return false;
 
             var body = vessel.mainBody;
@@ -469,7 +559,7 @@ namespace K2D2.Landing
         // air to measure it, and corrects the tilt offset if the vessel lifts the other way.
         void CheckLiftDirection(Vector3d accel, double drag)
         {
-            if (lift_direction_checked || angle_of_attack_deg < min_aoa_to_measure_lift_deg)
+            if (lift_direction_checked || flown_aoa_deg < min_aoa_to_measure_lift_deg)
                 return;
 
             double lift_up = Vector3d.Dot(accel, hold.lift_up);
@@ -528,7 +618,7 @@ namespace K2D2.Landing
             double v_horizontal = (air_velocity - up * v_vertical).magnitude;
             var settings = landing.settings;
             burn_plan = planner.Compute(vessel.mainBody, altitude - ground_altitude, ground_altitude, v_horizontal, v_vertical,
-                landing.burn_dV.full_dv, stop_height_fraction * settings.start_touchdown_altitude.V, settings.brake_speed,
+                landing.burn_dV.full_dv, AtmoLandingBurn.final_height_m, AtmoLandingBurn.FinalSpeed(settings),
                 overshoot_out_of_reach ? last_redux_along : double.NaN);
             if (!burn_plan.found)
                 return;
@@ -544,7 +634,7 @@ namespace K2D2.Landing
         {
             double u = vertical_lift;
             string vertical = u > 0.3 ? "up" : u < -0.3 ? "down" : "level";
-            return $"{vertical} (bank {lift_bank_deg:n0}°)";
+            return $"{vertical}, {side_lift:n2} to the side";
         }
 
         public override void UpdateInfoRows(Action<string, string> addRow)
@@ -553,7 +643,8 @@ namespace K2D2.Landing
                 return;
             addRow("Lift Bank", $"{lift_bank_deg:n0}°");
             addRow("Vertical Lift", $"{vertical_lift:n2}");
-            addRow("Angle of Attack", $"{angle_of_attack_deg:n1}°");
+            addRow("Side Lift", $"{side_lift:n2}");
+            addRow("Angle of Attack", $"{flown_aoa_deg:n1}°");
             addRow("Attitude Error", $"{hold.attitude_error_deg:n1}°");
             addRow("Hottest Part", $"{heat.hottest_fraction:P0} of max");
         }

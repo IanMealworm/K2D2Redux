@@ -143,7 +143,16 @@ namespace K2D2.Landing
             double entry_radius = body.radius + body.atmosphereDepth;
             if (r.magnitude <= entry_radius)
                 return true;
-            if (!Impact(r, v, UT, entry_radius, out double entry_UT, out _))
+            return DescentState(r, v, UT, entry_radius, out entry_r, out entry_v);
+        }
+
+        // The state where the coast from (r, v) at UT next comes down through `radius` - for a
+        // vessel climbing inside the atmosphere, the height it's at. False if it never does.
+        public bool DescentState(Vector3d r, Vector3d v, double UT, double radius, out Vector3d entry_r, out Vector3d entry_v)
+        {
+            entry_r = r;
+            entry_v = v;
+            if (!Impact(r, v, UT, radius, out double entry_UT, out _))
                 return false;
             KeplerPropagator.Propagate(r, v, mu, entry_UT - UT, out entry_r, out entry_v);
             return true;
