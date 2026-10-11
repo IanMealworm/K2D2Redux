@@ -53,6 +53,19 @@ namespace K2D2.Landing
         // MidCourseCorrection.cs.
         public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
 
+        // Atmospheric precision landing: deorbit toward the target, correct the entry with Redux's
+        // prediction, then steer the reentry with lift, before the regular powered landing.
+        public AtmoDeorbitBurn atmo_deorbit = new AtmoDeorbitBurn();
+        public AtmoEntryCorrection atmo_correction = new AtmoEntryCorrection();
+        // Boost-back landing: started on a vessel that's already coming down (a recovered stage),
+        // this burn replaces the deorbit and correction burns, then the entry guidance takes over.
+        public BoostBackBurn boost_back = new BoostBackBurn();
+        // Needs 'this', so it's constructed in the constructor body.
+        public AtmoEntryGuidance atmo_guidance;
+        // Atmospheric precision landing's landing burn, from the entry guidance's handover to
+        // touchdown (Brake mode). Also needs 'this'.
+        public AtmoLandingBurn atmo_landing_burn;
+
         public SingleExecuteController current_executor = new SingleExecuteController();
 
         public LandingPilot()
@@ -64,6 +77,8 @@ namespace K2D2.Landing
             settings_vac = new LandingSettings(vac_file);
             brake = new TouchDown(atmo_file, vac_file);
             guidance = new VacuumDescentGuidance(this);
+            atmo_guidance = new AtmoEntryGuidance(this);
+            atmo_landing_burn = new AtmoLandingBurn(this);
             _page = new LandingUI(this);
 
             Instance = this;
@@ -87,6 +102,13 @@ namespace K2D2.Landing
             Circularize,
             DeorbitBurn,
             MidCourseCorrection,
+            // Atmospheric precision landing only - after Circularize these run instead of the
+            // vacuum burns above, and go on to Pause like they do.
+            AtmoDeorbit,
+            AtmoCorrection,
+            AtmoReentry,
+            // Boost-back landing only - routed explicitly (to AtmoReentry), never reached by mode+1.
+            BoostBack,
             Pause,
             QuickWarp,
             RotationWarp,
@@ -132,6 +154,22 @@ namespace K2D2.Landing
                     current_executor.setController(mid_course_correction);
                     mid_course_correction.Start();
                     break;
+                case Mode.AtmoDeorbit:
+                    current_executor.setController(atmo_deorbit);
+                    atmo_deorbit.Start();
+                    break;
+                case Mode.AtmoCorrection:
+                    current_executor.setController(atmo_correction);
+                    atmo_correction.Start();
+                    break;
+                case Mode.AtmoReentry:
+                    current_executor.setController(atmo_guidance);
+                    atmo_guidance.Start();
+                    break;
+                case Mode.BoostBack:
+                    current_executor.setController(boost_back);
+                    boost_back.Start();
+                    break;
                 case Mode.Pause:
                     end_pause_Ut = GeneralTools.Current_UT + settings.pause_time;
                     current_vessel.SetThrottle(0);
@@ -175,6 +213,11 @@ namespace K2D2.Landing
                         current_executor.setController(guidance);
                         guidance.Ignite();
                     }
+                    else if (atmo_precision)
+                    {
+                        current_executor.setController(atmo_landing_burn);
+                        atmo_landing_burn.Start();
+                    }
                     else
                         current_executor.setController(brake);
                     break;
@@ -196,6 +239,19 @@ namespace K2D2.Landing
             }
 
             var next = this.mode + 1;
+            // Atmospheric precision landing swaps the vacuum burns for its own after Circularize;
+            // the vacuum sequence goes straight from MidCourseCorrection to Pause. Its entry
+            // guidance ends when the landing burn is due (planned with drag, see AtmoBurnPlanner),
+            // so it goes straight to braking rather than through the regular landing's warps and
+            // its airless burn timing.
+            if (atmo_precision && mode == Mode.Circularize)
+                next = Mode.AtmoDeorbit;
+            else if (atmo_precision && mode == Mode.AtmoReentry)
+                next = Mode.Brake;
+            else if (mode == Mode.BoostBack)
+                next = Mode.AtmoReentry;
+            else if (!atmo_precision && next == Mode.AtmoDeorbit)
+                next = Mode.Pause;
             setMode(next);
         }
 
@@ -212,6 +268,15 @@ namespace K2D2.Landing
                     // stop
                     if (current_vessel != null)
                         current_vessel.SetThrottle(0);
+                    if (mode == Mode.AtmoReentry || mode == Mode.AtmoCorrection || mode == Mode.AtmoDeorbit || mode == Mode.BoostBack
+                        || (mode == Mode.Brake && atmo_precision))
+                    {
+                        atmo_guidance.Release();
+                        atmo_correction.Release();
+                        atmo_deorbit.Release();
+                        boost_back.Release();
+                        atmo_landing_burn.Release();
+                    }
 
                     setMode(Mode.Off);
                     _active = false;
@@ -228,18 +293,34 @@ namespace K2D2.Landing
 
                     _active = true;
 
-                    // Precision landing starts with Circularize (a no-op if the orbit's already
-                    // close enough to circular, or a refusal if it's too high - see Circularize.cs),
-                    // then plans and flies a real, visible deorbit/phasing node, before falling
-                    // into the normal Pause->QuickWarp->...->TouchDown sequence.
-                    //
-                    // !LandingProfile.IsAtmospheric is defense in depth, not the main gate - the
-                    // Atmo profile's precision_landing setting has no UI control (see
-                    // LandingUI.cs's atmo panel), so there's normally no way for it to read true
-                    // here at all. This just guarantees Circularize/DeorbitBurn (which assume a
-                    // vacuum trajectory) can never run on an atmospheric body even if that changes.
-                    if (settings.precision_landing.V && !LandingProfile.IsAtmospheric)
+                    // Vacuum precision landing starts with Circularize (a no-op if the orbit's
+                    // already close enough to circular, or a refusal if it's too high - see
+                    // Circularize.cs), then plans and flies a real, visible deorbit node, before
+                    // falling into the normal Pause->QuickWarp->...->TouchDown sequence.
+                    // Atmospheric precision landing does the same with its own burns and entry
+                    // guidance, as long as Redux's prediction is set up the way it needs.
+                    if (vacuum_precision)
                         setMode(Mode.Circularize);
+                    else if (atmo_precision)
+                    {
+                        string problem = ReduxImpactPrediction.AtmoSettingsProblem();
+                        if (problem != null)
+                        {
+                            stop_reason = problem;
+                            isRunning = false;
+                            return;
+                        }
+                        // Already coming down (a recovered stage just after separation, say): a
+                        // boost-back burn instead of circularizing and deorbiting.
+                        bool from_orbit = !IsSuborbital();
+                        if (from_orbit && !atmo_landing_from_orbit)
+                        {
+                            stop_reason = from_orbit_unavailable;
+                            isRunning = false;
+                            return;
+                        }
+                        setMode(from_orbit ? Mode.Circularize : Mode.BoostBack);
+                    }
                     else
                         setMode(Mode.QuickWarp);
                 }
@@ -270,6 +351,7 @@ namespace K2D2.Landing
         // Precision landing on an airless body - the guided powered descent. The atmospheric
         // profile gets its own precision landing later; until then it always lands the regular way.
         internal bool vacuum_precision => settings.precision_landing.V && !LandingProfile.IsAtmospheric;
+        internal bool atmo_precision => settings.precision_landing.V && LandingProfile.IsAtmospheric;
 
         // Unpowered phases, where nothing but gravity changes the trajectory.
         bool coasting => mode == Mode.Pause || mode == Mode.QuickWarp
@@ -567,6 +649,90 @@ namespace K2D2.Landing
         // Great-circle distance between two lat/lon points on a sphere of the given radius. Used
         // for target_error_m instead of a 3D position diff. internal (not private) so
         // LandingTargeting.cs's deorbit search can score candidates on the same distance metric.
+        // Logs Redux's stage recovery state whenever it changes, and while a recovered stage is
+        // being flown, where that stage is and what it has left - the numbers the boost-back
+        // landing has to work with. Every second for the first 20 s of flying the stage, then
+        // every 10 s.
+        string last_replay_phase;
+        double replay_flying_since_UT = double.NaN, last_replay_log_UT = double.NaN;
+
+        void LogStageRecovery()
+        {
+            var replay = ReduxStageRecovery.Get();
+            double now = GeneralTools.Current_UT;
+            bool changed = replay.phase != last_replay_phase;
+            if (changed)
+            {
+                logger.LogInfo($"[StageRecovery] Redux stage recovery: {last_replay_phase ?? "-"} -> {replay.phase}" +
+                    (replay.vessel_name != null ? $" ({replay.vessel_name}, captured at UT {replay.captured_UT:n1})" : ""));
+                last_replay_phase = replay.phase;
+                replay_flying_since_UT = replay.flying_stage ? now : double.NaN;
+                last_replay_log_UT = double.NaN;
+            }
+            if (!replay.flying_stage)
+                return;
+
+            double flying_for = now - replay_flying_since_UT;
+            double interval = flying_for < 20 ? 1 : 10;
+            if (!double.IsNaN(last_replay_log_UT) && now - last_replay_log_UT < interval)
+                return;
+            last_replay_log_UT = now;
+
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null)
+            {
+                logger.LogInfo("[StageRecovery] flying a recovered stage, but K2D2 has no current vessel");
+                return;
+            }
+            var body = vessel.mainBody;
+            var model = new ImpactModel(body, now);
+            model.StateAt(vessel.Orbit, now, out Vector3d r, out Vector3d v);
+            Vector3d air = model.AirVelocity(r, v);
+            Vector3d up = r.normalized;
+            double v_vertical = Vector3d.Dot(air, up);
+            double v_horizontal = (air - up * v_vertical).magnitude;
+            double path_angle = Math.Atan2(v_vertical, v_horizontal) * 180 / Math.PI;
+            LandingTargeting.OrbitalElementsFromStateVectors(r, v, body.gravParameter, out _, out double apo, out double peri);
+            double target_m = HaversineDistanceMeters(vessel.Latitude, vessel.Longitude,
+                settings.target_latitude.V, settings.target_longitude.V, body.radius);
+            var redux = ReduxImpactPrediction.GetFlown(vessel);
+            string impact = redux.usable
+                ? $"Redux lands {HaversineDistanceMeters(redux.latitude, redux.longitude, settings.target_latitude.V, settings.target_longitude.V, body.radius):n0}m from the target in {redux.impact_UT - now:n0}s"
+                : $"Redux {redux.state}";
+            double g = body.gravParameter / (r.magnitude * r.magnitude);
+            logger.LogInfo($"[StageRecovery] {vessel.Name} T+{flying_for:n0}s on {body.Name}: {vessel.Situation}, alt {vessel.AltitudeFromSeaLevel:n0}m " +
+                $"({vessel.AltitudeFromTerrain:n0}m above terrain) | air speed {air.magnitude:n0}m/s: {v_horizontal:n0} horizontal, {v_vertical:n0} vertical, " +
+                $"path {path_angle:n1}° | Ap {(apo - body.radius) / 1000:n1}km, Pe {(peri - body.radius) / 1000:n1}km | " +
+                $"at ({vessel.Latitude:n4}, {vessel.Longitude:n4}), target {target_m / 1000:n1}km away | {impact} | " +
+                $"dV {vessel.VesselDeltaV?.TotalDeltaVVac ?? double.NaN:n0}m/s vac / {vessel.VesselDeltaV?.TotalDeltaVActual ?? double.NaN:n0}m/s actual, " +
+                $"thrust/weight {burn_dV.full_dv / g:n2}, mass {vessel.totalMass:n1}t");
+        }
+
+        // Atmospheric precision landing from orbit (deorbit, entry correction, then the same entry
+        // guidance and landing burn as a boost-back) is still being tested, so players only get
+        // it for stages already coming down. Set to true to turn it back on.
+        internal const bool atmo_landing_from_orbit = false;
+        internal const string from_orbit_unavailable =
+            "Atmospheric precision landing from orbit isn't available yet - for now it lands stages that are already " +
+            "coming back down (boost-back landings).";
+
+        internal bool IsSuborbital()
+        {
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null)
+                return false;
+            var model = new ImpactModel(vessel.mainBody, GeneralTools.Current_UT);
+            model.StateAt(vessel.Orbit, model.epoch_UT, out Vector3d r, out Vector3d v);
+            return ImpactModel.PeriapsisRadius(r, v, vessel.mainBody.gravParameter) < vessel.mainBody.radius;
+        }
+
+        internal double DistanceToTarget()
+        {
+            var vessel = current_vessel.VesselComponent;
+            return HaversineDistanceMeters(vessel.Latitude, vessel.Longitude,
+                settings.target_latitude.V, settings.target_longitude.V, vessel.mainBody.radius);
+        }
+
         internal static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
         {
             double toRad = Math.PI / 180.0;
@@ -580,6 +746,7 @@ namespace K2D2.Landing
         Vector SurfaceVelocity;
         public override void Update()
         {
+            LogStageRecovery();
             if (!page.isVisible && !isRunning) return;
             if (current_vessel == null || current_vessel.VesselVehicle == null)
                 return;
@@ -618,7 +785,7 @@ namespace K2D2.Landing
                     // The guided descent deliberately flattens its path toward the target, which
                     // can make an unpowered prediction stop seeing an impact - it hands over to
                     // TouchDown itself at the gate.
-                    bool guided_burn = vacuum_precision && mode == Mode.Brake;
+                    bool guided_burn = (vacuum_precision || atmo_precision) && mode == Mode.Brake;
                     if (altitude < settings.start_touchdown_altitude.V && !guided_burn)
                         setMode(Mode.TouchDown);
                 }
@@ -632,10 +799,16 @@ namespace K2D2.Landing
             if (!isRunning)
                 return;
 
-            // landing detection....
-            if (altitude < 5 && current_falling_speed < 1)
+            // Landing detection. The game's own landed flag as well: the altitude here is the
+            // vessel's centre less its bounding radius, which on a tall booster standing on its
+            // legs still read about 100 m - so the run never ended, and kept steering and throttling
+            // on the ground until the booster tipped.
+            if ((altitude < 5 && current_falling_speed < 1) || (current_vessel.Landed() && SurfaceVelocity.vector.magnitude < 3)
+                || (mode == Mode.Brake && atmo_precision && atmo_landing_burn.on_ground))
             {
                 //current_vessel.SetThrottle(0);
+                if (settings.precision_landing.V)
+                    logger.LogInfo($"[Landing] landed {DistanceToTarget():n0}m from the target");
                 isRunning = false;
                 return;
             }
@@ -665,9 +838,9 @@ namespace K2D2.Landing
                     return;
                 }
             }
-            else if (mode == Mode.Brake && !vacuum_precision)
+            else if (mode == Mode.Brake && !vacuum_precision && !atmo_precision)
             {
-                // The guided descent runs its own Brake phase and finishes itself at the gate.
+                // The guided descents run their own Brake phase (see setMode).
                 brake.gravity_compensation = true;
                 brake.max_speed = 0;
                 if (current_falling_speed < settings.brake_speed)
@@ -700,6 +873,8 @@ namespace K2D2.Landing
             {
                 string abort_reason = mode == Mode.Circularize ? circularize.abort_reason
                     : mode == Mode.DeorbitBurn ? deorbit_burn.abort_reason
+                    : mode == Mode.AtmoDeorbit ? atmo_deorbit.abort_reason
+                    : mode == Mode.BoostBack ? boost_back.abort_reason
                     : null;
                 if (abort_reason != null)
                 {

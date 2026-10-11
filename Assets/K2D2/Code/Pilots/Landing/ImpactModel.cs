@@ -50,6 +50,9 @@ namespace K2D2.Landing
             v = frame.ToLocalVector(new Vector(inertial_frame, new Vector3d(u.x, u.z, u.y)));
         }
 
+        // Velocity through the air at r (the atmosphere turns with the body), in this model's axes.
+        public Vector3d AirVelocity(Vector3d r, Vector3d v) => v - Vector3d.Cross(spin_axis * spin_rate, r);
+
         // A game-provided direction (any frame) in this model's axes.
         public Vector3d ToModelAxes(Vector direction) => frame.ToLocalVector(direction);
 
@@ -129,6 +132,30 @@ namespace K2D2.Landing
                 return true;
             }
             return false;
+        }
+
+        // The state where the coast from (r, v) at UT comes down into the atmosphere - or (r, v)
+        // itself if it's already inside. False if the coast never gets there.
+        public bool EntryState(Vector3d r, Vector3d v, double UT, out Vector3d entry_r, out Vector3d entry_v)
+        {
+            entry_r = r;
+            entry_v = v;
+            double entry_radius = body.radius + body.atmosphereDepth;
+            if (r.magnitude <= entry_radius)
+                return true;
+            return DescentState(r, v, UT, entry_radius, out entry_r, out entry_v);
+        }
+
+        // The state where the coast from (r, v) at UT next comes down through `radius` - for a
+        // vessel climbing inside the atmosphere, the height it's at. False if it never does.
+        public bool DescentState(Vector3d r, Vector3d v, double UT, double radius, out Vector3d entry_r, out Vector3d entry_v)
+        {
+            entry_r = r;
+            entry_v = v;
+            if (!Impact(r, v, UT, radius, out double entry_UT, out _))
+                return false;
+            KeplerPropagator.Propagate(r, v, mu, entry_UT - UT, out entry_r, out entry_v);
+            return true;
         }
 
         // Lowest height above the real terrain along the coast from (r, v) at UT until end_UT,

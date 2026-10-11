@@ -20,17 +20,22 @@
             </ui:VisualElement>
 
             <!-- Landing mode - Atmo/Vacuum profile split (see LandingSettings.cs's class comment
-                 for the full reasoning): precision landing only exists on the Vacuum profile right
-                 now (LandingPilot.cs's atmosphere guard refuses to even start it on an atmospheric
-                 body), so instead of one shared group with a gate that reverts the toggle, there
-                 are now two full sibling groups here - only one shown at a time
+                 for the full reasoning): two full sibling groups, only one shown at a time
                  (LandingUI.UpdateProfilePanels, based on LandingProfile.IsAtmospheric, same pattern
                  as advanced_foldout's own atmo/vac panel switch below). -->
 
-            <!-- Atmo panel: no controls at all yet - just a short explanation of why, so it's
-                 obvious this isn't a bug/missing feature rather than something silently broken. -->
+            <!-- Atmo panel. Precision landing here deorbits toward the target, corrects the entry
+                 with Redux's prediction, then steers the reentry with lift (AtmoDeorbitBurn,
+                 AtmoEntryCorrection, AtmoEntryGuidance). The gate label explains which Redux
+                 settings it needs (LandingUI.UpdateAtmoGate). -->
             <ui:VisualElement name="landing_mode_group_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px; display: none;">
-                <ui:Label tabindex="-1" text="Precision landing isn't available on atmospheric bodies yet - Brake/Touch Down still work as usual." display-tooltip-when-elided="true" name="atmo_precision_note" style="color: rgb(180, 180, 180); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+                <K2UI.K2Toggle label="Precision Landing" name="precision_landing_atmo" tooltip="Land a stage that's coming back down (a boost-back landing) on a chosen site: boost-back burn, steering with the vessel's lift on the way down, then a steered landing burn (atmospheric bodies). Needs Redux's impact prediction set to assume the current attitude (or follow SAS)." />
+                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_gate_atmo" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+                <ui:VisualElement name="target_settings_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
+                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop_atmo" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
+                    <ui:FloatField label="Target Latitude" value="0" name="target_latitude_atmo" />
+                    <ui:FloatField label="Target Longitude" value="0" name="target_longitude_atmo" />
+                </ui:VisualElement>
             </ui:VisualElement>
 
             <!-- Vacuum panel - promoted up from a buried ADVANCED setting to an obvious choice
@@ -114,9 +119,17 @@
                  LandingSettings.cs's own comment for why this ruled out one shared panel with a
                  dynamically-swapped settings object). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
-                <!-- ATMO PANEL - reduced: just Warp/Brake/Touch Down's general-purpose tunables.
-                     No PRECISION LANDING section at all - see landing_mode_group_atmo above. -->
+                <!-- ATMO PANEL - Warp/Brake/Touch Down's general-purpose tunables, plus precision
+                     landing's settings while it's on. -->
                 <ui:VisualElement name="atmo_settings_panel" style="display: none;">
+                    <ui:VisualElement name="PrecisionLanding_atmo">
+                        <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_atmo" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit and entry correction burns may each add to move the ground track toward the target. 0 disables it." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="30" name="entry_angle_of_attack_atmo" label="Entry Angle of Attack °" tooltip="How far the vessel is held off retrograde during reentry to make lift for steering. More gives more steering, but exposes more of the vessel to reentry heat." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="60" name="entry_flight_path_angle_atmo" label="Entry Steepness °" tooltip="How steeply the deorbit burn brings the vessel into the atmosphere (degrees below the horizon). Steeper costs more delta-v - a lot more from a low orbit - but means less time in the air: less heat soaked up and less drift. 0 keeps the gentlest entry. If the vessel can't afford it, the deorbit flattens it to what it can." />
+                        <ui:Label text="Boost-back Flip" tooltip="How a boost-back landing turns the stage round before its burn. Powered: the engines light at once and their gimbals help it turn - quicker for big boosters without much reaction wheel or RCS. Unpowered: turn first, then burn - wastes no fuel turning if the vessel turns quickly on its own." />
+                        <K2UI.InlineEnum name="boost_back_flip_atmo" labels="Powered;Unpowered" />
+                    </ui:VisualElement>
                     <ui:VisualElement name="Warp_atmo">
                         <ui:Label text="// WARP" class="k2-section-header" />
                         <K2UI.K2Toggle label="Auto Warp" name="auto_warp_atmo" tooltip="Warp time before burn" />

@@ -27,10 +27,12 @@ namespace K2D2.Landing
 
         public Button touch_down;
 
-        public DropdownField waypoint_drop;
-        // Keyed by the exact string shown in waypoint_drop, since DropdownField only ever gives us
-        // the selected label back in its ChangeEvent - not an index or the underlying record.
-        Dictionary<string, ReduxWaypoint> waypoint_choices = new();
+        WaypointPicker waypoints_vac;
+        WaypointPicker waypoints_atmo;
+
+        // Shown on the Atmo panel when Redux's prediction isn't set up the way atmospheric
+        // precision landing needs (see UpdateAtmoGate).
+        Label atmo_gate_label;
 
         // Precision Landing orbit gate (see UpdateOrbitGate below) - reuses Circularize's own
         // 100km ceiling (Circularize.max_starting_altitude_m) rather than a separate number, so
@@ -56,24 +58,11 @@ namespace K2D2.Landing
             touch_down = panel.Q<Button>("touch_down");
             status_bar = new FullStatus(panel);
 
-            // Waypoint picker - lists whatever the player's already placed on the current body via
-            // Redux's own Waypoints window (K2D2.Landing.ReduxWaypoints, reflection-based since
-            // that system is internal to Assembly-CSharp). Rebuilt every UI tick (see
-            // onUpdateUI() below) rather than via a click listener, since DropdownField opens its
-            // own native list on pointer-down instead of dispatching a bubbling ClickEvent - a
-            // per-tick rebuild also keeps the list current if a waypoint's added while this tab is
-            // open.
-            //
-            // Vacuum-only (waypoint_drop_vac - see landing_mode_group_vac in Landing.uxml), so this
-            // writes straight to settings_vac rather than through the profile-dependent
-            // pilot.settings property - the dropdown itself only ever exists on the Vacuum panel.
-            waypoint_drop = panel.Q<DropdownField>("waypoint_drop_vac");
-            buildWaypointList();
-            waypoint_drop.RegisterCallback<ChangeEvent<string>>(evt =>
-            {
-                if (waypoint_choices.TryGetValue(evt.newValue, out var waypoint))
-                    SelectWaypoint(waypoint);
-            });
+            // Waypoint pickers - one per profile panel, each writing its own profile's target
+            // (see WaypointPicker).
+            waypoints_vac = new WaypointPicker(panel.Q<DropdownField>("waypoint_drop_vac"), pilot.settings_vac);
+            waypoints_atmo = new WaypointPicker(panel.Q<DropdownField>("waypoint_drop_atmo"), pilot.settings_atmo);
+            atmo_gate_label = panel.Q<Label>("precision_landing_gate_atmo");
 
             pilot.is_running_event += is_running => run_button.Value = is_running;
             // Same "give him a little life" touch as Node/Lift: K2's 3 grille lines cascade
@@ -180,74 +169,36 @@ namespace K2D2.Landing
             vac_settings_panel.Show(!atmo);
         }
 
-        // The waypoint the target was last taken from, by Redux's waypoint id - labels can't
-        // identify it, since they include the coordinates and change if the waypoint is moved -
-        // and where it was at that moment, to notice it moving.
-        string selected_waypoint_id;
-        double selected_latitude, selected_longitude;
-
-        void SelectWaypoint(ReduxWaypoint waypoint)
-        {
-            selected_waypoint_id = waypoint.id;
-            selected_latitude = waypoint.latitude;
-            selected_longitude = waypoint.longitude;
-            pilot.settings_vac.target_latitude.V = (float)waypoint.latitude;
-            pilot.settings_vac.target_longitude.V = (float)waypoint.longitude;
-        }
-
-        static string WaypointLabel(ReduxWaypoint waypoint) =>
-            $"{waypoint.name} ({waypoint.latitude:n2}, {waypoint.longitude:n2})";
-
         void buildWaypointList()
         {
-            waypoint_choices.Clear();
-
             var body = pilot.current_vessel?.currentBody();
-            var choices = new List<string>();
-            ReduxWaypoint? selected = null;
+            waypoints_vac.Rebuild(body);
+            waypoints_atmo.Rebuild(body);
+        }
 
-            if (body != null && ReduxWaypoints.available)
+        // Atmospheric precision landing can't work unless Redux's prediction assumes the current
+        // attitude and runs in both views (ReduxImpactPrediction.AtmoSettingsProblem). Says what to
+        // change, and keeps the toggle off until it's done - checked every tick, so changing the
+        // setting in Redux's menu takes effect without reopening anything.
+        void UpdateAtmoGate()
+        {
+            string problem = ReduxImpactPrediction.AtmoSettingsProblem();
+            if (problem == null)
             {
-                foreach (var waypoint in ReduxWaypoints.GetWaypointsForBody(body.Name))
-                {
-                    string label = WaypointLabel(waypoint);
-                    waypoint_choices[label] = waypoint;
-                    choices.Add(label);
-                    if (waypoint.id == selected_waypoint_id)
-                        selected = waypoint;
-                }
+                // Not a settings problem, so the toggle stays on: just says up front why Start will
+                // refuse while the vessel is still in orbit.
+                bool in_orbit = !LandingPilot.atmo_landing_from_orbit && !pilot.isRunning
+                    && pilot.settings_atmo.precision_landing.V && !pilot.IsSuborbital();
+                atmo_gate_label.Show(in_orbit);
+                if (in_orbit)
+                    atmo_gate_label.text = LandingPilot.from_orbit_unavailable;
+                return;
             }
+            atmo_gate_label.Show(true);
 
-            if (choices.Count == 0)
-                choices.Add(body == null ? "No body" : "No waypoints on " + body.Name);
-
-            waypoint_drop.choices = choices;
-
-            // This runs every UI tick (see onUpdateUI()), so it also keeps the target in step with
-            // the waypoint list: the selected waypoint moved, a first waypoint appeared on this body,
-            // or the selection belongs to another body. The target is written here directly rather
-            // than through the dropdown's ChangeEvent - that event isn't sent while the tab isn't
-            // shown, which used to leave the dropdown showing a new waypoint while the target
-            // still held the previous one.
-            if (selected is ReduxWaypoint still_there)
-            {
-                // Only when the waypoint itself moved, so a lat/lon typed in by hand stays.
-                if (still_there.latitude != selected_latitude || still_there.longitude != selected_longitude)
-                    SelectWaypoint(still_there);
-                waypoint_drop.SetValueWithoutNotify(WaypointLabel(still_there));
-            }
-            else if (waypoint_choices.Count > 0)
-            {
-                // Nothing selected on this body yet - take its first waypoint.
-                SelectWaypoint(waypoint_choices[choices[0]]);
-                waypoint_drop.SetValueWithoutNotify(choices[0]);
-            }
-            else
-            {
-                // No waypoints on this body. The target keeps whatever was typed in (or picked on
-                // another body), but the dropdown stops showing a waypoint that isn't here.
-                waypoint_drop.SetValueWithoutNotify(choices[0]);
-            }
+            atmo_gate_label.text = problem;
+            if (!pilot.isRunning && pilot.settings_atmo.precision_landing.V)
+                pilot.settings_atmo.precision_landing.V = false;
         }
 
         void AddInfoRow(string label, string value)
@@ -339,8 +290,8 @@ namespace K2D2.Landing
                 AddInfoRow("Prediction", pilot.using_redux_prediction ? "Redux" : "K2D2");
                 // Where the vessel would land with the engine off - meaningless once the guided
                 // descent is burning, which shows its own distance to the target instead.
-                bool guided_burn = pilot.vacuum_precision && pilot.mode == LandingPilot.Mode.Brake;
-                if (pilot.settings_vac.precision_landing.V && !guided_burn)
+                bool guided_burn = (pilot.vacuum_precision || pilot.atmo_precision) && pilot.mode == LandingPilot.Mode.Brake;
+                if (pilot.settings.precision_landing.V && !guided_burn)
                     AddInfoRow("Target Error", StrTool.DistanceToString((float)pilot.target_error_m));
             }
 
@@ -367,6 +318,7 @@ namespace K2D2.Landing
             updateContext();
             buildWaypointList();
             UpdateOrbitGate();
+            UpdateAtmoGate();
             UpdateProfilePanels();
 
             status_bar.Reset();
@@ -389,6 +341,18 @@ namespace K2D2.Landing
                 {
                     default:
                     case LandingPilot.Mode.Off: break;
+                    case LandingPilot.Mode.AtmoDeorbit:
+                        status_bar.Status("Deorbit");
+                        break;
+                    case LandingPilot.Mode.AtmoCorrection:
+                        status_bar.Status("Entry correction");
+                        break;
+                    case LandingPilot.Mode.AtmoReentry:
+                        status_bar.Warning("Entry guidance");
+                        break;
+                    case LandingPilot.Mode.BoostBack:
+                        status_bar.Status("Boost-back");
+                        break;
                     case LandingPilot.Mode.Pause:
                         status_bar.Status("Pause");
                         break;
@@ -402,7 +366,7 @@ namespace K2D2.Landing
                         status_bar.Status($"Waiting : {StrTool.DurationToString(pilot.startBurn_UT - GeneralTools.Game.UniverseModel.UniverseTime)}");
                         break;
                     case LandingPilot.Mode.Brake:
-                        status_bar.Warning(pilot.vacuum_precision ? "Powered Descent" : "Brake !");
+                        status_bar.Warning(pilot.vacuum_precision ? "Powered Descent" : pilot.atmo_precision ? "Landing Burn" : "Brake !");
                         break;
                     case LandingPilot.Mode.TouchDown:
                         status_bar.Warning($"Touch Down...");
