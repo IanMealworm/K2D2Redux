@@ -163,6 +163,12 @@ namespace K2D2.Landing
 
             // Redux's ImpactStatus: 0 Calculating, 1 TerrainQuery, 2 Impact, 3 NoImpact, 4 LimitReached, 5 Invalid.
             object result = predictor_result.GetValue(predictor);
+            // No result yet (seen while a scene loads).
+            if (result == null)
+            {
+                impact.state = ReduxImpactState.Calculating;
+                return impact;
+            }
             int redux_status = Convert.ToInt32(status_field.GetValue(result));
             if (redux_status <= 1)
             {

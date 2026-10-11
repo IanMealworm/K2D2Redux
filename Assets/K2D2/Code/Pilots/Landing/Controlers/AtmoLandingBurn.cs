@@ -75,6 +75,9 @@ namespace K2D2.Landing
         // The engines never go below this much thrust (in g) in the final descent: their gimbals
         // are what keeps a long booster upright.
         const double min_final_thrust_g = 0.3;
+        // On the ground (see CheckStanding): moving slower than this for this long, with the
+        // throttle asking for no more than this much thrust (in g).
+        const double standing_speed_mps = 1.5, standing_s = 1.5, standing_thrust_g = 0.5;
         // How much of the expected sideways acceleration the vessel gets: measured over
         // response_window_s, blended in at response_blend; starts from what the test booster got.
         const double response_window_s = 1, response_blend = 0.3;
@@ -93,6 +96,10 @@ namespace K2D2.Landing
 
         enum Step { Braking, Final }
         Step step;
+
+        // Set once the vessel is standing on the ground; LandingPilot then ends the landing.
+        public bool on_ground { get; private set; }
+        double still_since_UT;
 
         double last_solve_UT, last_log_UT, start_UT;
         double wanted_throttle;
@@ -125,6 +132,8 @@ namespace K2D2.Landing
             throttle = 0;
             thrust_direction = Vector3d.zero;
             response_UT = achieved_sideways = double.NaN;
+            on_ground = false;
+            still_since_UT = double.NaN;
             efficiency = first_efficiency;
         }
 
@@ -169,6 +178,9 @@ namespace K2D2.Landing
                     SolveFinal(vessel, position, up, v_vertical, horizontal, height, max_accel);
             }
 
+            if (step == Step.Final)
+                CheckStanding(vessel, air_velocity.magnitude, height, max_accel, now);
+
             hold.HoldDirection(thrust_direction);
             double max_angle = Math.Max(full_throttle_within_deg + 1, landing.brake.touch_down_max_angle.V);
             double pointing = Math.Min(1, Math.Max(0, (max_angle - hold.attitude_error_deg) / (max_angle - full_throttle_within_deg)));
@@ -189,6 +201,30 @@ namespace K2D2.Landing
                           $" | sideways accel wanted {wanted_sideways.magnitude:n1}m/s², expected {expected_sideways.magnitude:n1}, " +
                           $"got {achieved_sideways:n1} ({efficiency:P0} on average)"
                         : $" | target {target_distance:n0}m away"));
+            }
+        }
+
+        // Standing on the ground while the height reading still says tens of metres up: barely
+        // moving with the throttle down at its floor, which in the air would be falling. The first
+        // landing from orbit came down on ground the height reading put 70 m below it (the game's
+        // ground height there was wrong, so the sea level one was used); the game didn't flag it as
+        // landed either, and the final descent kept steering on the ground until it tipped over.
+        void CheckStanding(VesselComponent vessel, double air_speed, double height, double max_accel, double now)
+        {
+            double g = vessel.graviticAcceleration.magnitude;
+            bool still = air_speed < standing_speed_mps && wanted_throttle * max_accel <= standing_thrust_g * g;
+            if (!still)
+            {
+                still_since_UT = double.NaN;
+                return;
+            }
+            if (double.IsNaN(still_since_UT))
+                still_since_UT = now;
+            if (!on_ground && now - still_since_UT >= standing_s)
+            {
+                on_ground = true;
+                logger.LogInfo($"[LandingBurn] standing still with the engines throttled down - on the ground " +
+                    $"(the height reading said {height:n0}m), {landing.DistanceToTarget():n0}m from the target");
             }
         }
 

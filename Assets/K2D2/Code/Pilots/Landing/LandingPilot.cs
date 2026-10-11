@@ -312,7 +312,14 @@ namespace K2D2.Landing
                         }
                         // Already coming down (a recovered stage just after separation, say): a
                         // boost-back burn instead of circularizing and deorbiting.
-                        setMode(IsSuborbital() ? Mode.BoostBack : Mode.Circularize);
+                        bool from_orbit = !IsSuborbital();
+                        if (from_orbit && !atmo_landing_from_orbit)
+                        {
+                            stop_reason = from_orbit_unavailable;
+                            isRunning = false;
+                            return;
+                        }
+                        setMode(from_orbit ? Mode.Circularize : Mode.BoostBack);
                     }
                     else
                         setMode(Mode.QuickWarp);
@@ -701,7 +708,15 @@ namespace K2D2.Landing
                 $"thrust/weight {burn_dV.full_dv / g:n2}, mass {vessel.totalMass:n1}t");
         }
 
-        bool IsSuborbital()
+        // Atmospheric precision landing from orbit (deorbit, entry correction, then the same entry
+        // guidance and landing burn as a boost-back) is still being tested, so players only get
+        // it for stages already coming down. Set to true to turn it back on.
+        internal const bool atmo_landing_from_orbit = false;
+        internal const string from_orbit_unavailable =
+            "Atmospheric precision landing from orbit isn't available yet - for now it lands stages that are already " +
+            "coming back down (boost-back landings).";
+
+        internal bool IsSuborbital()
         {
             var vessel = current_vessel?.VesselComponent;
             if (vessel == null)
@@ -788,7 +803,8 @@ namespace K2D2.Landing
             // vessel's centre less its bounding radius, which on a tall booster standing on its
             // legs still read about 100 m - so the run never ended, and kept steering and throttling
             // on the ground until the booster tipped.
-            if ((altitude < 5 && current_falling_speed < 1) || (current_vessel.Landed() && SurfaceVelocity.vector.magnitude < 3))
+            if ((altitude < 5 && current_falling_speed < 1) || (current_vessel.Landed() && SurfaceVelocity.vector.magnitude < 3)
+                || (mode == Mode.Brake && atmo_precision && atmo_landing_burn.on_ground))
             {
                 //current_vessel.SetThrottle(0);
                 if (settings.precision_landing.V)

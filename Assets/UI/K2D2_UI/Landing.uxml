@@ -29,7 +29,7 @@
                  AtmoEntryCorrection, AtmoEntryGuidance). The gate label explains which Redux
                  settings it needs (LandingUI.UpdateAtmoGate). -->
             <ui:VisualElement name="landing_mode_group_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px; display: none;">
-                <K2UI.K2Toggle label="Precision Landing" name="precision_landing_atmo" tooltip="Deorbit toward a chosen landing site and steer the reentry with the vessel's lift to land on it (atmospheric bodies). Needs Redux's impact prediction set to assume the current attitude (or follow SAS)." />
+                <K2UI.K2Toggle label="Precision Landing" name="precision_landing_atmo" tooltip="Land a stage that's coming back down (a boost-back landing) on a chosen site: boost-back burn, steering with the vessel's lift on the way down, then a steered landing burn (atmospheric bodies). Needs Redux's impact prediction set to assume the current attitude (or follow SAS)." />
                 <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_gate_atmo" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
                 <ui:VisualElement name="target_settings_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
                     <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop_atmo" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />

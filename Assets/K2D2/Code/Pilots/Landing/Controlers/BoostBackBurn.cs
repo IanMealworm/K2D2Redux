@@ -293,14 +293,16 @@ namespace K2D2.Landing
 
         // The size along `direction`, plus a sideways part, that lands on the site (Newton's
         // method on the two ground offsets).
-        static bool Size(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT,
-            Vector3d direction, Vector3d side, double start_size, out Vector3d dv)
+        // (Also used by AimedBurn, aiming at a point offset by (aim_a, aim_b) from the site.)
+        internal static bool Size(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT,
+            Vector3d direction, Vector3d side, double start_size, out Vector3d dv,
+            double start_side = 0, double aim_a = 0, double aim_b = 0)
         {
-            double m = start_size, c = 0;
+            double m = start_size, c = start_side;
             dv = Vector3d.zero;
             for (int i = 0; i < solve_iterations; i++)
             {
-                if (!Miss(model, site, r, v, UT, direction * m + side * c, out double a, out double b))
+                if (!Miss(model, site, r, v, UT, direction * m + side * c, out double a, out double b, aim_a, aim_b))
                     return false;
                 if (a * a + b * b < solved_m * solved_m)
                 {
@@ -308,8 +310,8 @@ namespace K2D2.Landing
                     return true;
                 }
                 const double dm = 5, dc = 2;
-                if (!Miss(model, site, r, v, UT, direction * (m + dm) + side * c, out double am, out double bm)
-                    || !Miss(model, site, r, v, UT, direction * m + side * (c + dc), out double ac, out double bc))
+                if (!Miss(model, site, r, v, UT, direction * (m + dm) + side * c, out double am, out double bm, aim_a, aim_b)
+                    || !Miss(model, site, r, v, UT, direction * m + side * (c + dc), out double ac, out double bc, aim_a, aim_b))
                     return false;
                 double j11 = (am - a) / dm, j21 = (bm - b) / dm, j12 = (ac - a) / dc, j22 = (bc - b) / dc;
                 double det = j11 * j22 - j12 * j21;
@@ -325,11 +327,11 @@ namespace K2D2.Landing
 
         // Near the end: the smallest burn that cancels the miss, from how each direction of burn
         // moves the landing point (a 2x3 linear solve, least-norm).
-        static bool SolveDirect(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT,
-            out Vector3d dv)
+        internal static bool SolveDirect(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT,
+            out Vector3d dv, double aim_a = 0, double aim_b = 0)
         {
             dv = Vector3d.zero;
-            if (!Miss(model, site, r, v, UT, Vector3d.zero, out double a, out double b))
+            if (!Miss(model, site, r, v, UT, Vector3d.zero, out double a, out double b, aim_a, aim_b))
                 return false;
             const double d = 1;
             var axes = new[] { new Vector3d(1, 0, 0), new Vector3d(0, 1, 0), new Vector3d(0, 0, 1) };
@@ -337,7 +339,7 @@ namespace K2D2.Landing
             var jb = new double[3];
             for (int i = 0; i < 3; i++)
             {
-                if (!Miss(model, site, r, v, UT, axes[i] * d, out double ai, out double bi))
+                if (!Miss(model, site, r, v, UT, axes[i] * d, out double ai, out double bi, aim_a, aim_b))
                     return false;
                 ja[i] = (ai - a) / d;
                 jb[i] = (bi - b) / d;
@@ -356,14 +358,16 @@ namespace K2D2.Landing
         }
 
         // Where the airless coast after an instant burn `dv` (ImpactModel's axes) comes down,
-        // relative to the site.
-        static bool Miss(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT, Vector3d dv,
-            out double a, out double b)
+        // relative to the site - or to a point offset (aim_a, aim_b) from it.
+        internal static bool Miss(ImpactModel model, LandingTargeting.TargetSite site, Vector3d r, Vector3d v, double UT, Vector3d dv,
+            out double a, out double b, double aim_a = 0, double aim_b = 0)
         {
             a = b = 0;
             if (!model.Impact(r, v + dv, UT, site.radius, out double impact_UT, out Vector3d p))
                 return false;
             site.Offset(model.BodyFixed(p, impact_UT), out a, out b);
+            a -= aim_a;
+            b -= aim_b;
             return true;
         }
 

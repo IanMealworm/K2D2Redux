@@ -30,6 +30,7 @@ namespace K2D2.Landing
         readonly TurnTo turn = new TurnTo();
         readonly WarpTo warp = new WarpTo();
         readonly BurnManeuver burn = new BurnManeuver();
+        readonly AimedBurn aimed_burn = new AimedBurn();
         readonly ManeuverCreator maneuver_creator = new ManeuverCreator();
         readonly SingleExecuteController current_executor = new SingleExecuteController();
         ManeuverNodeData node;
@@ -78,6 +79,14 @@ namespace K2D2.Landing
         // further along); or its size, keeping its direction (for burns aimed in a direction
         // other than prograde, like the boost-back). Across the track it changes the normal part.
         protected enum RefineAlong { Prograde, Timing, Size }
+
+        // Burns that return true are flown closed-loop (AimedBurn) once the node has turned the
+        // vessel and the warp has brought it to the burn, rather than by following the node.
+        protected virtual bool fly_closed_loop => false;
+        // Where Redux had the refined plan landing, against the target (ground offsets) - what
+        // drag does to the airless coast, which the closed-loop burn aims to leave in place.
+        bool have_redux_landing;
+        double redux_a, redux_b;
         protected virtual RefineAlong refine_along => RefineAlong.Prograde;
         // Whether the normal part is held to the Max Plane Trim setting.
         protected virtual bool cap_normal_to_plane_trim => true;
@@ -129,6 +138,7 @@ namespace K2D2.Landing
 
             refine_round = 0;
             have_last_refine = false;
+            have_redux_landing = false;
             PlaceNode(planned);
         }
 
@@ -235,6 +245,9 @@ namespace K2D2.Landing
             var ground = new LandingTargeting.TargetSite(model_now, settings.target_latitude.V, settings.target_longitude.V, 0);
             ground.Offset(model_now.SurfaceUp(impact.latitude, impact.longitude) * ground.radius, out double a, out double b);
             double miss = Math.Sqrt(a * a + b * b);
+            redux_a = a;
+            redux_b = b;
+            have_redux_landing = true;
             logger.LogInfo($"[{label}] round {refine_round + 1}: Redux has the planned trajectory landing at ({impact.latitude:n4}, {impact.longitude:n4}), " +
                 $"{miss:n0}m from where it should ({a:n0}, {b:n0}){(impact.approximate ? " (approximate)" : "")}");
 
@@ -284,7 +297,12 @@ namespace K2D2.Landing
         }
 
         // Hands the attitude back to normal SAS - for when the landing is stopped mid-refinement.
-        public virtual void Release() => refine_hold.Release();
+        public virtual void Release()
+        {
+            refine_hold.Release();
+            if (current_executor.sub_controler == aimed_burn)
+                aimed_burn.Release();
+        }
 
         void FinishRefine()
         {
@@ -429,10 +447,21 @@ namespace K2D2.Landing
                     break;
                 case Step.Warp:
                     step = Step.Burn;
-                    current_executor.setController(burn);
-                    burn.StartManeuver(node);
+                    if (fly_closed_loop && StartAimedBurn())
+                        current_executor.setController(aimed_burn);
+                    else
+                    {
+                        current_executor.setController(burn);
+                        burn.StartManeuver(node);
+                    }
                     break;
                 case Step.Burn:
+                    if (current_executor.sub_controler == aimed_burn && aimed_burn.could_not_solve)
+                    {
+                        current_executor.setController(burn);
+                        burn.StartManeuver(node);
+                        break;
+                    }
                     maneuver_creator.RemoveAllNodes();
                     LogResult();
                     if (BurnComplete())
@@ -441,6 +470,27 @@ namespace K2D2.Landing
                         BeginCycle();
                     break;
             }
+        }
+
+        // The airless coast is aimed where the refined plan's goes, moved by however far Redux had
+        // that plan landing from the target - so Redux's landing point ends up on it, across the
+        // track too (the plan's normal part may have been held to the plane trim limit).
+        bool StartAimedBurn()
+        {
+            var vessel = K2D2_Plugin.Instance.current_vessel?.VesselComponent;
+            if (vessel == null)
+                return false;
+            var model_now = new ImpactModel(vessel.mainBody, GeneralTools.Current_UT);
+            model_now.StateAt(vessel.Orbit, current_plan.UT, out Vector3d r, out Vector3d v);
+            if (!LandingTargeting.Miss(model_now, site, r, v, current_plan.UT, current_plan.prograde, current_plan.normal,
+                    out double plan_a, out double plan_b, out _, out _, current_plan.radial))
+                return false;
+            double aim_a = plan_a - (have_redux_landing ? redux_a : 0);
+            double aim_b = plan_b - (have_redux_landing ? redux_b : 0);
+            double size = Math.Sqrt(current_plan.prograde * current_plan.prograde + current_plan.normal * current_plan.normal
+                + current_plan.radial * current_plan.radial);
+            aimed_burn.Start(label, site, aim_a, aim_b, size, current_plan.normal);
+            return true;
         }
 
         // Where the orbit comes down now that the burn is done - the difference from the plan is

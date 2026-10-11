@@ -183,9 +183,18 @@ namespace K2D2.Landing
         void UpdateAtmoGate()
         {
             string problem = ReduxImpactPrediction.AtmoSettingsProblem();
-            atmo_gate_label.Show(problem != null);
             if (problem == null)
+            {
+                // Not a settings problem, so the toggle stays on: just says up front why Start will
+                // refuse while the vessel is still in orbit.
+                bool in_orbit = !LandingPilot.atmo_landing_from_orbit && !pilot.isRunning
+                    && pilot.settings_atmo.precision_landing.V && !pilot.IsSuborbital();
+                atmo_gate_label.Show(in_orbit);
+                if (in_orbit)
+                    atmo_gate_label.text = LandingPilot.from_orbit_unavailable;
                 return;
+            }
+            atmo_gate_label.Show(true);
 
             atmo_gate_label.text = problem;
             if (!pilot.isRunning && pilot.settings_atmo.precision_landing.V)

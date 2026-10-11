@@ -19,6 +19,8 @@ namespace K2D2.Landing
     //    then moved earlier or later (and its normal part adjusted) until Redux's Planned
     //    prediction, which includes drag, lands on the target. Moving the burn in time keeps the
     //    entry exactly the same, just further along the ground track, so that converges quickly.
+    //  - It's flown closed-loop (AimedBurn) rather than by following the node, aiming where the
+    //    refined plan's airless coast goes plus whatever Redux still had it missing by.
     //    AtmoEntryCorrection then checks the real trajectory once the burn is done.
     public class AtmoDeorbitBurn : TargetedBurnController
     {
@@ -27,6 +29,8 @@ namespace K2D2.Landing
         protected override string label => "Deorbit burn";
         protected override bool refine_with_redux => true;
         protected override RefineAlong refine_along => RefineAlong.Timing;
+        // A steep entry's burn is long; see AimedBurn.
+        protected override bool fly_closed_loop => true;
 
         const double earliest_burn_s = 60;
         const int revolutions = 4;
