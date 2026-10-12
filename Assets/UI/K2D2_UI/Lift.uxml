@@ -1,84 +1,38 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="lift" label="Lift" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Ascent Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
-            <ui:Foldout text="Profile" value="false" name="profile">
-                <!-- Ascent profile picker (see Pilots/Lift/AscentProfile.cs) - Guided is the
-                     original fixed pitch-curve behavior, Gravity Turn is the new reactive
-                     throttle-modulated one (ReactiveAscent.cs). Wired in LiftSettings.setupUI,
-                     which also shows/hides guided_profile_settings vs gravity_turn_settings
-                     below to match whichever is picked here.
-                     A real DropdownField (not InlineEnum's segmented-button row - tried that as a
-                     workaround, but it wasn't the look wanted here). The oversized height seen
-                     in-game was a K2UI.uss bug (.unity-popup-field__input's height: 100%
-                     resolving against this Foldout's flex-grow: 1 container, not this field
-                     specifically) - fixed at the shared stylesheet level, so a plain dropdown
-                     now renders correctly here the same as Dock's/Landing's. -->
+            <ui:Label tabindex="-1" text="Ascent Autopilot" display-tooltip-when-elided="true" name="Title" class="k2-title" />
+            <ui:Foldout text="PROFILE" value="false" name="profile">
                 <ui:DropdownField label="Ascent Profile" index="0" choices="Guided,Gravity Turn" name="ascent_profile_drop" style="justify-content: space-between;" tooltip="Guided: fixed pitch-over curve (original K2D2 behavior). Gravity Turn: holds prograde and modulates throttle to hold a target time-to-apoapsis, closer to a real rocket's ascent." />
-                <ui:IntegerField label="Ap Altitude" value="42" name="destination_Ap_km" style="justify-content: space-between;">
-                    <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />
-                </ui:IntegerField>
-                <!-- Guided-only controls (see AscentProfile.cs) - hidden when Gravity Turn is
-                     selected above. Roll program lives in here too for now: it isn't wired into
-                     ReactiveAscent's prograde-hold steering yet (see LiftSettings.cs's comment on
-                     roll_program). -->
+                <ui:IntegerField label="Target Apoapsis (km)" value="42" name="destination_Ap_km" tooltip="The apoapsis the ascent aims for" style="justify-content: space-between;" />
                 <ui:VisualElement name="guided_profile_settings">
-                    <!-- Reverted back to sliders (typed absolute-km fields didn't stick) - title
-                         stays static now ("5° Alt"/"45° Alt", never rewritten), the live computed
-                         altitude reads in the amber value slot via K2Slider's new ValueText override
-                         (see K2Slider.cs) instead of being baked into one plain-white title string,
-                         matching the amber "cockpit gauge" value convention used elsewhere. -->
-                    <K2UI.K2Slider name="end_rotate_ratio" label="5° Alt" max="10" print-value="false" label-on-top="true" value="0" min="0.01" />
-                    <K2UI.K2Slider name="mid_rotate_ratio" label="45° Alt" max="10" print-value="false" label-on-top="true" value="0.98" min="0.01" />
-                    <ui:IntegerField label="90° Alt. :" value="42" name="start_altitude_km" style="justify-content: space-between;">
-                        <ui:Label tabindex="-1" text="km" display-tooltip-when-elided="true" style="width: 28px; min-width: 10px; margin-right: 0; margin-left: 10px;" />
-                    </ui:IntegerField>
-                    <!-- Roll program: rolls the vessel to a chosen offset from however it spawned on
-                         the pad, once past a chosen altitude - part of the launch Profile alongside
-                         Heading above rather than tucked away in ADVANCED, since it's a per-launch
-                         choice like heading is. A rocket built without the spawn rotation
-                         in mind can come off the pad "funky" otherwise (see Ascent.cs's own comment
-                         for the full reasoning, and exactly what "roll" means here - relative to
-                         launch orientation, not an absolute compass reading). First pass, not yet
-                         flight-tested. -->
+                    <K2UI.K2Slider name="end_rotate_ratio" tooltip="Altitude where the climb has leaned over to 5° above the horizon" label="5° Alt" max="10" print-value="false" label-on-top="true" value="0" min="0.01" />
+                    <K2UI.K2Slider name="mid_rotate_ratio" tooltip="Altitude where the climb has leaned over to 45°" label="45° Alt" max="10" print-value="false" label-on-top="true" value="0.98" min="0.01" />
+                    <ui:IntegerField label="90° Alt (km)" value="42" name="start_altitude_km" tooltip="Altitude where the rocket starts leaning over from straight up" style="justify-content: space-between;" />
                     <K2UI.K2Toggle label="Roll Program" name="roll_program" tooltip="Roll the vessel to a chosen offset from its launch orientation once it clears the altitude below" />
                     <ui:VisualElement name="roll_program_settings">
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.1" max="5" name="roll_program_altitude_km" label="Roll Program Altitude (km)" tooltip="Altitude at which the roll program executes" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="-180" value="0" max="180" name="roll_program_angle_deg" label="Roll Program Angle (°)" tooltip="How many degrees to roll from the vessel's launch orientation (not an absolute compass heading)" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="3" max="15" name="roll_program_rate_deg_s" label="Roll Program Rate (°/s)" tooltip="How fast the roll program is allowed to roll the vessel toward its target angle - lower is gentler but takes longer, higher settles faster but risks overshoot" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.1" max="5" name="roll_program_altitude_km" label="Roll Program Altitude (km)" format="N1" tooltip="Altitude at which the roll program executes" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="-180" value="0" max="180" name="roll_program_angle_deg" label="Roll Program Angle (°)" format="N0" tooltip="How many degrees to roll from the vessel's launch orientation (not an absolute compass heading)" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="3" max="15" name="roll_program_rate_deg_s" label="Roll Program Rate (°/s)" format="N1" tooltip="How fast the roll program is allowed to roll the vessel toward its target angle - lower is gentler but takes longer, higher settles faster but risks overshoot" />
                     </ui:VisualElement>
                 </ui:VisualElement>
-                <!-- Gravity Turn-only controls (see ReactiveAscent.cs) - hidden when Guided is
-                     selected above. -->
                 <ui:VisualElement name="gravity_turn_settings">
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="100" max="300" name="gravity_turn_kick_speed_mps" label="Kick Speed (m/s)" tooltip="Vertical speed the rocket needs to reach during the initial straight-up rise before it performs its pitch kick" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="1" value="7.5" max="15" name="gravity_turn_pitch_kick_deg" label="Pitch Kick (°)" tooltip="One-time pitch-over right after the vertical rise, to seed the turn - prograde-hold alone can't start turning from dead vertical" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="45" max="120" name="gravity_turn_hold_time_s" label="Hold Time-to-Apoapsis (s)" tooltip="Target seconds-to-apoapsis the throttle tries to hold during the turn - lower is a steeper/faster climb, higher is a shallower, more fuel-efficient one" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.05" max="0.5" name="gravity_turn_min_throttle" label="Min Throttle" tooltip="Throttle floor during the turn, so the engine never fully cuts out while coasting the trajectory over" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="25" max="45" name="gravity_turn_pitch_bias_max_deg" label="Max Pitch-Down Bias (°)" tooltip="Hard cap on how far below true prograde the nose is allowed to lean when throttle alone can't hold the target time-to-apoapsis" />
-                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.6" max="1" name="gravity_turn_pitch_bias_engage_margin" label="Pitch Bias Engage Margin" tooltip="How much of throttle's travel toward its floor is shared with the pitch-down bias - higher means the bias starts helping out earlier, before throttle has fully bottomed out" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="100" max="300" name="gravity_turn_kick_speed_mps" label="Kick Speed (m/s)" format="N0" tooltip="Vertical speed the rocket needs to reach during the initial straight-up rise before it performs its pitch kick" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="1" value="7.5" max="15" name="gravity_turn_pitch_kick_deg" label="Pitch Kick (°)" format="N1" tooltip="One-time pitch-over right after the vertical rise, to seed the turn - prograde-hold alone can't start turning from dead vertical" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="10" value="45" max="120" name="gravity_turn_hold_time_s" label="Hold Time to Apoapsis (s)" format="N0" tooltip="Target seconds-to-apoapsis the throttle tries to hold during the turn - lower is a steeper/faster climb, higher is a shallower, more fuel-efficient one" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.05" max="0.5" name="gravity_turn_min_throttle" label="Min Throttle (%)" format="percent" tooltip="Throttle floor during the turn, so the engine never fully cuts out while coasting the trajectory over" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="25" max="45" name="gravity_turn_pitch_bias_max_deg" label="Max Pitch-Down Bias (°)" format="N0" tooltip="Hard cap on how far below true prograde the nose is allowed to lean when throttle alone can't hold the target time-to-apoapsis" />
+                    <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="0.6" max="1" name="gravity_turn_pitch_bias_engage_margin" label="Pitch Bias Engage (%)" format="percent" tooltip="How much of throttle's travel toward its floor is shared with the pitch-down bias - higher means the bias starts helping out earlier, before throttle has fully bottomed out" />
                 </ui:VisualElement>
-                <!-- Same title-left/amber-value-right treatment as the sliders above, reusing
-                     K2Slider's own label_row/value_label CSS classes directly since this isn't a
-                     K2Slider itself. -->
                 <ui:VisualElement name="heading_row" class="k2-slider-label-row">
-                    <ui:Label text="Heading" style="font-size: 13px;" />
-                    <ui:Label tabindex="-1" text="30°" display-tooltip-when-elided="true" name="heading_label" class="k2-slider-value-label" style="font-size: 13px;" />
+                    <ui:Label text="Heading" />
+                    <ui:Label tabindex="-1" text="30°" display-tooltip-when-elided="true" name="heading_label" class="k2-slider-value-label" />
                 </ui:VisualElement>
                 <K2UI.K2Compass name="heading" />
                 <ui:VisualElement name="graph" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); height: 162px; border-left-width: 1px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px; border-left-color: rgb(71, 75, 175); border-right-color: rgb(71, 75, 175); border-top-color: rgb(71, 75, 175); border-bottom-color: rgb(71, 75, 175); border-top-left-radius: 5px; border-bottom-left-radius: 5px; border-top-right-radius: 5px; border-bottom-right-radius: 5px;" />
             </ui:Foldout>
-            <K2UI.K2Slider name="max_throttle" label="Max Throttle" max="10" print-value="false" label-on-top="false" value="0" min="0.01" />
-            <K2UI.ToggleButton name="run" label="Start" class="big" style="flex-grow: 1; margin-top: 10px; margin-bottom: 10px;" />
-
-            <!-- K2 arrives on the Lift tab: same merged "K2 is talking" element as the Node tab
-                 (yellow status line + console read together, next to K2's animated icon) instead
-                 of the shared StatusGroup template's plain status_pilot/pilot_console pair. -->
+            <K2UI.K2Slider name="max_throttle" tooltip="Throttle limit for the whole ascent" label="Max Throttle (%)" format="percent" max="1" print-value="true" label-on-top="true" value="1" min="0.05" />
+            <K2UI.ToggleButton name="run" label="Start" class="big" style="margin-top: 10px; margin-bottom: 10px;" />
             <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 10px; margin-bottom: 12px;">
                 <ui:VisualElement name="k2_status_row" class="k2-status-row">
                     <K2UI.K2Avatar name="k2_avatar" />
@@ -89,72 +43,34 @@
                 </ui:VisualElement>
                 <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
             </ui:VisualElement>
-            <ui:VisualElement name="final_grp" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: column; flex-wrap: wrap; align-self: auto; justify-content: space-between;">
-                <ui:VisualElement style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; justify-content: flex-start;">
-                    <ui:Button text="Create Node at AP" display-tooltip-when-elided="true" name="create_ap" style="flex-grow: 1; height: 28px;" />
-                    <ui:Button text="Create Node Now" display-tooltip-when-elided="true" name="create_now" style="flex-grow: 1; height: 28px;" />
-                </ui:VisualElement>
-                <ui:Button text="Run" display-tooltip-when-elided="true" name="run" style="flex-grow: 1; font-size: 16px; height: 30px; max-width: 184px; align-self: center; width: 121px; margin-top: 9px;" />
-            </ui:VisualElement>
-
-            <!-- Same treatment as the Node tab: a live LIFT INFO readout split into its own
-                 dropdown (built into label/value table rows from C# - see LiftUI.cs's
-                 AddInfoRow/UpdateLiftInfos, same pattern as NodeExUI's node_infos) so the numeric
-                 telemetry that used to scroll through the console text doesn't bury the ascent
-                 phase's own narrative feedback (e.g. "Coasting", TurnTo's status_line) that still
-                 goes through the merged K2 status readout above. -->
             <ui:Foldout text="LIFT INFO" value="false" name="lift_info_foldout">
                 <ui:VisualElement name="lift_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
             </ui:Foldout>
-
-            <!-- Same treatment as the Node tab: the old separate "settings" page (shown only via
-                 the global settings-gear toggle) is redundant now that everything it held fits in
-                 one inline dropdown here on "page" - collapsed by default so it doesn't compete
-                 with the main Ascent controls above. "settings" below is kept only because
-                 K2Page.Init()'s Q<VisualElement>("settings") lookup expects to find it, but it no
-                 longer carries any real controls - the Reset button now lives at the bottom of
-                 this ADVANCED foldout instead (see LiftUI.cs's addResetButton call).
-
-                 Sections below now mirror LiftPilot's own sub-pilot phases (Ascent/Coasting/
-                 Adjust/FinalCircularize) with "// SECTION" header bars, same convention as the
-                 Node tab's Turn/Warp/Burn/Experimental split - one scrollable dropdown, not a
-                 Foldout-in-a-Foldout per group. -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
                 <ui:VisualElement name="Ascent">
                     <ui:Label text="// ASCENT" class="k2-section-header" />
-                    <K2UI.K2Toggle label="Heading Correction" name="heading_correction" tooltip="Correct the Speed direction to fit wanted heading" />
-                    <K2UI.K2Slider label="Ap Alt Error (%)" name="end_ascent_pc" print-value="true" label-on-top="true" />
+                    <K2UI.K2Toggle label="Heading Correction" name="heading_correction" tooltip="Steer so the velocity stays on the chosen heading" />
+                    <K2UI.K2Slider label="Ap Alt Error (%)" name="end_ascent_pc" tooltip="The ascent burn stops once apoapsis is this close to the target" format="N2" print-value="true" label-on-top="true" />
                     <ui:Label tabindex="-1" text="End Ascent Alt. : " display-tooltip-when-elided="true" name="end_ascent_alt" />
                 </ui:VisualElement>
                 <ui:VisualElement name="Coasting">
                     <ui:Label text="// COASTING" class="k2-section-header" />
-                    <K2UI.K2Toggle label="Coasting Warp" name="coasting_warp" tooltip="Auto Warp while waiting for leaving Atm." />
-                    <!-- Default on: FinalCircularize (see Final.cs) now creates and flies its own
-                         circularize-at-apoapsis burn once ascent clears the atmosphere, so the
-                         whole ascent-to-orbit sequence can just run straight through with no
-                         manual step. Turning this off falls back to the old "pause and let the
-                         player make their own node" flow via the toggle below. -->
-                    <K2UI.K2Toggle label="Circularize Once Ascent Complete" name="auto_circularize" class="long-label" tooltip="Automatically circularize once you clear the atmosphere, instead of pausing so you can create the node yourself" />
-                    <!-- Moved here from the old "Final" section below (now removed) - this is
-                         where the pause actually fires now (see Coasting.cs), the moment the
-                         vessel clears the atmosphere, instead of waiting for Adjust to finish its
-                         fine-tuning burn and Circularize to end the run. Same setting/name
-                         (lift.pause_on_final) so existing saved preferences carry over. Only
-                         takes effect when "Circularize Once Ascent Complete" above is off. -->
-                    <K2UI.K2Toggle label="Pause Leaving Atmosphere" name="pause_on_final" tooltip="Pause once you clear the atmosphere, so there's time to create the circularization node yourself (only used when Circularize Once Ascent Complete is off)" />
+                    <K2UI.K2Toggle label="Coasting Warp" name="coasting_warp" tooltip="Time warp while coasting up to the edge of the atmosphere" />
+                    <K2UI.K2Toggle label="Circularize Once Ascent Complete" name="auto_circularize" class="long-label" tooltip="Finish the ascent with a circularization burn at apoapsis. Off: the ascent ends once apoapsis is set, and you circularize yourself" />
+                    <K2UI.K2Toggle label="Pause Leaving Atmosphere" name="pause_on_final" tooltip="When Circularize Once Ascent Complete is off: pause the game once the vessel is out of the atmosphere and apoapsis is set, so you can plan your circularization" />
                 </ui:VisualElement>
                 <ui:VisualElement name="Adjust">
                     <ui:Label text="// ADJUST" class="k2-section-header" />
-                    <K2UI.K2Toggle label="Fine Tuning" name="adjust" tooltip="Auto Warp while waiting for leaving Atm." />
-                    <K2UI.Group name="adjust_group" text="tuning">
-                        <K2UI.K2Slider label="Final Alt Error (%)" name="end_adjust_pc" print-value="true" label-on-top="true" />
+                    <K2UI.K2Toggle label="Fine Tuning" name="adjust" tooltip="Once out of the atmosphere, burn prograde to bring apoapsis back up to the target (drag lowers it on the way up)" />
+                    <ui:VisualElement name="adjust_group" class="k2-nested-content">
+                        <K2UI.K2Slider label="Final Alt Error (%)" name="end_adjust_pc" tooltip="Fine tuning stops once apoapsis is this close to the target" format="N3" print-value="true" label-on-top="true" />
                         <ui:Label tabindex="-1" text="End Adjust Alt : " display-tooltip-when-elided="true" name="end_adjust_alt" />
-                    </K2UI.Group>
+                    </ui:VisualElement>
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>
         <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
-            <ui:Label tabindex="-1" text="Lift Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Lift Settings" display-tooltip-when-elided="true" name="Title" class="k2-title" />
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
 </ui:UXML>

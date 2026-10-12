@@ -30,18 +30,19 @@ namespace K2D2.Lift
 
         Vector3d direction = Vector3d.zero;
 
-        // sub pilots
-        // Both Ascent-phase controllers are always constructed (see the constructor below) so
-        // switching the ascent_profile dropdown mid-session doesn't need to build anything on the
-        // fly - `ascent` below just picks whichever one matches the player's current choice,
-        // re-evaluated live every time something reads it (see AscentProfile.cs).
+        // Both ascent controllers are built up front; the dropdown picks which one flies, and
+        // that choice is fixed for the run (run_ascent) so changing it mid-flight can't swap the
+        // controller under the burn.
         Ascent ascent_guided = null;
         ReactiveAscent ascent_gravity_turn = null;
         Adjust adjust = null;
         Coasting coasting = null;
         FinalCircularize final_circularize;
+        AscentControllerBase run_ascent = null;
 
-        internal AscentControllerBase ascent =>
+        internal AscentControllerBase ascent => run_ascent ?? SelectedAscent();
+
+        AscentControllerBase SelectedAscent() =>
             settings.ascent_profile.V == AscentProfile.GravityTurn
                 ? (AscentControllerBase)ascent_gravity_turn
                 : ascent_guided;
@@ -82,6 +83,10 @@ namespace K2D2.Lift
             {
                 if (_status == value)
                     return;
+                // The roll program can still hold SAS in locked-rotation mode when the ascent
+                // ends; the prograde holds that follow need it off.
+                if (_status == LiftStatus.Ascent)
+                    ReleaseRollLock();
                 _status = value;
                 switch (value)
                 {
@@ -99,6 +104,7 @@ namespace K2D2.Lift
                         }
 
                         current_subpilot = null;
+                        run_ascent = null;
                     }
                         break;
                     case LiftStatus.Ascent:
@@ -146,7 +152,15 @@ namespace K2D2.Lift
 
         void OnStartController()
         {
+            run_ascent = SelectedAscent();
             status = LiftStatus.Ascent;
+        }
+
+        void ReleaseRollLock()
+        {
+            var autopilot = current_vessel?.Autopilot;
+            if (autopilot != null)
+                autopilot.SAS.lockedMode = false;
         }
 
         internal bool result_ok = false;
@@ -156,15 +170,8 @@ namespace K2D2.Lift
         {
             this.result_ok = result_ok;
             this.end_status = end_status;
-            // Was: status = LiftStatus.Off directly. That flips the getter's answer
-            // (isRunning reads _status != Off) but skips the isRunning SETTER entirely, so
-            // base.isRunning's own backing field never gets updated and is_running_event never
-            // fires. Node/Landing end their run via isRunning = false (see NodeExPilot.Stop(),
-            // LandingPilot's touchdown/abort paths) for exactly this reason - anything bound to
-            // is_running_event (LiftUI's run_button toggle state, K2's avatar SetRunning) needs
-            // that callback to update, or it stays stuck showing "running" after the pilot has
-            // actually finished on its own (as opposed to being stopped via the Brake/Start
-            // button, which already goes through this setter).
+            // Through the isRunning setter, not status directly, so is_running_event fires and the
+            // Start button and K2's avatar update.
             isRunning = false;
         }
 
@@ -173,6 +180,18 @@ namespace K2D2.Lift
 
         public void NextMode()
         {
+            // Without auto-circularize the run ends once apoapsis is final (after Adjust), leaving
+            // the circularization to the player.
+            if (status == LiftStatus.Adjust && !settings.auto_circularize.V)
+            {
+                if (settings.pause_on_final.V)
+                {
+                    TimeWarpTools.SetRateIndex(0, false);
+                    TimeWarpTools.SetIsPaused(true);
+                }
+                EndLiftPilot(true, "Ascent complete - plan your circularization at apoapsis");
+                return;
+            }
             status = status.Next();
         }
 
@@ -192,15 +211,7 @@ namespace K2D2.Lift
             {
                 subpilot.Update();
 
-                // A subpilot's Update() can end the whole run right here - Coasting's Ap-under-
-                // atmosphere-limit check and FinalCircularize's burn-complete case (see Final.cs)
-                // both call lift.EndLiftPilot() directly rather than just setting finished, so
-                // that is_running_event actually fires (see EndLiftPilot's own comment about why
-                // it goes through the isRunning setter instead of setting status directly). That
-                // synchronously nulls current_subpilot via the status setter's Off case, before
-                // we get back here. Re-checking the field itself (not the stale local) means we
-                // don't NullReferenceException on a null current_subpilot, and don't call
-                // NextMode() a second time on top of a run that already ended itself.
+                // Update() can end the run itself (EndLiftPilot), which clears current_subpilot.
                 if (current_subpilot == subpilot && subpilot.finished)
                     NextMode();
             }

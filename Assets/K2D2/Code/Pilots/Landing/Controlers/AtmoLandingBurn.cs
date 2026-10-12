@@ -9,8 +9,9 @@ using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    // The landing burn for atmospheric precision landing, from the entry guidance's handover all
-    // the way to touchdown: one continuous burn, steered onto the target.
+    // The landing burn on a body with an atmosphere, from the handover all the way to touchdown:
+    // one continuous burn - steered onto the target for a precision landing, or just killing the
+    // sideways speed for a regular one.
     //
     // The regular braking it replaces burned at full thrust until the fall was slow, then fell
     // and braked again, and held retrograde all the way down. On the big booster that stopped
@@ -75,9 +76,6 @@ namespace K2D2.Landing
         // The engines never go below this much thrust (in g) in the final descent: their gimbals
         // are what keeps a long booster upright.
         const double min_final_thrust_g = 0.3;
-        // On the ground (see CheckStanding): moving slower than this for this long, with the
-        // throttle asking for no more than this much thrust (in g).
-        const double standing_speed_mps = 1.5, standing_s = 1.5, standing_thrust_g = 0.5;
         // How much of the expected sideways acceleration the vessel gets: measured over
         // response_window_s, blended in at response_blend; starts from what the test booster got.
         const double response_window_s = 1, response_blend = 0.3;
@@ -96,10 +94,6 @@ namespace K2D2.Landing
 
         enum Step { Braking, Final }
         Step step;
-
-        // Set once the vessel is standing on the ground; LandingPilot then ends the landing.
-        public bool on_ground { get; private set; }
-        double still_since_UT;
 
         double last_solve_UT, last_log_UT, start_UT;
         double wanted_throttle;
@@ -122,6 +116,16 @@ namespace K2D2.Landing
             current_vessel = K2D2_Plugin.Instance.current_vessel;
         }
 
+        // Whether the burn steers onto the landing target; without one it only cancels the
+        // sideways speed and comes straight down.
+        bool steer_to_target = true;
+
+        public void Start(bool steer_to_target)
+        {
+            this.steer_to_target = steer_to_target;
+            Start();
+        }
+
         public override void Start()
         {
             finished = false;
@@ -132,8 +136,6 @@ namespace K2D2.Landing
             throttle = 0;
             thrust_direction = Vector3d.zero;
             response_UT = achieved_sideways = double.NaN;
-            on_ground = false;
-            still_since_UT = double.NaN;
             efficiency = first_efficiency;
         }
 
@@ -166,7 +168,7 @@ namespace K2D2.Landing
             {
                 step = Step.Final;
                 logger.LogInfo($"[LandingBurn] final descent from {height:n0}m, {-v_vertical:n1}m/s down, " +
-                    $"{horizontal.magnitude:n1}m/s sideways, {landing.DistanceToTarget():n0}m from the target");
+                    $"{horizontal.magnitude:n1}m/s sideways" + (steer_to_target ? $", {landing.DistanceToTarget():n0}m from the target" : ""));
             }
 
             if (double.IsNaN(last_solve_UT) || now - last_solve_UT >= solve_interval_s)
@@ -178,9 +180,6 @@ namespace K2D2.Landing
                     SolveFinal(vessel, position, up, v_vertical, horizontal, height, max_accel);
             }
 
-            if (step == Step.Final)
-                CheckStanding(vessel, air_velocity.magnitude, height, max_accel, now);
-
             hold.HoldDirection(thrust_direction);
             double max_angle = Math.Max(full_throttle_within_deg + 1, landing.brake.touch_down_max_angle.V);
             double pointing = Math.Min(1, Math.Max(0, (max_angle - hold.attitude_error_deg) / (max_angle - full_throttle_within_deg)));
@@ -188,7 +187,8 @@ namespace K2D2.Landing
             current_vessel.SetThrottle(throttle);
 
             status_line = step == Step.Braking
-                ? $"Landing burn: braking to stop {stop_height:n0} m up, {Math.Sqrt(target_ahead * target_ahead + target_side * target_side):n0} m to the target"
+                ? $"Landing burn: braking to stop {stop_height:n0} m up" +
+                  (steer_to_target ? $", {Math.Sqrt(target_ahead * target_ahead + target_side * target_side):n0} m to the target" : "")
                 : $"Landing burn: final descent, {height:n0} m up";
 
             if (double.IsNaN(last_log_UT) || now - last_log_UT >= log_interval_s)
@@ -201,30 +201,6 @@ namespace K2D2.Landing
                           $" | sideways accel wanted {wanted_sideways.magnitude:n1}m/s², expected {expected_sideways.magnitude:n1}, " +
                           $"got {achieved_sideways:n1} ({efficiency:P0} on average)"
                         : $" | target {target_distance:n0}m away"));
-            }
-        }
-
-        // Standing on the ground while the height reading still says tens of metres up: barely
-        // moving with the throttle down at its floor, which in the air would be falling. The first
-        // landing from orbit came down on ground the height reading put 70 m below it (the game's
-        // ground height there was wrong, so the sea level one was used); the game didn't flag it as
-        // landed either, and the final descent kept steering on the ground until it tipped over.
-        void CheckStanding(VesselComponent vessel, double air_speed, double height, double max_accel, double now)
-        {
-            double g = vessel.graviticAcceleration.magnitude;
-            bool still = air_speed < standing_speed_mps && wanted_throttle * max_accel <= standing_thrust_g * g;
-            if (!still)
-            {
-                still_since_UT = double.NaN;
-                return;
-            }
-            if (double.IsNaN(still_since_UT))
-                still_since_UT = now;
-            if (!on_ground && now - still_since_UT >= standing_s)
-            {
-                on_ground = true;
-                logger.LogInfo($"[LandingBurn] standing still with the engines throttled down - on the ground " +
-                    $"(the height reading said {height:n0}m), {landing.DistanceToTarget():n0}m from the target");
             }
         }
 
@@ -265,8 +241,7 @@ namespace K2D2.Landing
 
             // The target's offset along the ground, and how far it is ahead / to the side.
             Vector3d along = v_horizontal > 0.5 ? horizontal / v_horizontal : Vector3d.zero;
-            Vector3d to_target = TargetPoint(vessel) - position;
-            to_target -= up * Vector3d.Dot(to_target, up);
+            Vector3d to_target = ToTarget(vessel, position, up);
             target_ahead = Vector3d.Dot(to_target, along);
             target_side = Vector3d.Dot(to_target, Vector3d.Cross(up, along));
 
@@ -342,8 +317,7 @@ namespace K2D2.Landing
                 wanted_sink *= drift_sink_fraction;
             double max_tilt = drifting ? max_drift_tilt_deg : max_final_tilt_deg;
             double vertical_accel = g + sink_gain * (-wanted_sink - v_vertical);
-            Vector3d to_target = TargetPoint(vessel) - position;
-            to_target -= up * Vector3d.Dot(to_target, up);
+            Vector3d to_target = ToTarget(vessel, position, up);
             target_distance = to_target.magnitude;
             double t_go = Math.Max(min_steering_time_s, height / Math.Max(0.5, wanted_sink));
             double available = efficiency * Math.Max(0.1, vertical_accel) * Math.Tan(max_tilt * Math.PI / 180);
@@ -372,6 +346,16 @@ namespace K2D2.Landing
             return main * Math.Cos(angle) + sideways / side * Math.Sin(angle);
         }
 
+        // From the vessel to the target, along the ground. Zero without a target, so the steering
+        // only cancels the sideways speed.
+        Vector3d ToTarget(VesselComponent vessel, Vector3d position, Vector3d up)
+        {
+            if (!steer_to_target)
+                return Vector3d.zero;
+            Vector3d to_target = TargetPoint(vessel) - position;
+            return to_target - up * Vector3d.Dot(to_target, up);
+        }
+
         // The target on the ground, in the same axes as the vessel's position (AtmoAttitudeHold's).
         Vector3d TargetPoint(VesselComponent vessel)
         {
@@ -388,7 +372,8 @@ namespace K2D2.Landing
             if (step == Step.Braking)
             {
                 addRow("Braking Ends", $"{stop_height:n0} m up in {burn_left_s:n0} s");
-                addRow("To Target", $"{target_ahead:n0} m ahead, {target_side:n0} m to the side");
+                if (steer_to_target)
+                    addRow("To Target", $"{target_ahead:n0} m ahead, {target_side:n0} m to the side");
             }
         }
     }

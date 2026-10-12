@@ -177,11 +177,9 @@ namespace K2UI.Tabs
             if (parent == null)
                 return;
 
-            // Named so K2D2.uss can pick it up with the same pixel-art bevel treatment as
-            // Debug Mode/Reset All Settings/Start-Pause (see #reset_advanced there).
             Button reset_bt = new Button() { text = "Reset" };
             reset_bt.name = "reset_advanced";
-            reset_bt.style.height = 30;
+            reset_bt.AddToClassList("k2-button");
             reset_bt.style.marginTop = 8;
 
             parent.Add(reset_bt);
@@ -189,4 +187,4 @@ namespace K2UI.Tabs
             reset_bt.RegisterCallback<ClickEvent>(evt => SettingsFile.Instance.Reset(chapter));
         }
     }
-}
+}

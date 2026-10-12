@@ -129,10 +129,7 @@ namespace K2D2.Landing
             root.Q<K2Slider>("burn_before_vac").Bind(burn_before);
 
             // TOUCH DOWN (touch_down_max_angle now bound by TouchDown.SetupFullUI, not here)
-            var el_touchdown_altitude = root.Q<K2Slider>("start_touchdown_altitude_vac").Bind(start_touchdown_altitude);
-            start_touchdown_altitude.listen(v =>
-                el_touchdown_altitude.Label = "Start TouchDown Altitude : " + StrTool.DistanceToString(v)
-            );
+            root.Q<K2Slider>("start_touchdown_altitude_vac").Bind(start_touchdown_altitude);
 
             root.Q<K2Slider>("touch_down_ratio_vac").Bind(touch_down_ratio);
             root.Q<K2Slider>("touch_down_speed_vac").Bind(touch_down_speed);
@@ -172,10 +169,7 @@ namespace K2D2.Landing
 
             root.Q<K2Slider>("burn_before_atmo").Bind(burn_before);
 
-            var el_touchdown_altitude = root.Q<K2Slider>("start_touchdown_altitude_atmo").Bind(start_touchdown_altitude);
-            start_touchdown_altitude.listen(v =>
-                el_touchdown_altitude.Label = "Start TouchDown Altitude : " + StrTool.DistanceToString(v)
-            );
+            root.Q<K2Slider>("start_touchdown_altitude_atmo").Bind(start_touchdown_altitude);
 
             root.Q<K2Slider>("touch_down_ratio_atmo").Bind(touch_down_ratio);
             root.Q<K2Slider>("touch_down_speed_atmo").Bind(touch_down_speed);

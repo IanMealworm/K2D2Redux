@@ -146,18 +146,23 @@ namespace KTools
             listeners+= listener;
             listener(V);
         }
+
+        protected void NotifyListeners() => listeners?.Invoke(V);
     }
 
 
+    // A setting kept within [min, max]: values set in code or read back from the settings file
+    // are clamped, not just the slider bound to it.
     public class ClampSetting<T> : Setting<T> where T : System.IComparable<T>
     {
         T _min;
         public T min
         {
             get { return _min; }
-            set { 
+            set
+            {
                 _min = value;
-                V = Extensions.Clamp(value, min, max);
+                V = base.V;
             }
         }
 
@@ -165,76 +170,32 @@ namespace KTools
         public T max
         {
             get { return _max; }
-            set { 
+            set
+            {
                 _max = value;
-                V = Extensions.Clamp(value, min, max);
+                V = base.V;
             }
         }
-        
+
         public ClampSetting(string path, T default_value, T min, T max, SettingsFile file = null): base(path, default_value, file)
         {
-            this._min = min;
-            this._max = max;
-            V = Extensions.Clamp(V, min, max);
+            _min = min;
+            _max = max;
         }
 
-        public override T V { 
-            get => base.V; 
-            set {
-                
-                base.V = value;
-            } 
-        }
-    }
-
-    public class ClampedSettingInt : Setting<int>
-    {
-        
-        int _min;
-        public int min
+        public override T V
         {
-            get { return _min; }
-            set { 
-                _min = value;
-                V = Extensions.Clamp(value, min, max);
+            // The file can load after construction, so its value is clamped on the way out too.
+            get => Extensions.Clamp(base.V, _min, _max);
+            set
+            {
+                T clamped = Extensions.Clamp(value, _min, _max);
+                base.V = clamped;
+                // A field showing the out-of-range value is put back to the clamped one, even
+                // when the stored value didn't change.
+                if (!clamped.Equals(value))
+                    NotifyListeners();
             }
         }
-
-        int _max;
-        public int max
-        {
-            get { return _max; }
-            set { 
-                _max = value;
-                V = Extensions.Clamp(value, min, max);
-            }
-        }
-
-        public ClampedSettingInt(string path, int default_value, int min, int max): base(path, default_value)
-        {
-            this.min = min;
-            this.max = max;     
-        }
-
-        int clamp(int value)
-        {
-            if (value < min)
-                value = min;
-            else if (value > max)
-                value = max;
-
-            return value;
-        }
-
-        
-        public override int V { 
-            get => base.V; 
-            set {
-                base.V = clamp(value);
-            } 
-        }
     }
-
-
-
-}
+}

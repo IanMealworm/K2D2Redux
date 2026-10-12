@@ -37,6 +37,11 @@ namespace K2D2.Lift
         public SingleExecuteController current_executor = new SingleExecuteController();
         ManeuverNodeData node;
 
+        // The node is created a fixed update after Start (see RemoveAllNodesThenCreate). If it
+        // still isn't there after this much game time, creating it failed.
+        const double node_timeout_s = 5;
+        double start_UT;
+
         public FinalCircularize(LiftPilot lift, LiftSettings lift_settings)
         {
             current_vessel = K2D2_Plugin.Instance.current_vessel;
@@ -50,6 +55,7 @@ namespace K2D2.Lift
             base.Start();
             finished = false;
             node = null;
+            start_UT = GeneralTools.Current_UT;
 
             if (current_vessel == null)
             {
@@ -104,7 +110,12 @@ namespace K2D2.Lift
         public override void Update()
         {
             if (finished) return;
-            if (node == null) return;
+            if (node == null)
+            {
+                if (GeneralTools.Current_UT - start_UT > node_timeout_s)
+                    lift.EndLiftPilot(false, "Couldn't create the circularization node");
+                return;
+            }
 
             base.Update();
 

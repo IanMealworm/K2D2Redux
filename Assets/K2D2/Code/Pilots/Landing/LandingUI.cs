@@ -72,14 +72,20 @@ namespace K2D2.Landing
             run_button.listeners += v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Brake";
+                // Follows where the pilot ended up, in case it refused or stopped straight away.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Brake";
             };
 
-            touch_down.listenClick(() =>
+            touch_down.listenClick(() => pilot.StartTouchDown());
+
+            // A run keeps the precision choice it started with (see LandingPilot.run_precision).
+            var precision_toggles = new[] { panel.Q<K2Toggle>("precision_landing_vac"), panel.Q<K2Toggle>("precision_landing_atmo") };
+            pilot.is_running_event += is_running =>
             {
-                pilot.isRunning = true;
-                pilot.setMode(LandingPilot.Mode.TouchDown);
-            });
+                foreach (var toggle in precision_toggles)
+                    toggle?.SetEnabled(!is_running);
+            };
 
             // Atmo/Vacuum profile panels - two full sibling groups/panels in Landing.uxml, each
             // bound exactly once here to its own fixed settings/TouchDown instance (never
@@ -144,7 +150,7 @@ namespace K2D2.Landing
 
             Button reset_bt = new Button() { text = "Reset" };
             reset_bt.name = "reset_advanced";
-            reset_bt.style.height = 30;
+            reset_bt.AddToClassList("k2-button");
             reset_bt.style.marginTop = 8;
 
             parent.Add(reset_bt);
@@ -330,7 +336,7 @@ namespace K2D2.Landing
             var state = GeneralTools.Game.GlobalGameState.GetState();
             if (state != GameState.FlightView)
             {
-                status_bar.Console("Landing is only available in Fligh View");
+                status_bar.Console("Landing is only available in flight view");
                 return true;
             }
 

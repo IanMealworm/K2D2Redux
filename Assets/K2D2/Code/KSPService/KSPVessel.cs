@@ -558,15 +558,14 @@ namespace K2D2.KSPService
             return VesselComponent.Landed;
         }
 
-        /// Correct the altitude unsing the vessel radius
+        // Height of the vessel's bottom above the ground, roughly: the centre's height less the
+        // bounding-sphere radius. 0 while landed or splashed down.
         public double GetApproxAltitude()
         {
-            var altitude_from_ground = GetGlobalGroundAltitude();
-            // VesselComponent.SimulationObject.objVesselBehavior.ShowCenterOfMass;
-            // var center = VesselComponent.SimulationObject.objVesselBehavior.BoundingBox.center.y - VesselComponent.SimulationObject.objVesselBehavior.BoundingBox.extents.z;
-            //var bounding_sphere = VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere;
-            var result = altitude_from_ground - VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere.radius;
-            return result;
+            if (VesselComponent.Landed || VesselComponent.Splashed)
+                return 0;
+            var result = GetGlobalGroundAltitude() - VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere.radius;
+            return Math.Max(0, result);
         }
 
         public double GetGroundAltitude()
@@ -580,9 +579,22 @@ namespace K2D2.KSPService
             return telemetryDataProvider.GetAltitudeDisplayValue(AltimeterDisplayMode.SeaLevel);
         }
 
+        // The lower of the sea level and ground heights. Near the space center the ground height
+        // can fall back to the sea level one when the terrain or the pad isn't picked up, which
+        // on the pad reads tens of metres high; low down, the vessel's own terrain height then
+        // stands in for it.
         public double GetGlobalGroundAltitude()
         {
-            return Math.Min(GetSeaAltitude(), GetGroundAltitude());
+            double sea = GetSeaAltitude();
+            double ground = GetGroundAltitude();
+            double altitude = Math.Min(sea, ground);
+            if (Math.Abs(ground - sea) < 0.5 && sea < 3000)
+            {
+                double from_terrain = VesselComponent.AltitudeFromTerrain;
+                if (!double.IsNaN(from_terrain) && from_terrain > -50 && from_terrain < altitude)
+                    altitude = from_terrain;
+            }
+            return altitude;
         }
 
         public double GetDisplayAltitude()
@@ -664,4 +676,4 @@ namespace K2D2.KSPService
         }
 
     }
-}
+}

@@ -20,8 +20,6 @@ namespace K2D2.Lift
 
         Label heading_label;
 
-        VisualElement final_grp;
-
         // Live LIFT INFO readout, same table pattern as NodeExUI's node_infos_el.
         VisualElement lift_infos_el;
 
@@ -36,8 +34,6 @@ namespace K2D2.Lift
             panel.Q<IntegerField>("destination_Ap_km").Bind(settings.destination_Ap_km);
 
             lift_infos_el = panel.Q<VisualElement>("lift_infos");
-
-            final_grp = panel.Q<VisualElement>("final_grp");
 
             settings.mid_rotate_ratio.listeners += v =>
             {
@@ -68,7 +64,9 @@ namespace K2D2.Lift
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Start";
+                // Follows where the pilot ended up, in case it refused or stopped straight away.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Start";
             };
 
             // The old "settings" page's controls now live inside the ADVANCED foldout on "page"
@@ -126,8 +124,6 @@ namespace K2D2.Lift
             mid_rotate_ratio.ValueText = $"{settings.mid_rotate_altitude_km:n0} km";
             heading_label.text = $"{settings.heading.V:n1} °";
 
-            final_grp.Show(false);
-
             UpdateLiftInfos();
 
             status_bar.Reset();
@@ -156,4 +152,4 @@ namespace K2D2.Lift
 
 
     }
-}
+}

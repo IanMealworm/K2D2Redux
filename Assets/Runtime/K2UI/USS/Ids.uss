@@ -4,6 +4,6 @@
 }
 
 #Title {
-    font-size: 15px;
-    -unity-font-definition: var(--k2-font-title);
+    font-size: var(--k2-size-title);
+    -unity-font-definition: var(--k2-font-display);
 }

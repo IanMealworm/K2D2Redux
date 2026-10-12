@@ -102,8 +102,8 @@ namespace K2D2.Controller.Docks.Pilots
             if (K2D2Settings.debug_mode.V)
             {
                 st.Console($"Horizontal {local_speed.x:n2} " + (Kill_X_Speed.V ? "[X]":"[ ]"));
-                st.Console($"Vertical {local_speed.x:n2} " + (Kill_Z_Speed.V ? "[X]":"[ ]"));
-                st.Console($"Depth {local_speed.x:n2} " + (Kill_Y_Speed.V ? "[X]":"[ ]"));
+                st.Console($"Vertical {local_speed.z:n2} " + (Kill_Z_Speed.V ? "[X]":"[ ]"));
+                st.Console($"Depth {local_speed.y:n2} " + (Kill_Y_Speed.V ? "[X]":"[ ]"));
             } 
         }
 
@@ -220,8 +220,8 @@ namespace K2D2.Controller.Docks.Pilots
         VisualElement final_approach_group;
         InlineEnum final_mode;
 
-        Group manual_group;
-        Group auto_group;
+        VisualElement manual_group;
+        VisualElement auto_group;
 
         void UpdateKillAll()
         {
@@ -246,8 +246,8 @@ namespace K2D2.Controller.Docks.Pilots
             final_mode = final_approach_group.Q<InlineEnum>("final_mode");
             final_mode.Bind(sub_mode);
 
-            manual_group = final_approach_group.Q<Group>("manual_group");
-            auto_group = final_approach_group.Q<Group>("auto_group");
+            manual_group = final_approach_group.Q<VisualElement>("manual_group");
+            auto_group = final_approach_group.Q<VisualElement>("auto_group");
 
             // reset forward speed when going to Auto
             sub_mode.listen((v) =>

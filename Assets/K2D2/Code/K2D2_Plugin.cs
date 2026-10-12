@@ -223,32 +223,42 @@ namespace K2D2
         }
 
 
-        private static GameState[] validScenes = { GameState.FlightView, GameState.Map3DView };
+        // Pilots keep flying in these views (photo mode included, so taking a screenshot doesn't
+        // stop a landing); the window only shows in the first two.
+        private static readonly GameState[] flight_scenes = { GameState.FlightView, GameState.Map3DView, GameState.PhotoMode };
+        private static readonly GameState[] window_scenes = { GameState.FlightView, GameState.Map3DView };
 
-        //private static GameState last_game_state ;
+        // Worked out once per frame in Update; FixedUpdate and LateUpdate use the same answer.
+        static bool in_flight, window_allowed;
 
-        private static bool ValidScene()
+        // Pilots are reset once when leaving flight, not every frame (and every physics step) after.
+        static void UpdateScene()
         {
             // Game and its state machine aren't set up yet for the first few frames after loading.
             var game_state = GeneralTools.Game?.GlobalGameState?.GetGameState();
-            if (game_state == null) return false;
-
-            // GameStateMachine has no GetState() method on Redux's current assemblies; the current
-            // GameState comes from GetGameState().GameState instead.
-            var state = game_state.GameState;
-            bool is_valid = validScenes.Contains(state);
-            if (!is_valid)
+            bool was_in_flight = in_flight;
+            if (game_state == null)
             {
-                ResetControllers();
+                in_flight = window_allowed = false;
             }
-            return is_valid;
+            else
+            {
+                // GameStateMachine has no GetState() method on Redux's current assemblies; the
+                // current GameState comes from GetGameState().GameState instead.
+                var state = game_state.GameState;
+                in_flight = flight_scenes.Contains(state);
+                window_allowed = window_scenes.Contains(state);
+            }
+            if (was_in_flight && !in_flight)
+                ResetControllers();
         }
 
         void Update()
         {
             // main_ui?.Update();
 
-            Debug.developerConsoleVisible = false;
+            UpdateScene();
+
             // Update Models (even on non valid scenes)
             current_vessel.Update();
 
@@ -260,10 +270,9 @@ namespace K2D2
             }
             */
 
-            if (ValidScene())
+            if (in_flight)
             {
-                // Debug.developerConsoleVisible = false;
-                if (Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
+                if (window_allowed && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
                     main_window.IsWindowOpen = !main_window.IsWindowOpen;
 
                 StagingPilot.Instance.Update();
@@ -274,12 +283,24 @@ namespace K2D2
                     pilots_manager.UpdateControllers();
                 }   
             }
-            else
+            // Hidden in photo mode and outside flight, and opened again on the way back if it was
+            // open.
+            if (main_window != null)
             {
-                if (main_window != null && main_window.IsWindowOpen)
+                if (!window_allowed && main_window.IsWindowOpen)
+                {
                     main_window.IsWindowOpen = false;
+                    window_hidden_by_scene = true;
+                }
+                else if (window_allowed && window_hidden_by_scene)
+                {
+                    main_window.IsWindowOpen = true;
+                    window_hidden_by_scene = false;
+                }
             }
         }
+
+        bool window_hidden_by_scene;
 
         // call on reset on controller, each on can reset it's status
         public static void ResetControllers()
@@ -295,7 +316,7 @@ namespace K2D2
 
         void FixedUpdate()
         {
-            if (ValidScene())
+            if (in_flight)
             {
                 pilots_manager.FixedUpdateControllers();
             }
@@ -303,7 +324,7 @@ namespace K2D2
 
         private void LateUpdate()
         {
-            if (ValidScene())
+            if (in_flight)
             {
                 pilots_manager.LateUpdateControllers();
             }

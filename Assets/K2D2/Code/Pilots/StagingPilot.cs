@@ -75,6 +75,13 @@ namespace K2D2.Controller
 
         Dictionary<ResourceDefinitionID, ContainedResourceData> fuelCapacity = null;
         VesselComponent vessel_component = null;
+
+        // Engines that were already empty when a stage was fired. One that stays on the vessel
+        // after staging (not dropped with its tanks) is left out of later checks - otherwise it
+        // would fire every following stage, parachutes included, one after another.
+        readonly HashSet<PartComponent> spent_engines = new HashSet<PartComponent>();
+        readonly List<PartComponent> empty_engines = new List<PartComponent>();
+        VesselComponent spent_engines_vessel;
         
         public void CalculateVesselStageFuel()
         {
@@ -87,8 +94,14 @@ namespace K2D2.Controller
 
             // not staging, check fuel
             vessel_component = current_vessel.VesselComponent;
+            empty_engines.Clear();
             if (vessel_component == null)
                 return;
+            if (vessel_component != spent_engines_vessel)
+            {
+                spent_engines.Clear();
+                spent_engines_vessel = vessel_component;
+            }
 
             if (fuelCapacity == null)
                 fuelCapacity = new Dictionary<ResourceDefinitionID, ContainedResourceData>();
@@ -116,7 +129,8 @@ namespace K2D2.Controller
             {
 
                 // stop on any ignited engine
-                if (part == null || !part.TryGetModule<PartComponentModule_Engine>(out var module) || !module.EngineIgnited)
+                if (part == null || !part.TryGetModule<PartComponentModule_Engine>(out var module) || !module.EngineIgnited
+                    || spent_engines.Contains(part))
                 {
                     continue;
                 }
@@ -131,6 +145,10 @@ namespace K2D2.Controller
                 {
                     double StoredUnits = module.IsPropellantStarved ? 0.0 : Math.Abs(containedResourceData[i].StoredUnits);
                     double CapacityUnits = containedResourceData[i].CapacityUnits;
+                    // A propellant with no tank capacity at all says nothing (and 0/0 would make
+                    // the check below NaN, so it never staged again).
+                    if (CapacityUnits <= 0)
+                        continue;
 
                     if (!fuelCapacity.ContainsKey(containedResourceData[i].ResourceID))
                     {
@@ -149,6 +167,8 @@ namespace K2D2.Controller
 
                     double container_percent = StoredUnits / CapacityUnits;
                     Min_Stage_Percentage = Math.Min(Min_Stage_Percentage, container_percent);
+                    if (container_percent <= 0 && !empty_engines.Contains(part))
+                        empty_engines.Add(part);
                 }
             }
             if (fuelCapacity.Count > 0)
@@ -181,15 +201,14 @@ namespace K2D2.Controller
 
         public bool CheckStaging()
         {
-            // always compute 
-            CalculateVesselStageFuel();
-
             // return true if staging in progress
             if (!StagingSettings.auto_staging.V)
             {
                 is_staging = false;
                 return false;
             }
+
+            CalculateVesselStageFuel();
            
             if (is_staging)
             {
@@ -211,6 +230,8 @@ namespace K2D2.Controller
             {
                 // start timer
                 start();
+                foreach (var engine in empty_engines)
+                    spent_engines.Add(engine);
                 // Activate next stage 
                 vessel_component.ActivateNextStage();
             }
@@ -270,4 +291,4 @@ namespace K2D2.Controller
         }
 
     }
-}
+}

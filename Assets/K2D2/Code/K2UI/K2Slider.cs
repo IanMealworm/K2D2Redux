@@ -63,6 +63,25 @@ namespace K2UI
             }
         }
 
+        // How the value is printed: a .NET number format ("N0", "N1", "N3"...), or "percent" for a
+        // 0-1 value shown as a whole percentage. N2 when not given.
+        string _format = "N2";
+
+        [CreateProperty]
+        [UxmlAttribute("format")]
+        public string Format
+        {
+            get { return _format; }
+            set
+            {
+                _format = string.IsNullOrEmpty(value) ? "N2" : value;
+                setLabels();
+            }
+        }
+
+        string FormatValue(float v) =>
+            _format == "percent" ? (v * 100).ToStringInvariant("N0") : v.ToStringInvariant(_format);
+
         // Optional override for the amber value text, for callers that need to show something
         // other than the slider's own raw float - e.g. Lift's 5°/45° Alt sliders, whose amber
         // reading is a computed, unit-suffixed altitude ("51 km") derived from this slider's 0-1
@@ -305,7 +324,7 @@ namespace K2UI
 
             if (printValue || _value_text_override != null)
             {
-                value_label_element.text = _value_text_override ?? value.ToStringInvariant("N2");
+                value_label_element.text = _value_text_override ?? FormatValue(value);
                 value_label_element.style.display = DisplayStyle.Flex;
             }
             else
@@ -363,4 +382,4 @@ namespace K2UI
         }
     }
 
-}
+}

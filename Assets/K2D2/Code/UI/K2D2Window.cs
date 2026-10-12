@@ -115,6 +115,8 @@ namespace K2D2.UI
         /// then) and again on any later live UI reload. All the wiring that needs the real root
         /// VisualElement lives here instead of OnEnable for that reason.
         /// </summary>
+        Tooltips tooltips;
+
         private void OnUiReload(PanelRenderer panel, VisualElement root, int version)
         {
             L.Log("K2D2Window.OnUiReload running");
@@ -136,6 +138,8 @@ namespace K2D2.UI
             // otherwise swallow silently (see the OnEnable doc comment above). If the window fails to
             // wire up, whichever element name gets logged here as missing is the one to check against
             // K2D2_Window.uxml.
+
+            tooltips = new Tooltips(_rootElement.Q("MainFrame") ?? _rootElement);
 
             // Get the close button from the window
             var closeButton = _rootElement.Q<Button>("close-button");

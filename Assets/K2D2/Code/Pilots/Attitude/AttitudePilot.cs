@@ -7,8 +7,8 @@ namespace K2D2.Controller
 {
     class AttitudeSettings
     {
-        public static ClampSetting<float> elevation = new("warp.elevation", 0, -90, 90);
-        public static ClampSetting<float> heading = new("warp.heading", 0, 0, 360);
+        public static ClampSetting<float> elevation = new("attitude.elevation", 0, -90, 90);
+        public static ClampSetting<float> heading = new("attitude.heading", 0, 0, 360);
     }
 
     public class AttitudePilot : Pilot

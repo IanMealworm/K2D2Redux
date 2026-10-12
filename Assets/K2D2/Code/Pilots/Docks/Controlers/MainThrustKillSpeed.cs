@@ -29,7 +29,8 @@ namespace K2D2.Controller.Docks.Pilots
 
         public override void Update()
         {
-            burn_dV.Update();
+            // Not a registered sub-controller, so nothing else refreshes its thrust reading.
+            burn_dV.Compute_Thrust();
 
             finished = false;
 
@@ -51,7 +52,7 @@ namespace K2D2.Controller.Docks.Pilots
             var target_direction_factor = Mathf.Cos(turnTo.angle * Mathf.Deg2Rad);
 
             Vector target_vel = current_vessel.VesselComponent.TargetVelocity;
-            float current_speed = (float)target_vel.magnitude * target_direction_factor;
+            current_speed = (float)target_vel.magnitude * target_direction_factor;
 
             float remaining_full_burn_time = (float)(current_speed / burn_dV.full_dv);
             var wanted_throttle = Mathf.Clamp(remaining_full_burn_time, 0, 1);

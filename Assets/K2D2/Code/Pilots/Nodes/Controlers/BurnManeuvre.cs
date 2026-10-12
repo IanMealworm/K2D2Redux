@@ -58,6 +58,7 @@ namespace K2D2.Node
 
         public float needed_throttle = 0;
         public float remaining_full_burn_time = 0;
+        bool no_thrust;
 
         ManeuverNodeData maneuver;
 
@@ -198,7 +199,17 @@ namespace K2D2.Node
                 return;
             }
 
-            remaining_full_burn_time = (float)(remaining_dv / burn_dV.full_dv);
+            // No thrust: no engine active, or all of them out of fuel. Full throttle, so the burn
+            // goes ahead as soon as one is staged or switched on.
+            no_thrust = !burn_dV.has_active_engine;
+            if (no_thrust)
+            {
+                remaining_full_burn_time = 0;
+                needed_throttle = 1;
+                return;
+            }
+
+            remaining_full_burn_time = (float)(remaining_dv / burn_dV.active_full_dv);
             if (remaining_full_burn_time >= 1)
             {
                 needed_throttle = 1;
@@ -217,13 +228,16 @@ namespace K2D2.Node
                     st.Console(status_line);
                     break;
                 case Mode.Burning:
-                    st.Warning("Burning!");
+                    st.Warning(no_thrust ? "No active engine - stage or switch one on" : "Burning!");
                     if (maneuver.BurnRequiredDV >= 0)
                         st.Progress(remaining_dv / maneuver.BurnRequiredDV, $"{remaining_dv:n1} m/s");
 
                     // dV remaining and time remaining on one line so they read side by side
                     // instead of stacked as two separate console lines.
-                    st.Console($"{status_line}    |    {StrTool.DurationToString(remaining_full_burn_time)}");
+                    if (no_thrust)
+                        st.Console(status_line);
+                    else
+                        st.Console($"{status_line}    |    {StrTool.DurationToString(remaining_full_burn_time)}");
                     break;
             }
 

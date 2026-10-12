@@ -58,6 +58,17 @@ namespace K2D2.Node
             turn = new TurnTo();
             warp = new WarpTo();
             burn = new BurnManeuver();
+            engines = new BurndV();
+        }
+
+        BurndV engines;
+
+        // Without a lit engine the burn would only sit at full throttle doing nothing, so the
+        // pilot won't start without one (staging during a burn is still fine).
+        bool HasActiveEngine()
+        {
+            engines.Compute_Thrust();
+            return engines.has_active_engine;
         }
 
         public void OnActiveVesselChanged(MessageCenterMessage msg)
@@ -203,6 +214,12 @@ namespace K2D2.Node
                 if (!canStart())
                 {
                     st.Warning("That node's already in the past - replot it.");
+                    return;
+                }
+
+                if (!HasActiveEngine())
+                {
+                    st.Warning("No active engine - stage or switch one on.");
                     return;
                 }
 
@@ -361,19 +378,26 @@ namespace K2D2.Node
             logger.LogInfo($"[NodeExPilot] CreateCircularizeNode({(atApoapsis ? "AP" : "PE")}): " +
                 $"now={now:n1} burn_UT={burn_UT:n1} (T+{burn_UT - now:n1}s) deltaV={deltaV:n2}m/s");
 
-            maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
-            {
-                checkManeuver();
-            });
+            // Added alongside whatever's already on the plan, which stays.
+            maneuver_creator.CreateManeuverNodeAtUT(burn_UT, deltaV);
+            checkManeuver();
         }
+
+        // While idle the next node is only checked a few times a second (the maneuver solver
+        // isn't cheap), and not at all with the tab hidden.
+        const float idle_check_interval_s = 0.25f;
+        float next_idle_check;
 
         public override void Update()
         {
-            checkManeuver();
+            if (isRunning)
+                checkManeuver();
+            else if (ui.isVisible && Time.unscaledTime >= next_idle_check)
+            {
+                next_idle_check = Time.unscaledTime + idle_check_interval_s;
+                checkManeuver();
+            }
             base.Update();
-
-            if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.O))
-                isRunning = !isRunning;
 
             if (isRunning)
             {
@@ -435,15 +459,24 @@ namespace K2D2.Node
                 }
                 else
                 {
+                    checkManeuver();
+                    // Refused: the status line already says why (see UpdateUI).
+                    if (next_maneuver_node != null && !HasActiveEngine())
+                        return;
+
                     // reset controller to desactivate other controllers.
                     K2D2_Plugin.ResetControllers();
                     TimeWarpTools.SetIsPaused(false);
-                
+
                     setMode(Mode.Turn);
                 }
 
                 // send call backs
-                base.isRunning = value; 
+                base.isRunning = value;
+                // A start that found no node to fly stops again here, so the Start button flips
+                // back instead of staying on "Stop".
+                if (value && mode == Mode.Off)
+                    base.isRunning = false;
             }
         }
 
@@ -489,7 +522,7 @@ namespace K2D2.Node
                     }
                     else if (mode == Mode.Burn)
                     {
-                        if (Game.UniverseModel.UniverseTime < next_maneuver_node.Time)
+                        if (execute_node != null && Game.UniverseModel.UniverseTime < execute_node.Time)
                         {
                             status = $"Waiting to Burn: {current_executor.status_line}";
                         }
@@ -500,8 +533,7 @@ namespace K2D2.Node
                         }
                     }
                 }
-                else status = "Done";
-                // else status = "Unknown";
+                else status = !canStart() ? "Node In The Past" : HasActiveEngine() ? "Ready" : "No Active Engine";
             }
             return status;
         }

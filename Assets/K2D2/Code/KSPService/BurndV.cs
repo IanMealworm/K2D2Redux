@@ -9,7 +9,7 @@ namespace K2D2.KSPService
 {
     public class BurndV : BaseController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.SettingsFile");
+        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.BurndV");
 
         KSPVessel current_vessel;
 
@@ -31,6 +31,11 @@ namespace K2D2.KSPService
 
         public Vector3 full_thrust;
         public float full_dv;
+
+        // Only the engines lit right now (staged or switched on, not flamed out). full_dv also
+        // counts engines still waiting in later stages.
+        public float active_full_dv;
+        public bool has_active_engine => active_full_dv > 0;
 
         public override void FixedUpdate()
         {
@@ -76,6 +81,7 @@ namespace K2D2.KSPService
 
             actual_thrust = Vector3.zero;
             full_thrust = Vector3.zero;
+            Vector3 active_full_thrust = Vector3.zero;
             List<DeltaVEngineInfo> engineInfos = delta_v.EngineInfo;
             for (int i = 0; i < engineInfos.Count; i++)
             {
@@ -90,7 +96,10 @@ namespace K2D2.KSPService
                 {
                     Vector3 vector = engineInfo.Engine.ThrustDirRelativePartWorldSpace;
                     actual_thrust += vector * engineInfo.Engine.FinalThrustValue;
-                    full_thrust += vector * compute_full_thrust(engineInfo);
+                    Vector3 thrust = vector * compute_full_thrust(engineInfo);
+                    full_thrust += thrust;
+                    if (engineInfo.Engine.IsOperational)
+                        active_full_thrust += thrust;
                 }
                 catch (System.NullReferenceException)
                 {
@@ -99,6 +108,7 @@ namespace K2D2.KSPService
 
             actual_dv = (float)(actual_thrust.magnitude / totalMass);
             full_dv = (float)(full_thrust.magnitude / totalMass);
+            active_full_dv = (float)(active_full_thrust.magnitude / totalMass);
         }
 
         // public override void onGUI()

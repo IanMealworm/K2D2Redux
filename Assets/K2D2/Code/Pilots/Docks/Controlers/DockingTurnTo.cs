@@ -97,9 +97,10 @@ namespace K2D2.Controller.Docks.Pilots
             if (target == null)
             {
                 mode = Mode.Off;
+                return;
             }
 
-            wanted_direction = current_vessel.VesselComponent.TargetObject.transform.up;
+            wanted_direction = target.transform.up;
             wanted_direction.vector = -wanted_direction.vector;
 
             autopilot.SAS.SetTargetOrientation(wanted_direction, false);
@@ -179,7 +180,7 @@ namespace K2D2.Controller.Docks.Pilots
 
         public override void updateUI(VisualElement root_el, FullStatus st)
         {
-            st.Warning("Check Attitude (dockin)");
+            st.Warning("Turning to docking attitude");
             st.Console(status_line);
 
             // UI_Tools.Console($"sas.sas_response v {Tools.print_vector(sas_response)}");

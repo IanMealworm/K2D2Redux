@@ -1,18 +1,11 @@
+/* K2UI.K2Toggle: a label with an on/off switch at the far right of its row, following the
+   game's own switch (KerbalUI's .unity-toggle.switch) at a smaller size for this narrower panel.
+   .long-label shrinks the text for labels that would otherwise push the switch off the row. */
+
 .root {
     --transition-duration-slider-bt: 2s;
 }
 
-/* Now matches Redux/KerbalUI's own stock ".unity-toggle.switch" recipe (Library/PackageCache/
-   uitkforksp2.controls/Assets/Theme/KerbalUI.uss, "Toggle (Switch)" region) - the exact control
-   the stock Parts Manager reference panel uses - instead of a from-scratch palette. Reuses
-   control-frame.png, the same 9-sliced frame asset Redux ships and tints for its own switch
-   track, so no new asset needed. Colors are copied straight from that stock rule set: unchecked
-   track tint rgb(73, 77, 91), checked track fill rgb(13, 113, 64) (Redux's own green, not this
-   mod's rgb(0, 204, 83) accent - keeping this one control matching the reference exactly rather
-   than forcing mod-wide green consistency here), knob rgb(189, 196, 209) in both states (stock
-   only moves the knob, it doesn't recolor it). Size/shape (30x18 track, 15x15 knob) stayed at
-   this mod's existing proportions rather than stock's larger 54x24 - this panel is narrower than
-   Parts Manager's. */
 .slide-toggle__input {
     max-width: 30px;
     border-top-left-radius: 8px;
@@ -67,40 +60,18 @@
 }
 
 .slide-toggle > Label {
-    font-size: 16px;
+    font-size: var(--k2-size-label);
     min-width: 110px;
-    color: rgb(192, 199, 213);
+    color: var(--k2-color-text);
     margin-right: 9px;
 }
 
-/* Pushes the switch itself to the far right of its row instead of sitting right after the label -
-   the outer ".slide-toggle" (K2Toggle's root class) had no layout rule at all before this, so it
-   was sizing to its children's combined width rather than stretching to fill the row.
-   justify-content spreads the label and switch to opposite ends once it does, matching the stock
-   Parts Manager reference.
-
-   NOTE: this was "flex-grow: 1" originally, which was the wrong axis - flex-grow controls sizing
-   along the PARENT's main axis, and every K2Toggle here sits in a column-flow parent (Turn/Warp/
-   Experimental are all plain top-to-bottom VisualElements), so flex-grow:1 was making each toggle
-   row grow VERTICALLY to soak up any leftover space in its parent, not stretch horizontally. That
-   was invisible as long as the window auto-sized tightly to its content (no leftover space to
-   grow into) - it only became visible ("Auto Warp" leaving a large empty gap before "Warp Speed")
-   once the AppShell got an explicit height + ScrollView this round, which for the first time gave
-   that column real leftover vertical space to hand out. align-self: stretch targets the CROSS
-   axis (width, in a column parent) instead, which is what was actually wanted. */
 .slide-toggle {
     align-self: stretch;
     justify-content: space-between;
 }
 
-/* Long toggle labels ("Circularize Once Ascent Complete" on Lift, "Use RCS for Fine Correction"
-   on Landing) run past the switch at the default 16px/110px sizing above instead of wrapping
-   (Label doesn't wrap here), pushing the switch itself out where it can't be seen/clicked.
-   Trims just the toggles carrying this class instead of shrinking every toggle's label
-   project-wide - most labels are short enough that 16px was never a problem for them. Two
-   classes on the same combinator (".slide-toggle.long-label", not a bare ".long-label") so this
-   reliably outranks the ".slide-toggle > Label" rule above regardless of stylesheet order. */
 .slide-toggle.long-label > Label {
-    font-size: 12px;
+    font-size: var(--k2-size-info);
     min-width: 90px;
 }

@@ -15,11 +15,8 @@ MonoBehaviour:
   id: K2D2
   name: K2-D2
   author: IanMealworm
-  description: 'K2-D2 is an astromech-style autopilot suite for KSP2: maneuver node
-    execution, ascent guidance, automated landing, docking, and attitude hold, all
-    from one panel (Alt-O or AppBar). Port of Christophe Floutier''s original K2-D2
-    (built for SpaceWarp1) to the Redux modding framework.'
-  version: 1.3.0
+  description: 'K2-D2 is an astromech-style autopilot suite for KSP2: maneuver node execution, ascent guidance, automated landing, docking, and attitude hold, all from one panel (Alt-O or AppBar). Port of Christophe Floutier''s original K2-D2 (built for SpaceWarp1) to the Redux modding framework.'
+  version: 1.4
   versionCheck: 
   minKsp2Version: '*'
   maxKsp2Version: '*'

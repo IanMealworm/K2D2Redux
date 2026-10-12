@@ -50,7 +50,10 @@ namespace K2D2.Node
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Start";
+                // The pilot can refuse a start (no node, no engine) or stop again straight away,
+                // so the button follows where it ended up rather than the click.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Start";
             };
             pause_button.Bind(pilot.settings.pause_on_end);
 
@@ -124,4 +127,4 @@ namespace K2D2.Node
 
 
     }
-}
+}

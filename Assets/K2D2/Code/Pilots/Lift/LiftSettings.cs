@@ -76,7 +76,8 @@ namespace K2D2.Lift
         public ClampSetting<float> gravity_turn_pitch_bias_max_deg = new("lift.gravity_turn_pitch_bias_max_deg", 25f, 0f, 45f);
         public ClampSetting<float> gravity_turn_pitch_bias_engage_margin = new("lift.gravity_turn_pitch_bias_engage_margin", 0.6f, 0f, 1f);
 
-        public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0, 1);
+        // Above 0: at 0 Adjust never raises apoapsis, so the run never finishes.
+        public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0.05f, 1);
         public ClampSetting<float> end_ascent_pc = new ("lift.end_ascent_pc", 0.1f, 0, 1);
 
         public float end_ascent_error
@@ -93,11 +94,9 @@ namespace K2D2.Lift
             get => destination_Ap_km.V * end_adjust_pc.V/100;
         }
 
-        // Default on: run straight through ascent -> atmosphere clear -> circularize with no
-        // pause, since FinalCircularize (Controlers/Final.cs) now creates and flies the
-        // circularize burn itself instead of waiting on a manually- or FlightPlan-created node.
-        // Turning this off falls back to the old flow - Coasting.cs only actually pauses on
-        // pause_on_final below when this is off.
+        // On: the run ends with a circularization burn at apoapsis (FinalCircularize). Off: it
+        // ends once apoapsis is final, optionally pausing (pause_on_final) so the player can plan
+        // their own.
         public Setting<bool> auto_circularize = new ("lift.auto_circularize", true);
 
         public Setting<bool> pause_on_final = new ("lift.pause_on_final", true);
@@ -123,19 +122,19 @@ namespace K2D2.Lift
         Label end_ascent_alt;
         Label end_adjust_alt;
 
-        Group adjust_group;
+        VisualElement adjust_group;
 
         void setLabels()
         {
-            end_ascent_alt.text = $"End Ascent Alt. : {destination_Ap_km.V - end_ascent_error:n2} km";
-            end_adjust_alt.text = $"Final Adjust Alt : {destination_Ap_km.V - end_adjust_error:n2} km";
+            end_ascent_alt.text = $"Ascent ends at {destination_Ap_km.V - end_ascent_error:n2} km";
+            end_adjust_alt.text = $"Fine tuning ends at {destination_Ap_km.V - end_adjust_error:n2} km";
         }
 
         public void setupUI(VisualElement root)
         {
             end_ascent_alt =  root.Q<Label>("end_ascent_alt");
             end_adjust_alt = root.Q<Label>("end_adjust_alt");
-            adjust_group = root.Q<K2UI.Group>("adjust_group");
+            adjust_group = root.Q<VisualElement>("adjust_group");
 
             // ASCENT PROFILE - a real DropdownField. The oversized height seen in-game was a
             // K2UI.uss bug (.unity-popup-field__input's height: 100% resolving against this
@@ -167,11 +166,13 @@ namespace K2D2.Lift
             ShowProfileSettings(ascent_profile.V);
 
             ascent_profile_drop.RegisterCallback<ChangeEvent<string>>(evt =>
+                ascent_profile.V = evt.newValue == "Gravity Turn" ? AscentProfile.GravityTurn : AscentProfile.Guided);
+            // Also follows Reset.
+            ascent_profile.listeners += profile =>
             {
-                var profile = evt.newValue == "Gravity Turn" ? AscentProfile.GravityTurn : AscentProfile.Guided;
-                ascent_profile.V = profile;
+                ascent_profile_drop.SetValueWithoutNotify(profile == AscentProfile.GravityTurn ? "Gravity Turn" : "Guided");
                 ShowProfileSettings(profile);
-            });
+            };
 
             gravity_turn_settings.Q<K2Slider>("gravity_turn_kick_speed_mps").Bind(gravity_turn_kick_speed_mps);
             gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_kick_deg").Bind(gravity_turn_pitch_kick_deg);
@@ -185,6 +186,7 @@ namespace K2D2.Lift
             // bind to settings and add listener on the same line !
             root.Q<K2Slider>("end_ascent_pc").Bind(end_ascent_pc);
             end_ascent_pc.listen(v => setLabels());
+            destination_Ap_km.listeners += v => setLabels();
 
             root.Q<K2Toggle>("coasting_warp").Bind(coasting_warp);
 
@@ -197,7 +199,8 @@ namespace K2D2.Lift
 
             root.Q<K2Toggle>("auto_circularize").Bind(auto_circularize);
 
-            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
+            var pause_toggle = root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
+            auto_circularize.listen(v => pause_toggle.SetEnabled(!v));
 
             // ROLL PROGRAM - .listen(), not .listeners += (see LandingSettings.setupUI's comment on
             // precision_landing for why that distinction matters): this defaults to off, so a plain
