@@ -154,11 +154,12 @@ namespace K2D2.Landing
             target_settings.Q<FloatField>("target_latitude_atmo").Bind(target_latitude);
             target_settings.Q<FloatField>("target_longitude_atmo").Bind(target_longitude);
             precision_settings.Q<K2Slider>("entry_angle_of_attack_atmo").Bind(entry_angle_of_attack);
-            // Only used by landings from orbit (see LandingPilot.atmo_landing_from_orbit).
+            // These two are only used by landings from orbit (see LandingPilot.atmo_landing_from_orbit).
             precision_settings.Q<K2Slider>("entry_flight_path_angle_atmo").Bind(entry_flight_path_angle)
                 .Show(LandingPilot.atmo_landing_from_orbit);
+            precision_settings.Q<K2Slider>("max_plane_trim_dv_atmo").Bind(max_plane_trim_dv)
+                .Show(LandingPilot.atmo_landing_from_orbit);
             precision_settings.Q<InlineEnum>("boost_back_flip_atmo").Bind(boost_back_flip);
-            precision_settings.Q<K2Slider>("max_plane_trim_dv_atmo").Bind(max_plane_trim_dv);
 
             root.Q<K2Toggle>("auto_warp_atmo").Bind(auto_warp);
             var warp_settings = root.Q<VisualElement>("warp_settings_atmo");

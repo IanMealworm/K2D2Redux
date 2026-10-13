@@ -53,8 +53,9 @@ namespace K2D2.Landing
         // MidCourseCorrection.cs.
         public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
 
-        // Atmospheric precision landing: deorbit toward the target, correct the entry with Redux's
-        // prediction, then steer the reentry with lift, before the regular powered landing.
+        // Atmospheric precision landing from orbit (off for now, see atmo_landing_from_orbit):
+        // deorbit toward the target, correct the entry with Redux's prediction, then steer the
+        // reentry with lift, before the regular powered landing.
         public AtmoDeorbitBurn atmo_deorbit = new AtmoDeorbitBurn();
         public AtmoEntryCorrection atmo_correction = new AtmoEntryCorrection();
         // Boost-back landing: started on a vessel that's already coming down (a recovered stage),
@@ -275,6 +276,16 @@ namespace K2D2.Landing
                         || (mode == Mode.Brake && (atmo_precision || atmo_regular)))
                         ReleaseAtmo();
 
+                    // These phases each put their own node on the plan.
+                    if (mode == Mode.Circularize || mode == Mode.DeorbitBurn || mode == Mode.MidCourseCorrection
+                        || mode == Mode.AtmoDeorbit || mode == Mode.AtmoCorrection)
+                    {
+                        var maneuver_creator = new ManeuverCreator();
+                        maneuver_creator.Update();
+                        maneuver_creator.RemoveAllNodes();
+                    }
+                    ReleaseSasTarget();
+
                     setMode(Mode.Off);
                     _active = false;
                 }
@@ -300,8 +311,9 @@ namespace K2D2.Landing
                     // already close enough to circular, or a refusal if it's too high - see
                     // Circularize.cs), then plans and flies a real, visible deorbit node, before
                     // falling into the normal Pause->QuickWarp->...->TouchDown sequence.
-                    // Atmospheric precision landing does the same with its own burns and entry
-                    // guidance, as long as Redux's prediction is set up the way it needs.
+                    // Atmospheric precision landing needs Redux's prediction set up the way it
+                    // needs, and for now only starts on a vessel already coming down inside the
+                    // atmosphere (a boost-back - see atmo_landing_from_orbit).
                     if (touch_down_start)
                         setMode(Mode.TouchDown);
                     else if (vacuum_precision)
@@ -317,7 +329,7 @@ namespace K2D2.Landing
                         }
                         // Already coming down (a recovered stage just after separation, say): a
                         // boost-back burn instead of circularizing and deorbiting.
-                        bool from_orbit = !IsSuborbital();
+                        bool from_orbit = LandsFromOrbit();
                         if (from_orbit && !atmo_landing_from_orbit)
                         {
                             stop_reason = from_orbit_unavailable;
@@ -353,6 +365,21 @@ namespace K2D2.Landing
             touch_down_start = true;
             isRunning = true;
             touch_down_start = false;
+        }
+
+        // The burns and the guided descent leave SAS turning toward their last target; after a
+        // stop it holds wherever the vessel points instead. Other SAS modes the landing set
+        // (retrograde for the final descent) are left as they are.
+        void ReleaseSasTarget()
+        {
+            var autopilot = current_vessel?.Autopilot;
+            if (autopilot?.SAS == null || autopilot.AutopilotMode != AutopilotMode.StabilityAssist)
+                return;
+
+            var frame = SASTool.getTelemetry().HorizonUp.coordinateSystem;
+            Rotation facing = Rotation.Reframed(current_vessel.GetRotation(), frame);
+            autopilot.SAS.lockedMode = false;
+            autopilot.SAS.SetTargetOrientation(new Vector(frame, facing.localRotation * UnityEngine.Vector3.up), false);
         }
 
         void ReleaseAtmo()
@@ -770,7 +797,18 @@ namespace K2D2.Landing
         internal const bool atmo_landing_from_orbit = false;
         internal const string from_orbit_unavailable =
             "Atmospheric precision landing from orbit isn't available yet - for now it lands stages that are already " +
-            "coming back down (boost-back landings).";
+            "coming back down inside the atmosphere (boost-back landings).";
+
+        // A landing from orbit, as opposed to a boost-back: still in orbit, or above the
+        // atmosphere. A hand-made deorbit is suborbital, but until it's in the air it needs the
+        // from-orbit entry, not a boost-back.
+        internal bool LandsFromOrbit()
+        {
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null)
+                return false;
+            return !IsSuborbital() || vessel.AltitudeFromSeaLevel > vessel.mainBody.atmosphereDepth;
+        }
 
         internal bool IsSuborbital()
         {
