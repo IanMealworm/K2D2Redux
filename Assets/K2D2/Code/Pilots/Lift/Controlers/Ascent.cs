@@ -333,6 +333,7 @@ namespace K2D2.Lift
                 heading_correction = 45;
             else if (heading_correction < -45)
                 heading_correction = -45;
+            heading_correction *= HeadingCorrectionWeight(LocalHSpeed.magnitude);
         }
 
         // Tracks whether the roll program has reached its trigger altitude, and advances the ramped
@@ -407,10 +408,21 @@ namespace K2D2.Lift
         public override void UpdateInfoRows(System.Action<string, string> addRow)
         {
             addRow("Apoapsis Alt.", $"{ap_km:n2} km");
-            addRow("Altitude", $"{current_altitude_km:n2} km");
-            addRow("Climb Rate", $"{delta_ap_per_second:n2} km/s");
             addRow("Pitch Target", $"{wanted_elevation:n2} °");
             addRow("Throttle", $"{wanted_throttle:n2}");
+
+            if (settings.roll_program.V)
+            {
+                string roll_status = roll_program_done ? "Done" : (roll_program_started ? "Active" : "Waiting for Altitude");
+                addRow("Roll Program", roll_status);
+            }
+
+            // The rest is for tuning and bug reports.
+            if (!K2D2Settings.debug_mode.V)
+                return;
+
+            addRow("Altitude", $"{current_altitude_km:n2} km");
+            addRow("Climb Rate", $"{delta_ap_per_second:n2} km/s");
 
             if (settings.heading_correction.V)
             {
@@ -420,8 +432,6 @@ namespace K2D2.Lift
 
             if (settings.roll_program.V)
             {
-                string roll_status = roll_program_done ? "Done" : (roll_program_started ? "Active" : "Waiting for Altitude");
-                addRow("Roll Program", roll_status);
                 addRow("Roll (from launch)", $"{debug_roll_delta_deg:n1} °");
                 addRow("Roll Error", $"{debug_roll_error_deg:n1} °");
                 addRow("Roll Dbg: RollRate", $"{debug_roll_rate_deg_s:n2} °/s");

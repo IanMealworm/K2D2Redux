@@ -34,6 +34,13 @@ namespace K2D2.Lift
         // this profile's throttle is actually the one commanding the engine.
         public abstract void computeValues(bool compute_delta_ap_per_second);
 
+        // Heading correction fades in with horizontal speed: rising straight off the pad, the
+        // direction of a few cm/s of sideways drift is noise and would swing the heading around.
+        protected static float HeadingCorrectionWeight(double horizontal_speed_mps)
+        {
+            return Mathf.Clamp01((float)(horizontal_speed_mps - 5) / 45f);
+        }
+
         // Common telemetry refresh both Ascent and ReactiveAscent need every tick - reads the
         // live orbit for altitude/apoapsis and smooths a climb-rate estimate from how fast
         // apoapsis is rising per second of full throttle. Each subclass's own computeValues()

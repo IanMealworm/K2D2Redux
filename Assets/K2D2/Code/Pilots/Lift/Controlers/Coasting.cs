@@ -56,7 +56,8 @@ namespace K2D2.Lift
         public override void UpdateInfoRows(System.Action<string, string> addRow)
         {
             addRow("Altitude", $"{current_altitude_km:n2} km");
-            addRow("Atm Density", $"{densityAtm:n2}");
+            if (K2D2Settings.debug_mode.V)
+                addRow("Atm Density", $"{densityAtm:n2}");
         }
 
         public override void Update()
