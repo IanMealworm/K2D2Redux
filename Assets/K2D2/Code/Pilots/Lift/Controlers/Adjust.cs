@@ -49,9 +49,10 @@ namespace K2D2.Lift
 
         public override void UpdateInfoRows(System.Action<string, string> addRow)
         {
-            addRow("Altitude", $"{lift.ascent.current_altitude_km:n2} km");
             addRow("Apoapsis Alt.", $"{lift.ascent.ap_km:n2} km");
             addRow("Throttle", $"{wanted_throttle:n2}");
+            if (K2D2Settings.debug_mode.V)
+                addRow("Altitude", $"{lift.ascent.current_altitude_km:n2} km");
         }
 
         public override void Update()
