@@ -87,6 +87,9 @@ namespace K2D2.Lift
                 // ends; the prograde holds that follow need it off.
                 if (_status == LiftStatus.Ascent)
                     ReleaseRollLock();
+                // The circularization burn steers with its own SAS lock (see FinalCircularize).
+                if (_status == LiftStatus.Circularize)
+                    final_circularize.Release();
                 _status = value;
                 switch (value)
                 {
