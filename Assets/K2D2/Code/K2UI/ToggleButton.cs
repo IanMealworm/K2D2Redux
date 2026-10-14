@@ -4,12 +4,8 @@ using KTools;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). The old UxmlTraits.Init() always applied "label" from the bag, defaulting to "Toggle
-    // Button" when a tag didn't specify one (node.uxml's "pause" ToggleButton relies on exactly
-    // this - it has no label="..." at all) - the new attribute system only calls a setter for
-    // attributes actually present in the tag, so `label = "Toggle Button";` in the constructor
-    // below reproduces that same default explicitly.
+    // UXML only applies attributes present in the tag (see Group.cs), so the constructor sets
+    // `label = "Toggle Button"`: node.uxml's "pause" ToggleButton has no label="..." at all.
     [UxmlElement]
     public partial class ToggleButton : VisualElement
     {
@@ -106,4 +102,4 @@ namespace K2UI
         
     }
 
-}
+}

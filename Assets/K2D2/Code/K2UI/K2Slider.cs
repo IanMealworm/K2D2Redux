@@ -6,17 +6,11 @@ using K2D2;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). The new attribute system only calls a setter for attributes actually present in a tag,
-    // unlike the old bag-based Init() which always applied every attribute, falling back to its
-    // own defaultValue for anything omitted. attitude.uxml's "elevation_slider" is a bare
-    // <K2UI.K2Slider name="elevation_slider" /> with none of these attributes set, so this
-    // constructor sets main_slider's lowValue/highValue explicitly (0/1, matching the old bag
-    // defaults) instead of trusting Slider's own defaults, and _labelOnTop's field initializer is
-    // `false` to match the old bag default. An AttachToPanelEvent hook (same idiom as
-    // ExFoldoutGroup.cs) reproduces the old Init()'s unconditional trailing
-    // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even for a
-    // bare tag.
+    // UXML only applies attributes present in the tag (see Group.cs), and attitude.uxml's
+    // "elevation_slider" is a bare <K2UI.K2Slider name="elevation_slider" />. So the constructor
+    // sets main_slider's lowValue/highValue (0/1) explicitly rather than trusting Slider's own
+    // defaults, and an AttachToPanelEvent hook runs SliderValueChanged()/setLabels() so even a
+    // bare tag gets a consistent visual state.
     [UxmlElement]
     public partial class K2Slider : VisualElement
     {
@@ -98,9 +92,7 @@ namespace K2UI
             }
         }
 
-        // Default matches the old UxmlTraits "label-on-top" defaultValue - matters for tags that
-        // omit this attribute, since the new attribute system only calls the setter when present
-        // (see class comment / elevation_slider).
+        // The default for tags that omit "label-on-top" (see class comment).
         bool _labelOnTop = false;
 
         [CreateProperty]
@@ -183,8 +175,7 @@ namespace K2UI
             AddToClassList(k2slider_uss);
             main_slider = new Slider() { name = "main_slider" };
             main_slider.AddToClassList(slider_uss);
-            // Explicit, matching the old bag defaults (min=0/max=1) rather than trusting Slider's
-            // own built-in lowValue/highValue defaults - see class comment.
+            // Explicit rather than Slider's own lowValue/highValue defaults - see class comment.
             main_slider.lowValue = 0f;
             main_slider.highValue = 1f;
             main_slider.direction = SliderDirection.Horizontal;
@@ -217,24 +208,19 @@ namespace K2UI
             main_slider.RegisterCallback<ChangeEvent<float>>((evt) => { SliderValueChanged(); });
             main_slider.RegisterCallback<GeometryChangedEvent>((evt) => SliderValueChanged());
 
-            // The dashed track was originally a USS background-image (a package-sourced sprite),
-            // but that image reliably fails to paint in this game's UI Toolkit embedding even when
-            // resolvedStyle reports a correct sprite, size, and visibility - the failure is below
-            // what resolvedStyle can see. Drawn directly instead with generateVisualContent: plain
-            // rectangles via Painter2D, no texture/sprite/background-image resolution involved.
+            // The dashed track is drawn with Painter2D rather than a USS background-image: that
+            // image reliably fails to paint in this game's UI Toolkit embedding, even when
+            // resolvedStyle reports a correct sprite, size and visibility.
             tracker.generateVisualContent += DrawDashedTrack;
             tracker.RegisterCallback<GeometryChangedEvent>((evt) => tracker.MarkDirtyRepaint());
 
-            // Reproduces the old UxmlTraits.Init()'s unconditional trailing
-            // SliderValueChanged()/setLabels() calls, guaranteeing a consistent visual state even
-            // for a bare tag. Runs once attached, by which point any UXML attributes have already
-            // been applied - same idiom ExFoldoutGroup.cs uses.
+            // Runs once attached, by which point any UXML attributes have been applied (same
+            // idiom as ExFoldoutGroup.cs) - see class comment.
             RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
-        // Matches the look the CSS background-image was going for: a thin horizontal dashed line,
-        // tinted to the same blue-grey the retro pass uses elsewhere, tiled left-to-right at a
-        // fixed dash/gap pitch regardless of this slider's actual width.
+        // A thin horizontal dashed line in the UI's blue-grey, tiled left-to-right at a fixed
+        // dash/gap pitch whatever the slider's width.
         static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
         // A stock KerbalUI.uss rule ghosts a second, lighter-blue dashed line behind this one
         // unless #unity-tracker's background-image is set to none (see K2Slider.uss).
@@ -286,10 +272,8 @@ namespace K2UI
                 return;
             }
 
-            // label_element starts out parented inside main_slider's own internal BaseField
-            // structure (Unity's default layout, before this ever runs) - pull it (and add
-            // value_label_element alongside it) into label_row exactly once, so label_row can be
-            // moved as a single unit below the same way label_element alone used to be.
+            // label_element starts out inside main_slider's internal BaseField structure. Move it
+            // (with value_label_element) into label_row once, so label_row moves as a single unit.
             if (label_element.parent != label_row)
             {
                 label_element.parent.Remove(label_element);
@@ -317,9 +301,8 @@ namespace K2UI
 
         void setLabels()
         {
-            // Still goes through main_slider.label (not label_element.text directly) so Unity's
-            // own BaseField show/hide-on-empty-label handling for label_element keeps working -
-            // this only ever carries the title text now, never the value.
+            // Goes through main_slider.label (not label_element.text) so BaseField's
+            // hide-on-empty-label handling keeps working. It carries the title only, never the value.
             main_slider.label = Label;
 
             if (printValue || _value_text_override != null)

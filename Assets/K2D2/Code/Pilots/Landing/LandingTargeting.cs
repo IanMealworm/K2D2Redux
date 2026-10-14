@@ -27,15 +27,10 @@ namespace K2D2.Landing
             return 2.0 * Math.PI * Math.Sqrt(sma * sma * sma / gravParameter);
         }
 
-        // For Circularize.cs (precision landing's precondition phase - the deorbit planning
-        // assumes a roughly circular starting orbit). Semi-major axis from vis-viva (same formula
-        // as OrbitalPeriodFromStateVectors above), apoapsis/periapsis radii from the standard eccentricity vector
-        // (e = ((v^2 - mu/r) r - (r.v) v) / mu) rather than anything engine-specific - deliberately
-        // avoids IKeplerPatch/PatchedConicsOrbit member access entirely (unlike ManeuverCreator's
-        // existing Circularize* methods, which read orbit.Apoapsis/orbit.Periapsis off a
-        // "GetLastOrbit() as PatchedConicsOrbit" cast - the same cast pattern that throws
-        // InvalidCastException for the actively-flown vessel under Redux, since its orbit is a
-        // CurrentPatchedConicsOrbit, not a PatchedConicsOrbit).
+        // Semi-major axis from vis-viva, apoapsis/periapsis radii from the eccentricity vector
+        // (e = ((v^2 - mu/r) r - (r.v) v) / mu). Deliberately avoids IKeplerPatch/PatchedConicsOrbit
+        // members: under Redux the active vessel's orbit is a CurrentPatchedConicsOrbit, and
+        // casting it to PatchedConicsOrbit throws InvalidCastException.
         public static void OrbitalElementsFromStateVectors(Vector3d r0, Vector3d v0, double gravParameter,
             out double semiMajorAxis, out double apoapsisRadius, out double periapsisRadius)
         {
@@ -51,16 +46,11 @@ namespace K2D2.Landing
             periapsisRadius = semiMajorAxis * (1.0 - eccentricity);
         }
 
-        // Not a real orbital period - a hyperbolic/unbound trajectory only ever passes periapsis
-        // once, it doesn't repeat. This is just a sensible time SCALE to sweep across when
-        // looking for that one passage (see TimeToNextPeriapsis's caller in NodeExPilot.
-        // CreateCircularizeNode - the "Circularize at PE" button needs to work on an inbound SOI
-        // capture trajectory, before any capture burn has happened). Same formula as
-        // OrbitalPeriodFromStateVectors above, but taking the absolute value of the semi-major
-        // axis (negative for a hyperbolic/unbound orbit - see OrbitalElementsFromStateVectors) so
-        // the result stays finite and positive instead of NaN, plus a 2x safety margin since -
-        // unlike a real period - there's no guarantee this "characteristic timescale" is itself
-        // long enough to contain the passage being searched for.
+        // Not a real orbital period: a hyperbolic trajectory passes periapsis only once. This is a
+        // time scale to search for that passage in, so the Node tab's "Circularize at PE" works on
+        // an inbound SOI capture. Uses the semi-major axis's absolute value (it's negative when
+        // unbound) to stay finite, and doubles the result, since nothing guarantees this scale
+        // contains the passage.
         public static double SearchWindowFromStateVectors(Vector3d r0, Vector3d v0, double gravParameter)
         {
             double r0mag = r0.magnitude;
@@ -119,12 +109,9 @@ namespace K2D2.Landing
             const int samples = 24;
             double window = period;
 
-            // Retries with a doubled window if no crossing turns up - needed for the
-            // hyperbolic/unbound case (Circularize at PE during an SOI capture), where "period" is
-            // really SearchWindowFromStateVectors's heuristic estimate rather than a guaranteed-
-            // correct orbital period, so a single pass "not found" might just mean the window
-            // undershot. A bound (elliptical) caller's real period always contains one, so this
-            // loop is a no-op for that case - purely extra insurance for the hyperbolic one.
+            // Retries with a doubled window if no crossing turns up: on a hyperbolic orbit "period"
+            // is only SearchWindowFromStateVectors's estimate and may undershoot. A bound orbit's
+            // real period always contains a crossing.
             for (int attempt = 0; attempt < 4; attempt++)
             {
                 double stepSize = window / samples;

@@ -19,12 +19,9 @@ namespace K2D2.UI
 
         public override bool onInit()
         {
-            // About no longer gets its own tab button in the bar - it's reached only via the new
-            // info button (K2D2Window.cs: tab_page.Select("about")), same mechanism TabbedPage
-            // already exposes for switching tabs directly regardless of button visibility. Setting
-            // enabled=false here hides the button the same way the old
-            // GlobalSetting.settings_visible-driven onSettingsChanged used to, just unconditionally
-            // instead of toggling with a shared flag nothing sets to true anymore.
+            // About has no tab button of its own: it's reached through the window's info button
+            // (K2D2Window.cs: tab_page.Select("about")), which works whatever the button's
+            // visibility. enabled=false hides the button.
             enabled = false;
 
             Label label = panel.Q<Label>("version");

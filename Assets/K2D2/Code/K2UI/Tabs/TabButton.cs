@@ -7,14 +7,6 @@ namespace K2UI.Tabs
     /// <summary>
     /// a simple visual element just used to contains label and icon
     /// </summary>
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). "name" itself needs no special handling any more - UI Toolkit's own attribute
-    // application always sets it now, regardless of custom control type - so
-    // TabbedPage.ShowContent()'s page.Show(page.name == code), K2Page.Init()'s
-    // panels.Q<TabPage>(code), and setButton() below all keep working unchanged. TabPage is never
-    // actually instantiated from a UXML tag in this project though (K2D2_Window.uxml's tab content
-    // is <ui:Instance> template references, not literal <K2UI.Tabs.TabPage> tags) - only ever via
-    // `new TabPage()` - so none of this was actually exercised via Init() before either way.
     [UxmlElement]
     public partial class TabPage : VisualElement
     {
@@ -48,11 +40,6 @@ namespace K2UI.Tabs
     /// <summary>
     /// TabButton have two states : active (showing current content) and lighted (pilot is on)
     /// </summary>
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). TabButton, like TabsBar and TabPage, is never actually instantiated from a UXML tag in
-    // this project - only ever via `new TabButton()` from TabbedPage/TabPage's own code - so its
-    // old Init() (and the "Tab Button"/false/false defaults it unconditionally applied) never
-    // actually ran in practice. Converted for consistency/future-proofing anyway.
     [UxmlElement]
     public partial class TabButton : VisualElement
     {
@@ -137,4 +124,4 @@ namespace K2UI.Tabs
         }
 
     }
-}
+}

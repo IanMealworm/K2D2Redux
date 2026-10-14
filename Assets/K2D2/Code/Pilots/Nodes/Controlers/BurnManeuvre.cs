@@ -17,16 +17,11 @@ namespace K2D2.Node
     {
         public static Setting<float> burn_adjust = new ("node_ex.burn.burn_adjust", 1.5f);
         public static Setting<float> max_dv_error = new ("node_ex.burn.max_dv_error", 0.1f);
-        // Default flipped to true (was false): keeping SAS locked onto the live maneuver vector
-        // for the whole burn, instead of dropping to plain stability-hold the moment burning
-        // starts, is what Node/Lift/Landing's burns should all do out of the box - see the
-        // Mode.Waiting -> Mode.Burning transition below. This is a single global static shared by
-        // every BurnManeuver in the mod (Node's own burns, Lift's final circularize, and Landing's
-        // Circularize/DeorbitBurn/MidCourseCorrection all construct their burns through this same
-        // class), so this one flip changes all of them at once - intentionally, since more
-        // accurate burns are wanted everywhere, not just here. The toggle itself (Node tab's
-        // Experimental section) is left in place for anyone who wants the old fixed-orientation
-        // behavior back.
+        // On by default: keeping SAS locked onto the live maneuver vector for the whole burn,
+        // rather than holding a fixed orientation once burning starts, gives more accurate burns
+        // (see the Mode.Waiting -> Mode.Burning transition below). This one static setting covers
+        // every BurnManeuver in the mod: Node's burns, Lift's final circularize and Landing's
+        // burns. The Node tab's Experimental section can turn it off.
         public static Setting<bool> rotate_during_burn = new ("node_ex.burn.rotate_during_burn", true);
     }
 

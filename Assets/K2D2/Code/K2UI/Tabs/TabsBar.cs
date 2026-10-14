@@ -4,14 +4,7 @@ using System.Collections.Generic;
 
 namespace K2UI.Tabs
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). TabsBar is never actually instantiated from a UXML tag anywhere in the project - only
-    // ever via `new TabsBar()` from TabbedPage.Setup() - so its old Init() (including the
-    // updateList() call it used to make unconditionally) never actually ran in practice. Converted
-    // for consistency/future-proofing anyway; openedIndex needs to be public for the source
-    // generator to attach an attribute to it. Restricting children to TabButton (the old
-    // uxmlChildElementsDescription override) was only ever an editor-time authoring hint, not a
-    // runtime gate, so it has no equivalent here.
+    // openedIndex is public so the UXML source generator can attach an attribute to it.
     [UxmlElement]
     public partial class TabsBar : VisualElement
     {
@@ -130,4 +123,4 @@ namespace K2UI.Tabs
             }
         }
     }
-}
+}

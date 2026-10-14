@@ -21,10 +21,10 @@ namespace K2D2.Landing
     //  - Each part is sized from Redux's miss on its own axis, and the angle of attack flown is in
     //    proportion to how much lift is wanted - none at all when it's on target.
     //
-    // (It used to fly a fixed angle of attack and steer by the bank alone, the way Apollo did.
-    // That can only take lift off the vertical by tipping it sideways - half the lift up means 87%
-    // of it pushing to one side - and on the booster tests it banked 40-90° most of the way down,
-    // drifting sideways away from the target.)
+    // (Flying a fixed angle of attack and steering by the bank alone, the way Apollo did, can only
+    // take lift off the vertical by tipping it sideways - half the lift up means 87% of it pushing
+    // to one side. On the booster tests that banked 40-90° most of the way down and drifted
+    // sideways away from the target.)
     //
     // Redux only predicts for the attitude being flown right now, and restarts its prediction
     // whenever that attitude changes by more than 2°. So the guidance works in steps: hold an
@@ -36,8 +36,9 @@ namespace K2D2.Landing
     // and taken to be the same for both axes - it's the same lift, turned.
     //
     // It steers until the landing burn is due, then hands over to the landing burn
-    // (AtmoLandingBurn, LandingPilot's Brake mode). AtmoBurnPlanner works out, with drag, when that is and how much shorter the
-    // burn makes the flight; the steering aims that far beyond the target so the burn ends on it.
+    // (AtmoLandingBurn, LandingPilot's Brake mode). AtmoBurnPlanner works out, with drag, when
+    // that is and how much shorter the burn makes the flight; the steering aims that far beyond
+    // the target so the burn ends on it.
     public class AtmoEntryGuidance : ExecuteController
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.AtmoEntryGuidance");
@@ -54,7 +55,7 @@ namespace K2D2.Landing
         // The overshoot is smoothed over about this long, so a noisy plan doesn't jerk the aim.
         const double shortfall_smoothing_s = 5;
         // Without a burn plan (no drag measured yet, or no thrust figure for the engines), hand
-        // over here as before.
+        // over at this fixed height.
         const double unplanned_handover_m = 10000;
         // Hand over regardless below these.
         const double end_altitude_m = 2000;
@@ -486,17 +487,18 @@ namespace K2D2.Landing
             }
         }
 
-        void AdjustAoaBoost(double raw_u, double along)
+        // raw: how far outside its lift's reach the target is (above 1: out of reach).
+        void AdjustAoaBoost(double raw, double along)
         {
             double now = GeneralTools.Current_UT;
             if (!double.IsNaN(last_boost_change_UT) && now - last_boost_change_UT < aoa_boost_interval_s)
                 return;
 
-            bool out_of_reach = Math.Abs(raw_u) > 1 && Math.Abs(along) > aoa_boost_min_miss_m;
+            bool out_of_reach = raw > 1 && Math.Abs(along) > aoa_boost_min_miss_m;
             double nominal = landing.settings.entry_angle_of_attack.V;
             if (out_of_reach && nominal + aoa_boost_deg < max_angle_of_attack_deg)
                 aoa_boost_deg = Math.Min(max_angle_of_attack_deg - nominal, aoa_boost_deg + aoa_boost_step_deg);
-            else if (!out_of_reach && Math.Abs(raw_u) < 0.7 && aoa_boost_deg > 0)
+            else if (!out_of_reach && raw < 0.7 && aoa_boost_deg > 0)
                 aoa_boost_deg = Math.Max(0, aoa_boost_deg - aoa_boost_step_deg);
             else
                 return;
@@ -639,7 +641,7 @@ namespace K2D2.Landing
 
         public override void UpdateInfoRows(Action<string, string> addRow)
         {
-            if (!in_atmosphere)
+            if (!in_atmosphere || !K2D2Settings.debug_mode.V)
                 return;
             addRow("Lift Bank", $"{lift_bank_deg:n0}°");
             addRow("Vertical Lift", $"{vertical_lift:n2}");

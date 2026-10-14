@@ -15,9 +15,9 @@ namespace K2D2.Landing
     // bring the airless coast down on the target, point the engines along it, and throttle by
     // how much of it is left (tapering off at the end); stop when nothing is left. Re-solving all
     // the way through takes care of what a node can't: the burn being long, the vessel turning
-    // into it, thrust and mass changing, and air. (The node version planned 839 m/s for the big
-    // booster, let Redux's planned-trajectory prediction trim it to 724 m/s, flew exactly that -
-    // and came down 30 km short: Redux's prediction for a long burn starting inside the
+    // into it, thrust and mass changing, and air. (Flown as a node, the big booster's burn was
+    // planned at 839 m/s, trimmed to 724 m/s by Redux's planned-trajectory prediction, flown
+    // exactly - and came down 30 km short: Redux's prediction for a long burn starting inside the
     // atmosphere was badly off.)
     //
     // Solving the burn: a booster at separation is still climbing and heading away (the replays:
@@ -374,7 +374,8 @@ namespace K2D2.Landing
         public override void UpdateInfoRows(Action<string, string> addRow)
         {
             addRow("Burn Left", $"{burn.magnitude:n1} m/s");
-            addRow("Attitude Error", $"{hold.attitude_error_deg:n1}°");
+            if (K2D2Settings.debug_mode.V)
+                addRow("Attitude Error", $"{hold.attitude_error_deg:n1}°");
         }
     }
 }

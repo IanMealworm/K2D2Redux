@@ -5,12 +5,8 @@ using KTools;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // the full reasoning). `label` is inherited from BaseField<bool> so it can't be attributed
-    // directly (attributes only apply to members declared on this class) - wrapped below via a
-    // `Label` property that forwards to it. The old UxmlTraits.Init() applied "label" from the bag
-    // unconditionally, and the constructor already sets label="Toggle" matching that same old bag
-    // default, so no behavior fix was needed here (unlike ToggleButton.cs's pause button).
+    // `label` is inherited from BaseField<bool>, and [UxmlAttribute] only applies to members
+    // declared on this class, so the `Label` property below forwards to it.
     //
     // Derives from BaseField<bool> base class. Represents a container for its input part.
     [UxmlElement]
@@ -128,4 +124,4 @@ namespace K2UI
             return this;
         }
     }
-}
+}

@@ -6,7 +6,7 @@ using KTools;
 namespace K2D2.Landing
 {
     // Atmospheric precision landing's deorbit burn. Planned like the vacuum one
-    // (LandingTargeting.PlanDeorbit, on the airless coast), with two differences:
+    // (LandingTargeting.PlanDeorbit, on the airless coast), with three differences:
     //  - The entry is steeper: periapsis goes deep enough that the vessel comes into the
     //    atmosphere at the Entry Steepness angle (or down to the target's height with that at 0).
     //    A steeper entry costs delta-v - from a low orbit a lot of it, since the vessel only falls

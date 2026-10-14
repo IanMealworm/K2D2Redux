@@ -77,7 +77,6 @@ namespace K2D2.Controller
             set
             {
                 if (value == base.isRunning)  return;
-                // send call backs
                 base.isRunning = value; 
 
                 if (!value)

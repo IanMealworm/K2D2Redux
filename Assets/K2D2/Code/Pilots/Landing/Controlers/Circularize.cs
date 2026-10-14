@@ -10,21 +10,16 @@ using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    // Precision landing's precondition phase, run before DeorbitBurn. DeorbitBurn's own targeting
-    // math (ComputeDeorbitDeltaV in LandingTargeting.cs) treats the burn point as an apsis of the
-    // current orbit - exactly true everywhere on a circular orbit, only exactly true at the real
-    // apsides on an eccentric one. Rather than teaching that search to cope with an arbitrary
-    // starting orbit shape, this circularizes first, then deorbits.
+    // Precision landing's precondition phase, run before the deorbit burn. The deorbit planning
+    // (LandingTargeting.PlanDeorbit) assumes a roughly circular starting orbit, so this
+    // circularizes first rather than teaching that search to cope with any orbit shape.
     //
-    // Mirrors DeorbitBurn's own structure: its own Turn/Warp/Burn instances rather than
-    // NodeExPilot, so driving this doesn't reset the whole Landing pilot via
-    // K2D2_Plugin.ResetControllers(). Uses ManeuverCreator.CreateManeuverNodeAtUT for node
-    // creation rather than ManeuverCreator.CircularizeOrbitApoapsis()'s older
-    // CreateManeuverNode_Co path - that path does the same PatchedConicsOrbit cast that throws
-    // InvalidCastException for the actively-flown vessel under Redux (CurrentPatchedConicsOrbit,
-    // not PatchedConicsOrbit). The vis-viva circularize-at-apoapsis math itself is reused as-is
-    // from CircularizeOrbitApoapsis, just fed by state vectors instead of a PatchedConicsOrbit's
-    // own Apoapsis/Periapsis properties (see LandingTargeting.OrbitalElementsFromStateVectors).
+    // Flies its own Turn/Warp/Burn instances rather than NodeExPilot, so driving this doesn't reset
+    // the whole Landing pilot via K2D2_Plugin.ResetControllers(). The node is made with
+    // ManeuverCreator.CreateManeuverNodeAtUT, not CircularizeOrbitApoapsis(): that one casts the
+    // orbit to PatchedConicsOrbit, which throws InvalidCastException for the active vessel under
+    // Redux (its orbit is a CurrentPatchedConicsOrbit). The vis-viva math is the same, fed by state
+    // vectors (see LandingTargeting.OrbitalElementsFromStateVectors).
     public class Circularize : ExecuteController
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Circularize");
@@ -144,10 +139,7 @@ namespace K2D2.Landing
             double time_to_apoapsis = LandingTargeting.TimeToNextApoapsis(r_now, v_now, body.gravParameter, period);
             double burn_UT = now + time_to_apoapsis;
 
-            // Circularize at apoapsis: raise periapsis to meet the current apoapsis. Same vis-viva
-            // math as ManeuverCreator.CircularizeOrbitApoapsis, just fed apoapsis/periapsis radii
-            // computed from state vectors above instead of that method's own
-            // PatchedConicsOrbit-typed orbit.Apoapsis/orbit.Periapsis.
+            // Circularize at apoapsis: raise periapsis to meet the current apoapsis.
             double v_apoapsis = VisVivaEquation.CalculateVelocity(apoapsisRadius, apoapsisRadius, periapsisRadius, body.gravParameter);
             double v_circular = VisVivaEquation.CalculateVelocity(apoapsisRadius, apoapsisRadius, apoapsisRadius, body.gravParameter);
             double deltaV = v_circular - v_apoapsis;
@@ -189,9 +181,8 @@ namespace K2D2.Landing
                 case Mode.Turn:
                     mode = Mode.Warp;
                     current_executor.setController(warp);
-                    // Same fix as DeorbitBurn's Turn->Warp handoff: no check_direction flag, so
-                    // WarpTo's in-flight direction check (gated on a max_angle field nothing here
-                    // sets) doesn't cause engage/cancel timewarp spam.
+                    // No check_direction flag: WarpTo's in-flight direction check depends on a
+                    // max_angle nothing here sets, and would start and cancel timewarp over and over.
                     warp.StartManeuver(node);
                     break;
                 case Mode.Warp:

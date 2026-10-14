@@ -62,7 +62,6 @@ namespace K2D2.Controller.Docks.Pilots
         {
             var autopilot = current_vessel.Autopilot;
 
-            // force autopilot
             autopilot.Enabled = true;
             autopilot.SAS.lockedMode = false;
 
@@ -88,7 +87,6 @@ namespace K2D2.Controller.Docks.Pilots
         {
             var autopilot = current_vessel.Autopilot;
 
-            // force autopilot
             autopilot.Enabled = true;
             autopilot.SAS.lockedMode = false;
 

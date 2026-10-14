@@ -278,31 +278,20 @@ namespace K2D2.KSPService
         }
 
         /// <summary>
-        /// New for precision landing (LandingTargeting.cs / DeorbitBurn.cs): creates a real,
-        /// visible maneuver node at a specific UT, rather than deriving the UT from a TrueAnomaly
-        /// like CreateManeuverNode_Co above does. Precision landing's burns need to happen at a UT
-        /// computed ahead of time (LandingTargeting.PlanDeorbit/PlanCorrection), not one implied
-        /// by a true anomaly.
+        /// Creates a visible maneuver node at a given UT. Landing burns need a UT computed ahead
+        /// of time (LandingTargeting.PlanDeorbit/PlanCorrection), not one implied by a true anomaly.
         ///
-        /// Unlike CreateManeuverNode_Co, this does not cast the vessel's Orbit to
-        /// PatchedConicsOrbit: under Redux, the actively-flown vessel's Orbit is a
-        /// Redux.Ecs.Components.CurrentPatchedConicsOrbit, which implements the same interfaces
-        /// (IKeplerPatch, IPatchedOrbit, etc.) but is not a PatchedConicsOrbit and cannot be cast
-        /// to one. SetManeuverState is also skipped here, matching the game's own
-        /// Map3DManeuvers.OnAddManeuver(), which only calls it when IsOnManeuverTrajectory is true
-        /// (adding a node onto an existing maneuver plan segment) - not the case for a first/only
-        /// node (isManeuver: false in the constructor below). What this node needs instead is
-        /// nodeData.InitializeTransform() right after construction, which is what
-        /// ManeuverPlanComponent.UpdateNodeDetails (called from AddNode/AddNodeToVessel) requires.
+        /// The vessel's Orbit is not cast to PatchedConicsOrbit here: under Redux the active
+        /// vessel's Orbit is a Redux.Ecs.Components.CurrentPatchedConicsOrbit, which implements the
+        /// same interfaces but can't be cast to one. SetManeuverState is skipped too: the game's
+        /// Map3DManeuvers.OnAddManeuver() only calls it when adding onto an existing maneuver
+        /// segment. A first node needs InitializeTransform() instead, which
+        /// ManeuverPlanComponent.UpdateNodeDetails requires. AddNodeToVessel only ever appends, so
+        /// callers that own the whole plan clear it first (see RemoveAllNodesThenCreate).
         ///
-        /// Unlike CreateManeuverNode_Co, this returns the created ManeuverNodeData synchronously
-        /// so the caller (DeorbitBurn) can hand it straight to its own TurnTo/WarpTo/BurnManeuver
-        /// instances without waiting a frame - only the map/gizmo bookkeeping is deferred to a
-        /// coroutine, same as the original.
+        /// The node is returned synchronously so the caller can hand it straight to
+        /// TurnTo/WarpTo/BurnManeuver without waiting a frame; only the map gizmo update is deferred.
         /// </summary>
-        // normalDeltaV added for precision landing's optional plane trim (see
-        // LandingTargeting.PlanDeorbit) - defaults to 0 so every existing caller
-        // (Circularize.cs, Final.cs) keeps behaving exactly as before, pure prograde/retrograde.
         public ManeuverNodeData CreateManeuverNodeAtUT(double UT, double progradeDeltaV, double normalDeltaV = 0, double radialDeltaV = 0)
         {
             Vector3d burnVector = ProgradeBurnVector(progradeDeltaV) + NormalBurnVector(normalDeltaV) + RadialOutBurnVector(radialDeltaV);
@@ -313,10 +302,8 @@ namespace K2D2.KSPService
             nodeData.InitializeTransform();
             nodeData.BurnVector = burnVector;
 
-            // IsOnManeuverTrajectory is false here (first/only node), so per
-            // Map3DManeuvers.OnAddManeuver() SetManeuverState is correctly skipped - the engine's
-            // own maneuver-plan pipeline (ManeuverPlanComponent.AddNode, same path the in-game
-            // "add node" UI uses) resolves ManeuverTrajectoryPatch from here.
+            // AddNodeToVessel goes through ManeuverPlanComponent.AddNode, the same path as the
+            // in-game "add node" button, which resolves ManeuverTrajectoryPatch for us.
             Game.SpaceSimulation.Maneuvers.AddNodeToVessel(nodeData);
 
             K2D2_Plugin.Instance.StartCoroutine(UpdateMapGizmoWhenReady_Co(nodeData));
@@ -325,12 +312,9 @@ namespace K2D2.KSPService
         }
 
         /// <summary>
-        /// Removes every maneuver node currently on the vessel's plan. Needed before creating a
-        /// new node via CreateManeuverNodeAtUT above, since AddNodeToVessel only ever appends (see
-        /// that method's own comment) - calling it while a node from a previous phase is still on
-        /// the plan (e.g. precision landing's Circularize node, once its burn finishes and
-        /// DeorbitBurn starts) would add a second node instead of replacing it, and the vessel
-        /// would turn to align with whichever node the game picks instead of the new one.
+        /// Removes every maneuver node on the vessel's plan. AddNodeToVessel only ever appends, so
+        /// a node left from a previous phase (e.g. landing's Circularize node once DeorbitBurn
+        /// starts) would stay on the plan, and the vessel could align with that one instead.
         /// </summary>
         public void RemoveAllNodes()
         {
@@ -349,13 +333,9 @@ namespace K2D2.KSPService
         }
 
         /// <summary>
-        /// Removes a single maneuver node from the plan, leaving every other node alone - unlike
-        /// RemoveAllNodes above, which assumes the whole plan belongs to whichever pilot is
-        /// calling it (true for Circularize/DeorbitBurn/FinalCircularize, which own the node they
-        /// create start to finish). Added for auto-deleting a node once it's been executed (Lift's
-        /// FinalCircularize, and the Node tab's own executor) without also wiping out anything
-        /// else the player - or a multi-node Flight Plan - might have queued up behind it. Same
-        /// ManeuverPlanComponent.RemoveNodes API as RemoveAllNodes, just handed a single-item list.
+        /// Removes a single maneuver node and leaves the rest of the plan alone. Used to delete a
+        /// node once it has been executed (Lift's FinalCircularize, the Node tab's executor)
+        /// without wiping anything the player - or a multi-node Flight Plan - queued behind it.
         /// </summary>
         public void RemoveNode(ManeuverNodeData node)
         {
@@ -373,9 +353,7 @@ namespace K2D2.KSPService
         /// Removes every node on the plan, then creates a fresh one via CreateManeuverNodeAtUT -
         /// but a fixed update later, not in the same call. Creating the new node in the same frame
         /// as RemoveNodes causes the game to only partially register the removal, so the new node
-        /// never shows up; waiting one FixedUpdate (see RemoveAllNodesThenCreate_Co below) avoids
-        /// this, consistent with AddNodeToVessel's own gizmo/map update already waiting a
-        /// WaitForFixedUpdate rather than touching the map layer in the same frame a node is added.
+        /// never shows up. Waiting one FixedUpdate avoids this.
         /// </summary>
         public void RemoveAllNodesThenCreate(double UT, double progradeDeltaV, System.Action<ManeuverNodeData> onCreated,
             double normalDeltaV = 0, double radialDeltaV = 0)
@@ -399,48 +377,31 @@ namespace K2D2.KSPService
             onCreated?.Invoke(nodeData);
         }
 
-        // How long to keep waiting for the player to actually be in Map3DView before giving up on
-        // nudging this particular node's gizmo - generous (most players who are going to check the
-        // map do so within a few seconds), but bounded so a node created while the player never
-        // opens the map doesn't leave a coroutine polling forever. Shared by every call site below.
+        // How long to wait for the player to open Map3DView before giving up on a node's gizmo.
+        // Generous, but bounded so a node the player never looks at on the map doesn't leave a
+        // coroutine polling forever.
         const float MapGizmoReadyTimeoutSeconds = 120f;
 
-        // True while UpdateMapGizmoWhenReady_Co below is waiting on the player to switch into
-        // Map3DView - callers (FinalCircularize, and any other controller built on this same
-        // ManeuverCreator) can surface this as an on-screen hint instead of leaving the wait
-        // silent. NOT a one-time "map hasn't loaded yet this session" flag, deliberately: K2D2Redux's
-        // own log showed the exact same wait needed again for a LATER node even though the player
-        // had already opened the map once earlier in the session - its 3D scene appears to tear
-        // down when the player leaves map view and rebuild fresh each time they re-enter, not just
-        // the first time ever. So this goes true/false around every individual wait, however many
-        // times that turns out to be.
+        // True while UpdateMapGizmoWhenReady_Co is waiting for the player to open Map3DView, so
+        // callers can show a hint. Set around every wait, not once per session: the map's 3D scene
+        // is torn down when the player leaves map view and rebuilt on each return, so the logs
+        // showed a later node needing the same wait.
         public bool waiting_for_map_view { get; private set; } = false;
 
         /// <summary>
-        /// Positions the given node's gizmo/conic-patch preview on the 3D map - but only once the
-        /// player is actually IN Map3DView, polling at a relaxed half-second interval until then (or
-        /// resolving on the next FixedUpdate if they're already there).
+        /// Positions the node's gizmo on the 3D map once the player is in Map3DView, polling every
+        /// half second until then.
         ///
-        /// Why wait instead of just trying once: Game.Map.TryGetMapCore can return a non-null
-        /// MapCore even while the player is still in Flight view, before its map3D scene has
-        /// actually finished initializing - calling into Map3DManeuvers.GetNodeDataForVessels() at
-        /// that point throws a NullReferenceException from deep inside the game's own code.
-        /// Confirmed from K2D2Redux's own log during Lift's FinalCircularize: every node created
-        /// while still in Flight view threw here every single time, while one created after the
-        /// player had already switched to Map view didn't. The maneuver node itself is already
-        /// fully valid at that point regardless - AddNodeToVessel and (for CreateManeuverNodeAtUT)
-        /// InitializeTransform both already ran before this is ever called, and Turn/Warp/Burn fly
-        /// off ManeuverNodeData and the game's own maneuver-plan solver directly, never off this
-        /// gizmo. So this NRE never affected whether a burn actually flew correctly - but a
-        /// stale-looking, unpositioned gizmo on the map reads as "this node is wrong" even when it
-        /// isn't, which is reason enough to get it right rather than firing once and letting it
-        /// silently fail.
+        /// Game.Map.TryGetMapCore can return a MapCore while still in Flight view, before map3D has
+        /// finished initializing, and GetNodeDataForVessels() then throws a NullReferenceException
+        /// inside game code (every node created in Flight view did, in testing). The node itself is
+        /// already valid and burns never read the gizmo, but an unpositioned gizmo makes a good node
+        /// look wrong.
         /// </summary>
         private IEnumerator UpdateMapGizmoWhenReady_Co(ManeuverNodeData nodeData)
         {
-            // Game.GlobalGameState.GetGameState() returns a value type - like K2D2_Plugin.cs's own
-            // ValidScene() check, this reads it with plain dots (not ?.) once Game itself is
-            // confirmed non-null, rather than null-conditional-chaining through a struct return.
+            // GetGameState() returns a struct, so it's read with plain dots once Game is known to
+            // be non-null, not through ?. chaining.
             float waited = 0f;
             while (true)
             {
@@ -624,10 +585,9 @@ namespace K2D2.KSPService
                 normalVector =
                     _vesselComponent.Orbit
                         .GetRelativeOrbitNormal(); //GetOrbitalNormalVector(UT, inclination, longitudeOfAscendingNode);
-            // VERIFIED during Redux port verification: ReferenceBodyConstants exists only on the concrete
-            // PatchedConicsOrbit class, not on the IKeplerPatch interface VesselComponent.Orbit is typed
-            // as - needs an explicit cast, unlike inclination/eccentricity/semiMajorAxis/etc. above which
-            // are genuinely on the interface and compile fine as-is.
+            // ReferenceBodyConstants exists only on the concrete PatchedConicsOrbit, not on the
+            // IKeplerPatch interface VesselComponent.Orbit is typed as, so it needs a cast. The other
+            // orbit fields used here are on the interface.
             Vector3d velocity = GetOrbitalPerifocalVelocityVector(UT, _vesselComponent.Orbit.eccentricity,
                 _vesselComponent.Orbit.semiMajorAxis, _vesselComponent.Orbit.meanAnomalyAtEpoch,
                 ((PatchedConicsOrbit)_vesselComponent.Orbit).ReferenceBodyConstants.StandardGravitationParameter);
@@ -680,7 +640,7 @@ namespace K2D2.KSPService
         {
             // Calculate the magnitude of the velocity vector
             double r = semiMajorAxis * (1 - eccentricity * eccentricity) / (1 + eccentricity * Math.Cos(trueAnomaly));
-            // VERIFIED during Redux port verification: same ReferenceBodyConstants cast fix as above.
+            // Same ReferenceBodyConstants cast as in GetOrbitalVelocityAtUT.
             double gravitation = ((PatchedConicsOrbit)_vesselComponent.Orbit).ReferenceBodyConstants.StandardGravitationParameter;
             // Calculate the magnitude of the velocity vector
             double v = Math.Sqrt(gravitation * (2 / r - 1 / semiMajorAxis));

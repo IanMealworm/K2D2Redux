@@ -92,7 +92,6 @@ namespace K2D2.Lift
                 {
                     case LiftStatus.Off:
                     {
-                        // stop
                         if (current_vessel != null)
                         {
                             current_vessel.SetThrottle(0);
@@ -145,7 +144,6 @@ namespace K2D2.Lift
                     OnStartController();
                 }
 
-                // send call backs
                 base.isRunning = value; 
             }
         }
@@ -200,8 +198,10 @@ namespace K2D2.Lift
         
             if (current_vessel == null) return;
 
-            if (isRunning || page.isVisible)
+            if (isRunning)
                 ascent.computeValues(status == LiftStatus.Ascent);
+            else if (page.isVisible)
+                ascent.computeIdleValues(current_vessel);
 
             if (!isRunning)
                 return;

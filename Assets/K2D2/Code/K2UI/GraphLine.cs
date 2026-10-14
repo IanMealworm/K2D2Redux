@@ -5,14 +5,9 @@ using System.Collections.Generic;
 
 namespace K2UI.Graph
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). GraphLine isn't referenced from any UXML tag in the project currently, so none of this
-    // was actually exercised via Init() before - but `_max_y`'s own field default below was
-    // already wrong independent of that (a pre-existing copy-paste bug, `-1` instead of `1`,
-    // presumably from MinY's line above it), which would degenerate MinY==MaxY and divide by zero
-    // in value_to_pixel() the moment a bare <K2UI.Graph.GraphLine> tag omits max-y="...". Fixed
-    // both that and set every attribute explicitly in the constructor, matching the old bag
-    // defaults exactly, for the same reason as every other control in this migration.
+    // UXML only applies attributes present in the tag (see Group.cs), so the constructor sets every
+    // attribute explicitly. MinY must stay below MaxY: equal values divide by zero in
+    // value_to_pixel().
     [UxmlElement]
     public partial class GraphLine : VisualElement
     {
@@ -55,8 +50,6 @@ namespace K2UI.Graph
             set { _min_y = value; MarkDirtyRepaint(); }
         }
 
-        // Was `= -1` - a pre-existing copy-paste bug (see class comment); the old bag default was
-        // `1`, matching what this is now.
         public float _max_y = 1;
 
         [CreateProperty]
@@ -125,8 +118,7 @@ namespace K2UI.Graph
            AddToClassList("graph-line");
            generateVisualContent += Draw;
 
-           // Reproduces the old UxmlTraits.Init()'s unconditional bag-default application - see
-           // class comment above.
+           // Attribute defaults - see class comment.
            MinX = 0f;
            MaxX = 5f;
            MinY = -1f;
@@ -204,4 +196,4 @@ namespace K2UI.Graph
             painter.Stroke();
         }
     }
-}
+}

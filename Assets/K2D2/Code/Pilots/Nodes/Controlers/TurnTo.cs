@@ -163,6 +163,8 @@ namespace K2D2.Node
             double max_angle = 5;
 
             var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return false;
             Vector retro_dir;
             if (speedMode == SpeedDisplayMode.Orbit)
                 retro_dir = telemetry.OrbitMovementRetrograde;
@@ -185,7 +187,7 @@ namespace K2D2.Node
             double max_angle = TurnToSettings.max_angle_maneuver.V;
 
             var telemetry = SASTool.getTelemetry();
-            if (!telemetry.HasManeuver)
+            if (telemetry == null || !telemetry.HasManeuver)
                 return false;
 
             Vector maneuver_dir = telemetry.ManeuverDirection;
@@ -229,7 +231,7 @@ namespace K2D2.Node
             if (K2D2Settings.debug_mode.V)
             {
                 var telemetry = SASTool.getTelemetry();
-                if (!telemetry.HasManeuver)
+                if (telemetry == null || !telemetry.HasManeuver)
                     return;
 
                 var autopilot = current_vessel.Autopilot;

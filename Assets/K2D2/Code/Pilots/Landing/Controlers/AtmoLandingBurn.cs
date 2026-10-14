@@ -32,10 +32,10 @@ namespace K2D2.Landing
     //
     // How much it actually gets is measured: on the test booster only 40-60% of what the tilt
     // should give (the air on its long side, and the engines' gimbals fighting the air to hold
-    // the tilt, both push back). An earlier version planned as if it got all of it, rushed toward
-    // the target late in the burn, and touched down drifting 15 m/s sideways. (Tilting off the
-    // airflow, as the first version did, is worse still: the airflow turns with the drift, so the
-    // vessel could never drift faster than about a sixth of its speed.)
+    // the tilt, both push back). Planning as if it got all of it rushed toward the target late
+    // in the burn and touched down drifting 15 m/s sideways. (Tilting off the airflow instead is
+    // worse still: the airflow turns with the drift, so the vessel can never drift faster than
+    // about a sixth of its speed.)
     //
     // Final descent (the last few tens of metres): nose up, sinking at the Touch Down speed
     // profile's speed, killing sideways drift first - it stops sinking while it's still drifting
@@ -367,14 +367,16 @@ namespace K2D2.Landing
 
         public override void UpdateInfoRows(Action<string, string> addRow)
         {
+            if (step == Step.Braking && steer_to_target)
+                addRow("To Target", $"{target_ahead:n0} m ahead, {target_side:n0} m to the side");
+
+            // The rest is for tuning and bug reports.
+            if (!K2D2Settings.debug_mode.V)
+                return;
             addRow("Throttle", $"{wanted_throttle:P0}");
             addRow("Tilt", $"{tilt_deg:n1}°");
             if (step == Step.Braking)
-            {
                 addRow("Braking Ends", $"{stop_height:n0} m up in {burn_left_s:n0} s");
-                if (steer_to_target)
-                    addRow("To Target", $"{target_ahead:n0} m ahead, {target_side:n0} m to the side");
-            }
         }
     }
 }

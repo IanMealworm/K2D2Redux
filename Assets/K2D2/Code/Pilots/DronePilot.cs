@@ -34,6 +34,10 @@ namespace K2D2.Controller
         // }
     }
 
+    // Parked for a later update: a hover helper for VTOLs and landers. It holds a vertical speed
+    // or an altitude (throttle allowing for gravity and tilt), points the craft up or tilts it to
+    // kill sideways drift, and can roll toward the direction of travel. It isn't created in
+    // K2D2_Plugin and has no tab yet, so players can't reach it.
     public class DronePilot : Pilot
     {
         public static DronePilot Instance { get; set; }

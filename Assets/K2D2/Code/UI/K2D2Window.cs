@@ -175,9 +175,9 @@ namespace K2D2.UI
             // save the current_tab to settings
             tab_page.Bind("main_page", "node");
 
-            // Renamed from "title-bar" when the window chrome switched from a hand-built header to
-            // UitkForKsp2.Controls.AppShell (which owns its own header - icon/title/close - and has no
-            // slot for extra buttons). The settings and staging toggles moved into this new row instead.
+            // The window chrome is UitkForKsp2.Controls.AppShell, which owns its own header
+            // (icon/title/close) and has no slot for extra buttons, so the info and staging
+            // buttons live in this row.
             var title_bar = _rootElement.Q("toolbar");
             if (title_bar == null)
             {
@@ -186,12 +186,9 @@ namespace K2D2.UI
                 return;
             }
 
-            // The settings gear/page is gone - this is now a plain "i" button that jumps straight to
-            // the About tab via TabbedPage.Select(), instead of toggling the old shared
-            // GlobalSetting.settings_visible flag. That flag itself is left in place (see
-            // GlobalSettings.cs/K2Page.cs) since every tab's generic onSettingsChanged handler is
-            // harmless as long as nothing ever sets it back to true again - not worth the extra risk
-            // of ripping out for something that wasn't actually part of this ask.
+            // The "i" button jumps to the About tab via TabbedPage.Select(). Nothing sets
+            // GlobalSetting.settings_visible to true, so every tab's onSettingsChanged handler for
+            // it stays harmless.
             var info_button = title_bar.Q<Button>("info-toggle");
             var staging_toggle = title_bar.Q<ToggleButton>("staging-toggle");
             if (info_button == null)
@@ -218,12 +215,9 @@ namespace K2D2.UI
                     tab_page.Select("about");
                 }
             });
-            // This used to write to StagingPilot.Instance.Enabled, which only gates BaseController.isActive
-            // (tab visibility/availability) - nothing in StagingPilot.Update()/CheckStaging() ever reads it,
-            // so toggling it had no effect on whether auto-staging actually ran. The setting that
-            // CheckStaging() actually checks is StagingSettings.auto_staging, which had no UI control at
-            // all - binding this already-existing title-bar toggle to it directly is both the fix and the
-            // toggle's original apparent intent.
+            // Bound to StagingSettings.auto_staging, the setting CheckStaging() reads.
+            // StagingPilot.Instance.Enabled only gates the tab's availability and doesn't stop
+            // auto-staging.
             staging_toggle?.Bind(StagingSettings.auto_staging);
 
             _rootElement.Query<IntegerField>().ForEach(field => field.DisableGameInputOnFocus());

@@ -90,41 +90,27 @@ namespace K2D2
         {
 
             Instance = this;
-            // SWMetadata.Folder is a System.IO.DirectoryInfo, not a string (confirmed via the current
-            // SpaceWarpPluginDescriptor's real field type) - string-concatenating it works today via
-            // DirectoryInfo's implicit ToString(), but .FullName is the correct, intended accessor.
+            // UI loads through Redux's Addressables (see AssetsLoader.LoadUxml()). The prebuilt
+            // AssetBundle line below is a fallback in case that has to be backed out.
+            // SWMetadata.Folder is a System.IO.DirectoryInfo, not a string; .FullName gives its path.
             //
             // AssetsLoader.Bundle = AssetBundle.LoadFromFile(SWMetadata.Folder.FullName + "/assets/bundles/k2d2_ui.bundle");
-            //
-            // Switched UI loading from the old prebuilt AssetBundle above to Redux's Addressables system -
-            // see AssetsLoader.LoadUxml() for the new loading call and the reasoning. The line above is
-            // commented out (not deleted) so reverting is a one-line job if Addressables doesn't pan out
-            // in testing; k2d2_ui.bundle itself is left untouched on disk either way.
 
-            // K2UIFactoryRegistration.RegisterAll() used to go here - a reflection-based workaround
-            // that manually registered every K2UI custom control's legacy UxmlFactory with Unity's
-            // internal VisualElementFactoryRegistry, needed because Unity's automatic factory scan
-            // never recognized a BepInEx-loaded mod DLL as a "user assembly". That whole class is
-            // gone now: every K2UI control moved to [UxmlElement]/[UxmlAttribute] (Unity 6.6 removes
-            // UxmlFactory entirely, so this was happening either way), and the newer attribute-based
-            // registration is handled by Redux itself for mod assemblies - no manual step needed.
+            // No UI factory registration is needed here: K2UI controls use [UxmlElement]/[UxmlAttribute],
+            // and Redux registers those for mod assemblies.
 
             var k2D2PilotsMgr = new K2D2PilotsMgr();
             SettingsFile.Init(this, SettingsPath);
 
-            // Landing's Atmo/Vacuum profile split - two independent files, loaded up front here
-            // (same as the main settings file above) so both are ready before LandingPilot's
-            // constructor builds its two LandingSettings instances.
+            // Landing's Atmo and Vacuum settings files, loaded before LandingPilot's constructor
+            // builds its two LandingSettings instances.
             SettingsFile.GetOrCreate("land_atmo", this, AtmoLandingSettingsPath);
             var landVacFile = SettingsFile.GetOrCreate("land_vac", this, VacLandingSettingsPath);
 
-            // One-time migration: before this split, Landing's settings lived in the main file
-            // (SettingsFile.Instance/k2d2_settings.json) under "land." keys - copy whatever's
-            // already tuned there into the new VACUUM file specifically (not land_atmo), since
-            // that's the profile that's actually been flown/tuned so far. CopyMissingKeys only
-            // ever fills in keys land_vac doesn't already have, so this is a no-op on every launch
-            // after the first (see its own comment in SettingsFile.cs) - never overwrites anything
-            // tuned in land_vac since the split happened, and never touches land_atmo at all.
+            // Older installs kept Landing's settings in the main file (k2d2_settings.json) under
+            // "land." keys. They're copied into the Vacuum file, the profile they were tuned for.
+            // CopyMissingKeys only fills keys land_vac doesn't have yet, so after the first launch
+            // this does nothing, and land_atmo is never touched.
             int migrated = landVacFile.CopyMissingKeys(SettingsFile.Instance, "land.");
             if (migrated > 0)
                 logger.LogInfo($"[K2D2_Plugin] Migrated {migrated} existing Landing setting(s) from the main settings file into k2d2_landing_vac.json.");
@@ -211,12 +197,9 @@ namespace K2D2
         {
         }
 
-        // AssetsLoader.LoadUxml() (a separate static class, not a KerbalMod subclass) needs to call
-        // Assets.LoadAssetAsync<T>() to load UI Toolkit assets via Addressables, but the base
-        // KerbalMonoBehaviour.Assets property is `protected` - confirmed via CS0122 build error - so it's
-        // not reachable from outside a KerbalMod subclass's own code, even through an instance reference
-        // like K2D2_Plugin.Instance.Assets. This thin public wrapper exposes just the one call
-        // AssetsLoader needs without loosening protection on anything else.
+        // AssetsLoader.LoadUxml() needs Assets.LoadAssetAsync<T>(), but KerbalMonoBehaviour.Assets
+        // is `protected`, so it can't be reached from outside a KerbalMod subclass, even through
+        // K2D2_Plugin.Instance.Assets. This wrapper exposes just that one call.
         public AsyncOperationHandle<T> LoadAddressableAsset<T>(string address)
         {
             return Assets.LoadAssetAsync<T>(address);

@@ -1,4 +1,5 @@
 
+using System.Reflection;
 using KSP.Sim;
 using KSP.Sim.impl;
 
@@ -8,6 +9,13 @@ namespace K2D2
 {
     public class SASTool
     {
+        // These are private in the game. Looking them up is the slow part of reflection, and
+        // getTelemetry runs several times a frame while a pilot steers, so it's done once here.
+        const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        static readonly FieldInfo sas_response_field = typeof(VesselSAS).GetField("sasResponse", Private);
+        static readonly FieldInfo angular_delta_field = typeof(VesselSAS).GetField("angularDelta", Private);
+        static readonly FieldInfo telemetry_field = typeof(VesselAutopilot).GetField("_telemetry", Private);
+
         public static VesselAutopilot currentAutoPilot()
         {
             return K2D2_Plugin.Instance.current_vessel?.VesselComponent?.Autopilot;
@@ -20,30 +28,29 @@ namespace K2D2
 
         public static double getSasResponsePC()
         {
-            if (currentSas() == null)
+            var sas = currentSas();
+            if (sas == null || sas_response_field == null)
                 return 0;
 
-
-            var my_obj = ReflexionTool.GetInstanceField(typeof(VesselSAS), currentSas(), "sasResponse");
-            return ((Vector3d)my_obj).magnitude * 100;
+            return ((Vector3d)sas_response_field.GetValue(sas)).magnitude * 100;
         }
 
         public static Vector3d geSASAngularDelta()
         {
-            if (currentSas() == null)
+            var sas = currentSas();
+            if (sas == null || angular_delta_field == null)
                 return Vector3d.zero;
 
-            var my_obj = ReflexionTool.GetInstanceField(typeof(VesselSAS), currentSas(), "angularDelta");
-            return GeneralTools.correctEuler(((Vector3d)my_obj));
+            return GeneralTools.correctEuler((Vector3d)angular_delta_field.GetValue(sas));
         }
 
         public static TelemetryComponent getTelemetry()
         {
-            if (currentAutoPilot() == null)
+            var autopilot = currentAutoPilot();
+            if (autopilot == null || telemetry_field == null)
                 return null;
 
-            var my_obj = ReflexionTool.GetInstanceField(typeof(VesselAutopilot), currentAutoPilot(), "_telemetry");
-            return my_obj as TelemetryComponent;
+            return telemetry_field.GetValue(autopilot) as TelemetryComponent;
         }
 
         public static void setAutoPilot(AutopilotMode mode)

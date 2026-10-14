@@ -6,13 +6,8 @@ using System;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). The old UxmlTraits.Init() always applied both "labels" and "value" from the bag,
-    // defaulting to "A;B;C"/0 when a tag omitted them (Dock.uxml's "final_mode" only specifies
-    // labels="Manual;Auto", relying on the value default) - the new attribute system only calls a
-    // setter for attributes actually present, so `labels = "A;B;C";` in the constructor
-    // reproduces that default explicitly (value's own field already defaults to 0, matching the
-    // old default, so no equivalent assignment is needed there).
+    // UXML only applies attributes present in the tag (see Group.cs), so the constructor sets
+    // `labels = "A;B;C"`. value's field defaults to 0, which Dock.uxml's "final_mode" relies on.
     [UxmlElement]
     public partial class InlineEnum : VisualElement
     {
@@ -108,4 +103,4 @@ namespace K2UI
             RegisterCallback<ChangeEvent<int>>(evt => setting.V = (TEnum)Enum.ToObject(typeof(TEnum), evt.newValue));
         }
     }
-}
+}

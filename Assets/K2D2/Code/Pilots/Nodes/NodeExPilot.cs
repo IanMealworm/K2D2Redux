@@ -116,7 +116,6 @@ namespace K2D2.Node
                     current_executor.setController(null);
                     break;
                 case Mode.Turn:
-                    // start
                     execute_node = next_maneuver_node;
                     current_executor.setController(turn);
                     turn.StartManeuver(execute_node);
@@ -188,9 +187,8 @@ namespace K2D2.Node
             var st = ui.status_bar;
             if (!isRunning)
             {
-                // K2's own face (see k2_avatar in node.uxml) now sits right next to this line, so
-                // it no longer needs its own "K2:" text prefix to read as K2 talking - same for
-                // every st.Warning()/st.Status() call in TurnTo.cs/BurnManeuvre.cs/WarpTo.cs below.
+                // No "K2:" prefix on these messages (or in TurnTo/BurnManeuvre/WarpTo): K2's face
+                // (k2_avatar in node.uxml) sits right next to the line.
                 if (next_maneuver_node == null)
                 {
                     // Only worth showing while still true - a node plotted some other way since
@@ -451,7 +449,6 @@ namespace K2D2.Node
   
                 if (!value)
                 {
-                    // stop
                     if (current_vessel != null)
                         current_vessel.SetThrottle(0);
 
@@ -471,7 +468,6 @@ namespace K2D2.Node
                     setMode(Mode.Turn);
                 }
 
-                // send call backs
                 base.isRunning = value;
                 // A start that found no node to fly stops again here, so the Start button flips
                 // back instead of staying on "Stop".

@@ -15,12 +15,10 @@ namespace K2D2.Lift
     // Gravity Turn ascent profile (see AscentProfile.cs), the alternative to Ascent.cs's fixed
     // altitude-based pitch curve ("Guided").
     //
-    // This is an ORIGINAL implementation of the general "gravity turn" ascent technique (rise
-    // vertically, kick over, then follow prograde while throttling to shape the climb) - a
-    // decades-old rocketry technique, not anyone's intellectual property. It does not port,
-    // translate, or closely mirror any third-party mod's code (in particular linuxgurugamer's
-    // GPL-3.0 "GravityTurn" mod, which is incompatible with K2D2Redux's own CC-BY-SA 4.0 license -
-    // see NOTICE.md).
+    // An original implementation of the general gravity turn technique (rise vertically, kick
+    // over, then follow prograde while throttling to shape the climb). It does not port or mirror
+    // other mods' code, in particular linuxgurugamer's GPL-3.0 "GravityTurn" mod, whose license is
+    // incompatible with K2D2Redux's CC-BY-SA 4.0 (see NOTICE.md).
     //
     // The throttle and steering rules live in GravityTurnControl. This class feeds them the
     // vessel's state and applies what they ask for. With Auto Kick & Hold on, it also measures the
@@ -204,6 +202,8 @@ namespace K2D2.Lift
                 heading_correction_deg = 0;
 
             var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return;
             var up = telemetry.HorizonUp;
 
             Vector3d direction = QuaternionD.Euler(-elevation_deg, settings.heading.V + heading_correction_deg, 0) * Vector3d.forward;

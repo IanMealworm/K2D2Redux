@@ -2,7 +2,6 @@ using System;
 using K2D2.KSPService;
 using K2UI;
 using KSP.Sim;
-// using KTools.UI;
 using UnityEngine;
 using UnityEngine.UIElements;
 using K2D2.UI;
@@ -13,7 +12,8 @@ using ILogger = ReduxLib.Logging.ILogger;
 
 namespace K2D2.Landing
 {
-    /// apply the wanted speed in the good direction
+    // Holds surface retrograde and throttles to keep the surface speed under max_speed, with
+    // optional gravity compensation.
     public class TouchDown : ExecuteController
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.TouchDown");
@@ -95,7 +95,6 @@ namespace K2D2.Landing
 
         public void computeGravityRatio()
         {
-            // current_vessel.getInclination();
             Vector up_dir = current_vessel.VesselComponent.gravityForPos;
             Rotation vessel_rotation = current_vessel.GetRotation();
 
@@ -135,24 +134,14 @@ namespace K2D2.Landing
 
         float delta_speed = 0;
 
-        public bool NeedBurn => delta_speed > 0;
-
-        public bool checkSpeed()
-        {
-            if (delta_speed < 0)
-            {
-                return true;
-            }
-
-            return false;
-        }
-
         float retrograde_angle;
 
         public bool checkDirection()
         {
 
             var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return false;
 
             // check that the direction is not over max_angle
             Vector HorizonUp = telemetry.HorizonUp;
@@ -236,16 +225,15 @@ namespace K2D2.Landing
             current_vessel.SetThrottle(smoothed_throttle);
         }
 
-        // Numeric telemetry for the Landing tab's own on-page info table (see LandingUI.cs's
-        // updateContext) - status_line stays narrative-only now (checkDirection's "Waiting for
-        // ..." messages) instead of being overwritten every tick with this Max Speed readout.
+        // Numbers for the Landing tab's info table (see LandingUI.updateContext). status_line is
+        // left to checkDirection's "Waiting for ..." messages.
         public override void UpdateInfoRows(System.Action<string, string> addRow)
         {
-            addRow("Max Speed", $"{max_speed:n2} m/s");
-            addRow("Delta Speed", $"{delta_speed:n2} m/s");
-
             if (K2D2Settings.debug_mode.V)
             {
+                addRow("Max Speed", $"{max_speed:n2} m/s");
+                addRow("Delta Speed", $"{delta_speed:n2} m/s");
+
                 if (gravity_compensation)
                 {
                     addRow("Gravity", $"{gravity:n2}");

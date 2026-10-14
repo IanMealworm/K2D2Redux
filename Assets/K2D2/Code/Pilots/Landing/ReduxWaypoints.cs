@@ -5,20 +5,13 @@ using System.Reflection;
 
 namespace K2D2.Landing
 {
-    // Redux's own player-waypoint system (Redux.UI.Waypoints.PlayerWaypointManager and friends,
-    // in Assembly-CSharp) is declared `internal`, so it's invisible to K2D2.dll through a normal
-    // reference - same problem, and same fix, as VisualElementFactoryRegistry.RegisterFactory()
-    // in KTools/K2UIFactoryRegistration.cs (see NOTICE.md's UI Toolkit section): reflection.
-    // Confirmed against the real decompiled PlayerWaypointManager.cs/PlayerWaypointRecord.cs
-    // rather than guessed at.
+    // Redux's player-waypoint system (Redux.UI.Waypoints.PlayerWaypointManager and friends, in
+    // Assembly-CSharp) is declared `internal`, so it's invisible to K2D2.dll through a normal
+    // reference and is read through reflection instead.
     //
-    // Only reads the player's saved waypoints (PlayerWaypointManager.Instance.Records) for now.
-    // Redux's own click-to-place flow (BeginPlacement()/PlacementCompleted) isn't hooked up here
-    // yet - that would let players pick a landing site by clicking the map instead of typing
-    // lat/lon or picking a saved waypoint, reusing Redux's own raycasting instead of us
-    // reimplementing it, but it needs reflectively subscribing to an internal event
-    // (Action<string, double, double>), which deserves its own pass and in-game test rather than
-    // going in alongside everything else here.
+    // Only reads the player's saved waypoints (PlayerWaypointManager.Instance.Records). Redux's
+    // click-to-place flow (BeginPlacement()/PlacementCompleted) would need a reflective
+    // subscription to an internal Action<string, double, double> event.
     public struct ReduxWaypoint
     {
         public string id;
@@ -49,9 +42,8 @@ namespace K2D2.Landing
             }
         }
 
-        // True once we've confirmed the type + Instance + Records are all reachable this run -
-        // lets callers show "Waypoints unavailable" instead of just an empty list if Redux ever
-        // renames/removes this internally between versions.
+        // Lets callers show "Waypoints unavailable" rather than an empty list if a Redux update
+        // renames or removes this.
         public static bool available => GetManagerInstance() != null;
 
         static object GetManagerInstance()

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using KSP.Sim.impl;
 using UnityEngine.UIElements;
 
@@ -86,7 +87,9 @@ namespace K2D2.Landing
             else
                 labels.Insert(0, PickPrompt);
 
-            dropdown.choices = labels;
+            // Only when the list changed: this runs every UI tick.
+            if (dropdown.choices == null || !dropdown.choices.SequenceEqual(labels))
+                dropdown.choices = labels;
 
             // The target only changes when the player picks a waypoint, or the picked one moves.
             // A target typed in, or saved from an earlier session, stays: the dropdown then shows
