@@ -1,8 +1,5 @@
-﻿using UitkForKsp2;
-using UitkForKsp2.API;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UIElements;
-
 
 using K2UI;
 using KTools;
@@ -10,12 +7,24 @@ namespace K2D2.UI
 {
     /// <summary>
     /// A manipulator to make UI Toolkit elements draggable within the screen bounds.
+    ///
+    /// The window is placed by its layout position (absolute style.left/top, relative to its
+    /// parent), the same way UitkForKsp2's own mover does it. Bounds come from the live panel rect:
+    /// Configuration.CurrentScreenWidth/Height are a fixed 1920x1080 reference size, not the real
+    /// screen, so they put the walls in the wrong place at other resolutions and UI scales.
+    /// Ported from LeoMarinDev's fix.
     /// </summary>
     public class DragManipulator : IManipulator
     {
         private VisualElement _target;
-        private Vector3 _offset;
-        // private PickingMode _mode;
+
+        // Where inside the window the pointer grabbed it, in panel space.
+        private Vector2 _mouseOffsetInTarget;
+
+        // Last position written, parent-local. Only a gesture that actually moved the window saves
+        // it, so a plain click can't store (0,0) and send the window to the corner next launch.
+        private Vector2 _lastLocalPosition;
+        private bool _hasLocalPosition;
 
         /// <summary>
         /// Indicates whether the element is currently being dragged.
@@ -42,16 +51,15 @@ namespace K2D2.UI
             {
                 _target = value;
 
-                if (position_setting != null)  
+                if (position_setting != null && position_setting.V != invalid_vector)
                 {
-                    if (position_setting.V != invalid_vector)
-                    {
-                        _target.SetDefaultPosition( windowSize => clampWindow(
-                            new Vector2(
-                                position_setting.V.x, 
-                                position_setting.V.y)));
-                    }        
-                }         
+                    // The saved position can only be clamped once the window has a real size and
+                    // panel, so it's applied on the first layout pass, or now if that has happened.
+                    _defaultPositionPending = true;
+                    _target.RegisterCallback<GeometryChangedEvent>(OnGeometryChangedForDefaultPosition);
+                    if (_target.panel != null && _target.layout.width > 0 && _target.layout.height > 0)
+                        ApplySavedDefaultPosition();
+                }
 
                 _target.RegisterCallback<PointerDownEvent>(OnPointerDown);
                 _target.RegisterCallback<PointerMoveEvent>(OnPointerMove);
@@ -61,6 +69,7 @@ namespace K2D2.UI
 
         Setting<Vector3> position_setting;
         Vector3 invalid_vector = new Vector3(-1000,-1000,-1000);
+        bool _defaultPositionPending;
 
         /// <summary>
         /// Creates a new instance of the <see cref="DragManipulator"/> class.
@@ -71,7 +80,7 @@ namespace K2D2.UI
             AllowDraggingOffScreen = allowDraggingOffScreen;
 
             if (save_setting != null)
-                position_setting = new Setting<Vector3>(save_setting, invalid_vector);     
+                position_setting = new Setting<Vector3>(save_setting, invalid_vector);
         }
 
         /// <summary>
@@ -83,12 +92,8 @@ namespace K2D2.UI
         /// <returns>true if the type is valid or if one of the parent type is valid</returns>
         private bool checkTargetType<TargetType>(VisualElement target, int nb_parents = 5)
         {
-            // Debug.Log("type is " + target);
             if (target is TargetType)
-            {
-                // Debug.Log("OK " + target);
                 return true;
-            }
 
             if (nb_parents == 0)
                 return false;
@@ -122,18 +127,91 @@ namespace K2D2.UI
             return checkTargetClass(target.parent, className, nb_parents);
         }
 
-        public Vector3 clampWindow(Vector3 position)
+        // The rect the window has to stay inside, in panel space (where pointer positions live).
+        // Falls back to the screen size only when the window has no panel, e.g. during teardown.
+        Rect GetScreenBounds()
         {
-            position.x = Mathf.Clamp(
-                position.x, 0,
-                Configuration.CurrentScreenWidth - _target.resolvedStyle.width
-            );
-            position.y = Mathf.Clamp(
-                position.y, 0,
-                Configuration.CurrentScreenHeight - _target.resolvedStyle.height
-            );
+            var panel = _target?.panel;
+            if (panel?.visualTree != null)
+            {
+                Rect rect = panel.visualTree.contentRect;
+                if (rect.width > 0 && rect.height > 0)
+                    return rect;
+            }
+            return new Rect(0, 0, Screen.width, Screen.height);
+        }
 
+        // resolvedStyle reads 0 before the first layout pass, so fall back to the rendered bounds.
+        Vector2 GetTargetSize()
+        {
+            float w = _target.resolvedStyle.width;
+            float h = _target.resolvedStyle.height;
+            if (w > 0 && h > 0) return new Vector2(w, h);
+
+            Vector2 size = _target.worldBound.size;
+            if (size.x > 0 && size.y > 0) return size;
+
+            return Vector2.zero;
+        }
+
+        // Clamps a panel-space top-left so the whole window stays on screen.
+        Vector2 clampWindow(Vector2 position)
+        {
+            Rect bounds = GetScreenBounds();
+            Vector2 size = GetTargetSize();
+
+            position.x = Mathf.Clamp(position.x, bounds.xMin, bounds.xMin + Mathf.Max(0, bounds.width - size.x));
+            position.y = Mathf.Clamp(position.y, bounds.yMin, bounds.yMin + Mathf.Max(0, bounds.height - size.y));
             return position;
+        }
+
+        VisualElement GetPositionParent() => _target.parent ?? _target.panel?.visualTree;
+
+        // Writes a panel-space top-left as style.left/top in the parent's space, and clears any
+        // translate left over from older versions that moved the window that way.
+        void ApplyPanelPosition(Vector2 panelPosition)
+        {
+            var parent = GetPositionParent();
+            Vector2 local = parent != null ? parent.WorldToLocal(panelPosition) : panelPosition;
+
+            _target.style.position = Position.Absolute;
+            _target.style.left = local.x;
+            _target.style.top = local.y;
+            _target.style.translate = new Translate(0, 0);
+
+            _lastLocalPosition = local;
+            _hasLocalPosition = true;
+        }
+
+        void OnGeometryChangedForDefaultPosition(GeometryChangedEvent evt)
+        {
+            // 0x0 while the window is still hidden (display:none).
+            if (evt.newRect.width == 0 || evt.newRect.height == 0)
+                return;
+
+            if (IsDragging)
+                return;
+
+            ApplySavedDefaultPosition();
+        }
+
+        void ApplySavedDefaultPosition()
+        {
+            if (!_defaultPositionPending)
+                return;
+            _defaultPositionPending = false;
+            _target.UnregisterCallback<GeometryChangedEvent>(OnGeometryChangedForDefaultPosition);
+
+            // Saved as parent-local left/top. Clamped like a drag, so a position saved on a bigger
+            // screen can't come back off-screen on a smaller one.
+            Vector2 saved = new Vector2(position_setting.V.x, position_setting.V.y);
+            var parent = GetPositionParent();
+            Vector2 position = parent != null ? parent.LocalToWorld(saved) : saved;
+
+            if (!AllowDraggingOffScreen)
+                position = clampWindow(position);
+
+            ApplyPanelPosition(position);
         }
 
         /// <summary>
@@ -141,6 +219,11 @@ namespace K2D2.UI
         /// </summary>
         private void OnPointerDown(PointerDownEvent evt)
         {
+            // Left button only: KSP2 rotates the camera with a right-drag, which otherwise moved
+            // the window at the same time.
+            if (evt.button != 0)
+                return;
+
             if (!(evt.target is VisualElement))
                 return;
             VisualElement target = evt.target as VisualElement;
@@ -151,20 +234,20 @@ namespace K2D2.UI
             if (checkTargetType<TextField>(target)) return;
             if (checkTargetType<K2Toggle>(target)) return;
             if (checkTargetType<K2Compass>(target)) return;
-            // The resize handle is a plain VisualElement (no dedicated C# type to check via
-            // checkTargetType<T>), and it's a child of whatever this manipulator's target is
-            // (the whole window) - so without this exclusion, every resize-handle drag also
-            // bubbled into here and moved the entire window at the same time as it was resizing.
-            // ResizeManipulator now calls evt.StopPropagation() itself, which should already
-            // prevent this - this is a second, class-name-based check kept as cheap insurance,
-            // matching this codebase's existing habit of not fully trusting this game's UI
-            // Toolkit event pipeline (see ResizeManipulator's Tick() watchdog for the same idea).
+            // ResizeManipulator already stops its events from reaching this window-level handler;
+            // this is a second check in case the game's event handling lets one through.
             if (checkTargetClass(target, "window-resize-handle")) return;
 
-            // _mode = target.pickingMode;
-            // target.pickingMode = PickingMode.Ignore;
+            // Placing the window by hand replaces any saved position still waiting to be applied.
+            if (_defaultPositionPending)
+            {
+                _defaultPositionPending = false;
+                _target.UnregisterCallback<GeometryChangedEvent>(OnGeometryChangedForDefaultPosition);
+            }
+
             IsDragging = true;
-            _offset = evt.localPosition;
+            _mouseOffsetInTarget = (Vector2)evt.position - _target.worldBound.position;
+            _hasLocalPosition = false;
             _target.CapturePointer(evt.pointerId);
         }
 
@@ -174,25 +257,14 @@ namespace K2D2.UI
         private void OnPointerMove(PointerMoveEvent evt)
         {
             if (!IsDragging || !IsEnabled)
-            {
                 return;
-            }
 
-            var delta = evt.localPosition - _offset;
-            // transform.position is obsolete on VisualElement - resolvedStyle.translate is the
-            // replacement for reading the current position, style.translate for setting it.
-            var currentTranslate = target.resolvedStyle.translate;
-            var newPosition = new Vector3(currentTranslate.x, currentTranslate.y, 0) + delta;
-
+            Vector2 desired = (Vector2)evt.position - _mouseOffsetInTarget;
             if (!AllowDraggingOffScreen)
-            {
-               newPosition = clampWindow(newPosition);
-            }
-            positon = newPosition;
-            _target.style.translate = new Translate(newPosition.x, newPosition.y);
-        }
+                desired = clampWindow(desired);
 
-        Vector3 positon;
+            ApplyPanelPosition(desired);
+        }
 
         /// <summary>
         /// Handles the end of the dragging process.
@@ -202,9 +274,10 @@ namespace K2D2.UI
             IsDragging = false;
             _target.ReleasePointer(evt.pointerId);
 
-            // record the window position
-            if (position_setting != null)
-                position_setting.V = positon;
+            if (position_setting != null && _hasLocalPosition)
+                position_setting.V = new Vector3(_lastLocalPosition.x, _lastLocalPosition.y, 0);
+
+            _hasLocalPosition = false;
         }
     }
 }

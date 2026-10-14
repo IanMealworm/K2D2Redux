@@ -1,45 +1,38 @@
-/* K2UI.K2Toggle: a label with an on/off switch at the far right of its row, following the
-   game's own switch (KerbalUI's .unity-toggle.switch) at a smaller size for this narrower panel.
-   .long-label shrinks the text for labels that would otherwise push the switch off the row. */
-
-.root {
-    --transition-duration-slider-bt: 2s;
-}
+/* K2UI.K2Toggle: a label with an on/off switch at the far right of its row, the same size and
+   look as the game's own switch (KerbalUI's .unity-toggle.switch). A label too long for the row
+   wraps onto a second line, as the game's switch label does, so the switch is never pushed off.
+   .long-label also uses the smaller text. */
 
 .slide-toggle__input {
-    max-width: 30px;
-    border-top-left-radius: 8px;
-    border-bottom-left-radius: 8px;
-    border-top-right-radius: 8px;
-    border-bottom-right-radius: 8px;
-    overflow: visible;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 54px;
+    width: 54px;
+    height: 24px;
+    margin-top: 3px;
+    margin-left: 8px;
     border-width: 0;
+    border-radius: 10px;
+    overflow: visible;
     background-color: rgb(0, 0, 0);
     background-image: url('project://database/Packages/uitkforksp2.controls/Assets/Theme/Sprites/control-frame.png?fileID=21300000&guid=a5c196a2bc627c1469f6f790adb266a8&type=3#control-frame');
     -unity-slice-scale: 0.5px;
     -unity-background-image-tint-color: rgb(73, 77, 91);
-    max-height: 18px;
-    justify-content: flex-start;
-    align-self: auto;
-    align-items: flex-start;
-    flex-wrap: nowrap;
-    margin-top: 7px;
-    height: 18px;
     transition-property: background-color;
     transition-duration: 0.2s;
 }
 
 .slide-toggle__input-knob {
-    height: 15px;
-    width: 15px;
     position: absolute;
-    border-radius: 5px;
-    top: -1px;
+    top: 2px;
+    left: 2px;
+    width: 26px;
+    height: 20px;
     border-width: 1px;
+    border-radius: 7px;
     border-color: rgb(0, 0, 0);
     background-color: rgb(189, 196, 209);
-    translate: -1px 0.5px;
-    transition-property: translate, background-color;
+    transition-property: left, background-color;
     transition-duration: 0.2s;
 }
 
@@ -52,7 +45,7 @@
 }
 
 .slide-toggle__input--checked > .slide-toggle__input-knob {
-    translate: 14px 0.5px;
+    left: 26px;
 }
 
 .slide-toggle:focus .slide-toggle__input-knob {
@@ -60,10 +53,13 @@
 }
 
 .slide-toggle > Label {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    white-space: normal;
     font-size: var(--k2-size-label);
-    min-width: 110px;
     color: var(--k2-color-text);
-    margin-right: 9px;
+    -unity-text-align: middle-left;
 }
 
 .slide-toggle {
@@ -73,5 +69,4 @@
 
 .slide-toggle.long-label > Label {
     font-size: var(--k2-size-info);
-    min-width: 90px;
 }

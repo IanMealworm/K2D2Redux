@@ -1,5 +1,3 @@
-using UitkForKsp2;
-using UitkForKsp2.API;
 using UnityEngine;
 using UnityEngine.UIElements;
 using KTools;
@@ -9,7 +7,7 @@ namespace K2D2.UI
     /// <summary>
     /// A manipulator that lets a small drag-handle element resize a separate window element's
     /// HEIGHT ONLY, following the same pointer-capture pattern as DragManipulator (which moves a
-    /// window via transform.position). Width stays whatever K2D2_Window.uxml sets it to. The UXML
+    /// window by its style.left/top). Width stays whatever K2D2_Window.uxml sets it to. The UXML
     /// side reuses Redux's own stock ".window-resize-handle"/".window-resize-handle-icon" CSS
     /// classes and resize-handle.png asset (KerbalUI.uss), since Redux ships that styling but no
     /// working C# behavior for it anywhere in the package.
@@ -109,7 +107,20 @@ namespace K2D2.UI
                 size_setting = new Setting<float>(save_setting, invalid_height);
 
             if (size_setting != null && size_setting.V != invalid_height)
+            {
+                // There's no panel to measure the bottom of the screen against yet, so the saved
+                // height goes in unclamped and is applied again once the window is laid out.
                 ApplyHeight(size_setting.V);
+                _resizeTarget.RegisterCallback<GeometryChangedEvent>(OnFirstGeometryForSavedHeight);
+            }
+        }
+
+        void OnFirstGeometryForSavedHeight(GeometryChangedEvent evt)
+        {
+            if (evt.newRect.width == 0 || evt.newRect.height == 0) return;
+
+            _resizeTarget.UnregisterCallback<GeometryChangedEvent>(OnFirstGeometryForSavedHeight);
+            ApplyHeight(size_setting.V);
         }
 
         /// <summary>
@@ -140,9 +151,11 @@ namespace K2D2.UI
         {
             height = Mathf.Clamp(height, MinHeight, MaxHeight);
 
-            // Keep the window from being resized past the bottom of the screen, the same idea
-            // DragManipulator's clampWindow uses for position.
-            height = Mathf.Min(height, Configuration.CurrentScreenHeight - _resizeTarget.resolvedStyle.top);
+            // Keep the window's bottom edge on screen. Measured from where the window really is on
+            // the live panel: resolvedStyle.top ignored dragging, and Configuration.CurrentScreenHeight
+            // is a fixed 1080 rather than the real screen (found by LeoMarinDev).
+            if (TryGetBottomLimit(out float bottomLimit))
+                height = Mathf.Min(height, Mathf.Max(MinHeight, bottomLimit));
 
             _resizeTarget.style.height = height;
 
@@ -152,8 +165,26 @@ namespace K2D2.UI
             _resizeTarget.MarkDirtyRepaint();
         }
 
+        // How tall the window can get before its bottom leaves the panel. False before the window
+        // is laid out, in which case the clamp is skipped.
+        bool TryGetBottomLimit(out float bottomLimit)
+        {
+            bottomLimit = 0f;
+            var panel = _resizeTarget.panel;
+            if (panel?.visualTree == null) return false;
+
+            Rect bounds = panel.visualTree.contentRect;
+            Rect world = _resizeTarget.worldBound;
+            if (bounds.height <= 0 || world.height <= 0) return false;
+
+            bottomLimit = bounds.yMax - world.y;
+            return true;
+        }
+
         private void OnPointerDown(PointerDownEvent evt)
         {
+            // Left button only, like DragManipulator. Tick() also assumes the left button.
+            if (evt.button != 0) return;
             if (!IsEnabled) return;
 
             // If we're already mid-gesture when a new PointerDown arrives, we never saw that

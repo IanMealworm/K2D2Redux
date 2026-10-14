@@ -73,6 +73,10 @@
 - Landing: a hand-made deorbit on an atmospheric body no longer reaches the disabled from-orbit mode, and Max Plane Trim is hidden on the atmospheric panel.
 - Landing: Stop releases the SAS target and removes the landing pilot's Circularize, Deorbit and Mid-Course nodes.
 - Landing: airless-only readouts (Collision Speed, Start Burn In, Burn Duration) are hidden during atmospheric precision landing.
+- Window: only the left mouse button drags or resizes it (a right-drag to turn the camera also moved the window).
+- Window: clicking it without dragging no longer saves its position as the top-left corner.
+- Window: it stays fully on screen at any resolution or UI scale, including when resized after being moved. Thanks to LeoMarinDev for finding these window bugs.
+- K2-D2 no longer spams the log every frame if it fails to start.
 
 ### Performance
 
@@ -80,6 +84,7 @@
 - Landing: the ground-collision search runs only when needed and a few times a second (it made up to 300 terrain queries per frame).
 - Landing: vacuum precision re-plans a few times a second while coasting instead of every frame.
 - Lift: the path graph isn't redrawn while hidden, and nothing heavy runs on the pad.
+- Tabs stop refreshing while the K2-D2 window is closed; running pilots carry on as normal (thanks to LeoMarinDev).
 - Telemetry is looked up once instead of by reflection on every call.
 - Less log spam: collision and comparison logs only while a pilot is running or in debug.
 - Much smaller download (about 92 MB down to about 6 MB): the old unused UI bundles and the unused Caravan font (with the large fallback fonts it pulled in) are gone. Thanks to LeoMarinDev for finding this.

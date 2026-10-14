@@ -24,14 +24,16 @@ namespace K2D2
 {
     internal class L
     {
+        // The logger only exists from OnPreInitialized on; anything logged earlier is dropped
+        // instead of throwing.
         public static void Log(string txt)
         {
-            K2D2_Plugin.logger.LogInfo(txt);
+            K2D2_Plugin.logger?.LogInfo(txt);
         }
 
         public static void Vector3(string label, Vector3 value)
         {
-            K2D2_Plugin.logger.LogInfo(label + " : " + StrTool.Vector3ToString(value));
+            K2D2_Plugin.logger?.LogInfo(label + " : " + StrTool.Vector3ToString(value));
         }
     }
 
@@ -238,7 +240,10 @@ namespace K2D2
 
         void Update()
         {
-            // main_ui?.Update();
+            // Unity starts calling Update before the loader runs OnInitialized, and if
+            // OnInitialized ever fails partway every frame would throw against a half-built mod.
+            // `loaded` is only set once it has finished.
+            if (!loaded) return;
 
             UpdateScene();
 
@@ -313,22 +318,10 @@ namespace K2D2
             }
         }
 
+        // Scene changes aren't subscribed to: GameStateChangedMessage doesn't reach mods on this
+        // game build (LeoMarinDev measured it), so UpdateScene() polls the game state instead.
         private void RegisterMessages()
         {
-            Game.Messages.Subscribe<GameStateChangedMessage>(msg =>
-            {
-                var message = (GameStateChangedMessage)msg;
-
-                // if (message.CurrentState == GameState.FlightView)
-                // {
-                //     ShapeDrawer.Instance.can_draw = true;
-                // }
-                // else if (message.PreviousState == GameState.FlightView)
-                // {
-                //     ShapeDrawer.Instance.can_draw = false;
-                // }
-            });
-
             Game.Messages.Subscribe<VesselChangedMessage>(msg =>
             {
                 var message = (VesselChangedMessage)msg;

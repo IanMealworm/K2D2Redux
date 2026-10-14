@@ -1,109 +1,72 @@
-/* K2UI.ToggleButton: an on/off button (see ToggleButton.cs). The small dark version is used for
-   rows of options (InlineEnum, Dock's kill-speed axes); .big is the light pixel-bevel button
-   for the main Start/Stop/Brake and Debug Mode, matching .k2-button in K2UI.uss. */
+/* K2UI.ToggleButton: an on/off button (see ToggleButton.cs), in the game's button look (see
+   .k2-button in K2UI.uss). The small version is used for rows of options (InlineEnum, Dock's
+   kill-speed axes); .big is the main Start/Stop/Brake and Debug Mode. On is the game's green. */
 
 .toggle-button {
-    border-color: var(--k2-color-border);
     border-width: 1px;
-    border-bottom-color: var(--k2-color-border-bottom);
-    border-bottom-width: 2px;
-    background-color: var(--k2-color-button-background);
-    border-radius: 5px;
+    border-color: var(--k2-button-outline);
+    background-color: var(--k2-button-face);
+    border-radius: 6px;
     margin: 2px 2px 4px 2px;
+    transition-property: background-color, border-color;
+    transition-duration: 0.3s;
 }
 
 .toggle-button:hover {
-    background-color: var(--k2-hover_frame);
+    background-color: var(--k2-button-hover);
 }
 
 .toggle-button:active {
-    background-color: var(--k2-active_frame);
+    background-color: var(--k2-button-pressed);
 }
 
 .toggle-button > Label {
-    color: rgb(255, 255, 255);
+    color: var(--k2-color-button-text);
     font-size: var(--k2-size-label);
     -unity-text-align: middle-center;
 }
 
 .toggle-button.checked {
-    background-image: url('project://database/Assets/Images/Light_Button.png?fileID=2800000&guid=778643882f96ecd47990fd5c8764fd03&type=3#Light_Button');
-    -unity-background-image-tint-color: var(--k2-color-accent);
+    background-color: var(--k2-button-on-face);
+    border-color: var(--k2-button-on-outline);
 }
 
-.toggle-button.checked > Label {
-    color: rgb(0, 0, 0);
+.toggle-button.checked:hover {
+    background-color: var(--k2-button-on-hover);
 }
 
-.toggle-button.checked #icon {
-    -unity-background-image-tint-color: rgb(0, 0, 0);
+.toggle-button #icon {
+    -unity-background-image-tint-color: var(--k2-color-button-text);
 }
 
 .toggle-button.yellow.checked {
-    -unity-background-image-tint-color: rgb(255, 238, 0);
+    background-color: rgb(120, 100, 20);
+    border-color: rgb(255, 214, 51);
 }
 
-/* ===== Big bevel button ===== */
+/* ===== Big button ===== */
 
 .toggle-button.big {
-    height: 32px;
+    height: 30px;
     margin: 0;
     justify-content: center;
-    background-color: var(--k2-bevel-face);
-    background-image: none;
-    border-width: 2px 3px 4px 2px;
-    border-color: var(--k2-bevel-keyline) var(--k2-bevel-right) var(--k2-bevel-bottom) var(--k2-bevel-keyline);
-    border-radius: 3px;
-}
-
-.toggle-button.big:hover {
-    background-color: var(--k2-bevel-face-hover);
-}
-
-.toggle-button.big:active {
-    background-color: var(--k2-bevel-face-pressed);
-    translate: 1px 1px;
+    border-radius: 8px;
 }
 
 .toggle-button.big > Label {
-    color: var(--k2-bevel-text);
     font-size: var(--k2-size-button);
     -unity-font-style: normal;
 }
 
-/* Running: the same block in green. */
-.toggle-button.big.checked {
-    background-image: none;
-    background-color: var(--k2-bevel-on-face);
-    border-color: var(--k2-bevel-on-keyline) var(--k2-bevel-on-right) var(--k2-bevel-on-bottom) var(--k2-bevel-on-keyline);
-}
-
-.toggle-button.big.checked:hover {
-    background-color: var(--k2-bevel-on-face-hover);
-}
-
-.toggle-button.big.checked > Label {
-    color: var(--k2-bevel-text);
-}
-
 /* Square icon-only version (Node's Pause). */
 .toggle-button.big.icon {
-    width: 32px;
+    width: 30px;
     flex-shrink: 0;
     padding: 4px;
 }
 
 .toggle-button.big.icon Label {
     display: none;
-}
-
-.toggle-button.big #icon {
-    -unity-background-image-tint-color: var(--k2-bevel-text);
-}
-
-.toggle-button.big.icon.yellow.checked {
-    background-color: rgb(255, 214, 51);
-    border-color: rgb(90, 68, 0) rgb(255, 234, 133) rgb(214, 163, 0) rgb(90, 68, 0);
 }
 
 /* ===== Option rows ===== */

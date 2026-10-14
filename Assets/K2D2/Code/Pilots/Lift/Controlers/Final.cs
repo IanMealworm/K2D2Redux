@@ -1,4 +1,6 @@
+using System.Reflection;
 using KSP.Sim;
+using KSP.Sim.impl;
 using KSP.Sim.Maneuver;
 using KSP2FlightAssistant.MathLibrary;
 using KTools;
@@ -41,6 +43,14 @@ namespace K2D2.Lift
         // still isn't there after this much game time, creating it failed.
         const double node_timeout_s = 5;
         double start_UT;
+
+        // Diagnostics for C.1 (circularization going wrong when the ascent ends far from orbit):
+        // what the game's own simulation of the node's burn says, logged when the node appears and
+        // every 2 s until the burn ends. _plannedWithoutDeltaV is the solver's flag for "planned
+        // before the vessel's delta-v data was ready". Temporary, to be removed once C.1 is fixed.
+        static readonly FieldInfo planned_without_dv_field =
+            typeof(ManeuverPlanSolver).GetField("_plannedWithoutDeltaV", BindingFlags.NonPublic | BindingFlags.Instance);
+        float next_trace;
 
         public FinalCircularize(LiftPilot lift, LiftSettings lift_settings)
         {
@@ -101,6 +111,7 @@ namespace K2D2.Lift
             maneuver_creator.RemoveAllNodesThenCreate(burn_UT, deltaV, created_node =>
             {
                 node = created_node;
+                next_trace = 0;
                 mode = Mode.Turn;
                 current_executor.setController(turn);
                 turn.StartManeuver(node);
@@ -118,6 +129,12 @@ namespace K2D2.Lift
             }
 
             base.Update();
+
+            if (UnityEngine.Time.unscaledTime >= next_trace)
+            {
+                next_trace = UnityEngine.Time.unscaledTime + 2;
+                Trace();
+            }
 
             if (!current_executor.finished)
                 return;
@@ -137,6 +154,7 @@ namespace K2D2.Lift
                     burn.StartManeuver(node);
                     break;
                 case Mode.Burn:
+                    Trace();
                     status_line = "Circularize burn complete";
                     finished = true;
 
@@ -150,6 +168,29 @@ namespace K2D2.Lift
                     lift.EndLiftPilot(true, "Circularized - ascent complete");
                     break;
             }
+        }
+
+        void Trace()
+        {
+            var solver = current_vessel.GetPlanSolver();
+            if (solver == null || node == null) return;
+
+            double now = GeneralTools.Current_UT;
+            solver.GetVelocityAfterFirstManeuver(out double sim_end_UT);
+            bool planned_without_dv = planned_without_dv_field != null && (bool)planned_without_dv_field.GetValue(solver);
+
+            IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
+            var body = orbit.referenceBody;
+            LandingTargeting.OrbitalElementsFromStateVectors(orbit.GetRelativePositionAtUTZup(now),
+                orbit.GetOrbitalVelocityAtUTZup(now), body.gravParameter,
+                out _, out double apoapsisRadius, out double periapsisRadius);
+
+            double sim_burn = sim_end_UT - node.Time;
+            string early = sim_burn < node.BurnDuration - 1 ? " ENDS EARLY" : "";
+            logger.LogInfo($"[FinalCircularize] trace mode={mode} node in {node.Time - now:n1}s " +
+                $"node dV={node.BurnRequiredDV:n1} burn={node.BurnDuration:n1}s | game sim burns {sim_burn:n1}s{early} " +
+                $"plannedWithoutDeltaV={planned_without_dv} | remaining={burn.remaining_dv:n1} " +
+                $"Ap={(apoapsisRadius - body.radius) / 1000:n1}km Pe={(periapsisRadius - body.radius) / 1000:n1}km");
         }
 
         public override void updateUI(VisualElement root_el, FullStatus st)

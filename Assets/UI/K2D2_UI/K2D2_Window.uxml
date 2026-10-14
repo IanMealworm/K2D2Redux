@@ -18,16 +18,18 @@
     <Style src="project://database/Assets/Runtime/K2UI/USS/Ids.uss?fileID=7433441132597879392&amp;guid=05eca1a4a31465746b0e8b392ee7cb7a&amp;type=3#Ids" />
     <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
     <UitkForKsp2.Controls.AppShell name="MainFrame" title="K2-D2" close-button-name="close-button" icon-texture="project://database/Assets/Images/cropped_40px.png?fileID=2800000&amp;guid=6a5fd6f51e722db49a3b2c207a7e7a73&amp;type=3#cropped_40px" style="position: absolute; left: 11px; top: 36px; width: 350px; height: 500px; min-width: 300px; min-height: 250px;">
-        <ui:ScrollView name="tab-scroll-view" style="flex-grow: 1;">
-            <K2UI.Tabs.TabbedPage selected-tab-Name="controls">
-                <ui:Instance template="NodeEx" name="node" style="display: none;" />
-                <ui:Instance template="Lift" name="lift" style="display: none;" />
-                <ui:Instance template="Landing" name="landing" style="display: none;" />
-                <ui:Instance template="Dock" name="dock" style="display: none;" />
-                <ui:Instance template="attitude" name="attitude" style="display: none;" />
-                <ui:Instance template="About" name="about" />
-            </K2UI.Tabs.TabbedPage>
-        </ui:ScrollView>
+        <UitkForKsp2.Controls.InvertedCornerBox name="main-box" class="k2-main-box">
+            <ui:ScrollView name="tab-scroll-view" style="flex-grow: 1;">
+                <K2UI.Tabs.TabbedPage selected-tab-Name="controls">
+                    <ui:Instance template="NodeEx" name="node" style="display: none;" />
+                    <ui:Instance template="Lift" name="lift" style="display: none;" />
+                    <ui:Instance template="Landing" name="landing" style="display: none;" />
+                    <ui:Instance template="Dock" name="dock" style="display: none;" />
+                    <ui:Instance template="attitude" name="attitude" style="display: none;" />
+                    <ui:Instance template="About" name="about" />
+                </K2UI.Tabs.TabbedPage>
+            </ui:ScrollView>
+        </UitkForKsp2.Controls.InvertedCornerBox>
         <ui:VisualElement name="toolbar" style="flex-direction: row; align-items: center; justify-content: space-between; margin-top: 6px;">
             <K2UI.ToggleButton label="Auto-staging" name="staging-toggle" value="false" class="auto-staging-toggle">
                 <ui:VisualElement name="icon" />

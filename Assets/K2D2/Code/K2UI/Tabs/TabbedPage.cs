@@ -157,12 +157,28 @@ namespace K2UI.Tabs
             if (panels == null)
                 return;
 
-            foreach (var panel in panels)
-            {
-                panel.isVisible = panel.code == code;    
-            }
+            UpdatePanelsVisibility();
 
             tabsbar_el.setOpenedPage(code);
+        }
+
+        // While the window is closed no page counts as visible, so pages skip their per-frame UI
+        // refresh and pilots skip the preview maths they only run for the page on screen.
+        bool window_open;
+
+        public void SetWindowOpen(bool open)
+        {
+            window_open = open;
+            UpdatePanelsVisibility();
+        }
+
+        void UpdatePanelsVisibility()
+        {
+            if (panels == null)
+                return;
+
+            foreach (var panel in panels)
+                panel.isVisible = window_open && panel.code == current_tab;
         }
 
         public void Enable(string code, bool enable)

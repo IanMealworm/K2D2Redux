@@ -1,5 +1,6 @@
 /* K2UI.K2Slider: a title on the left and its value (amber, like the game's gauges) on the right,
-   over a dashed track with a small rectangular handle. */
+   over the game's own slider (KerbalUI's .unity-base-slider): a thin blue dashed track and a
+   pale blue handle in a rounded frame. */
 
 .k2-slider {
     flex-direction: row;
@@ -32,13 +33,13 @@
 
 /* The dashed track is drawn by K2Slider.cs (a background-image dash would not render in game),
    which reads this element's height for the line thickness. background-image: none keeps the
-   game's own dashed tracker image from showing behind it. */
+   game's own dashed tracker image from showing behind it. No visibility here: setting it would
+   stop the track hiding with the rest of the window on F2. */
 .k2-slider #unity-tracker {
     background-color: rgba(0, 0, 0, 0);
     background-image: none;
-    visibility: visible;
-    height: 3px;
-    margin-top: -1px;
+    height: 1px;
+    margin: 0 6px;
     border-width: 0;
     border-radius: 0;
     overflow: visible;
@@ -51,20 +52,19 @@
 
 .k2-slider #unity-dragger {
     height: 20px;
-    background-color: rgb(140, 148, 163);
-    border-color: rgb(20, 22, 28);
-    width: 7px;
+    width: 6px;
     margin-top: -10px;
-    border-radius: 2px;
+    background-color: rgb(197, 229, 245);
+    border-color: rgb(158, 184, 198);
+    border-radius: 4px;
     border-width: 1px;
+    transition-property: background-color, border-color;
+    transition-duration: 0.2s;
 }
 
-.k2-slider #unity-dragger:hover {
-    background-color: rgb(170, 178, 195);
-}
-
-.k2-slider #unity-dragger:active {
-    background-color: var(--k2-color-accent);
+.k2-slider #unity-drag-container:active > #unity-dragger {
+    background-color: rgb(81, 105, 142);
+    border-color: rgb(69, 87, 117);
 }
 
 .k2-slider #fill_bar {

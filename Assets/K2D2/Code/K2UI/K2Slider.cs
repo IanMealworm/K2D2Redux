@@ -219,13 +219,13 @@ namespace K2UI
             RegisterCallback<AttachToPanelEvent>(evt => { SliderValueChanged(); setLabels(); });
         }
 
-        // A thin horizontal dashed line in the UI's blue-grey, tiled left-to-right at a fixed
-        // dash/gap pitch whatever the slider's width.
-        static readonly Color dash_tint = new Color(110f / 255f, 120f / 255f, 140f / 255f, 1f);
+        // A thin horizontal dashed line in the game's slider blue (KerbalUI's tracker tint), tiled
+        // left-to-right at a fixed dash/gap pitch whatever the slider's width.
+        static readonly Color dash_tint = new Color(119f / 255f, 152f / 255f, 204f / 255f, 1f);
         // A stock KerbalUI.uss rule ghosts a second, lighter-blue dashed line behind this one
         // unless #unity-tracker's background-image is set to none (see K2Slider.uss).
         const float dash_length = 8f;
-        const float dash_gap = 6f;
+        const float dash_gap = 4f;
 
         void DrawDashedTrack(MeshGenerationContext mgc)
         {

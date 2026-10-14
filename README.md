@@ -44,7 +44,7 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 - **[cheese3660](https://github.com/cheese3660)** - [SpaceWarp](https://github.com/Halbann) and [AutoBurn](https://github.com/cheese3660/AutoBurn), which the original mod was built on
 - **[Halbann](https://github.com/Halbann)** - [LazyOrbit](https://github.com/Halbann/LazyOrbit), which the original mod's first steps were based on
 - **[KSP2Community](https://github.com/KSP2Community)** - the Redux modding framework and the `Redux.Template` project scaffold this port is built on
-- **LeoMarinDev** - found what was making the download so large ([PR #2](https://github.com/IanMealworm/K2D2Redux/pull/2))
+- **LeoMarinDev** - found what was making the download so large, and the window drag, resize and closed-window update bugs ([PR #2](https://github.com/IanMealworm/K2D2Redux/pull/2))
 - **[linuxgurugamer](https://github.com/linuxgurugamer/GravityTurn)** - the KSP1 GravityTurn mod, whose approach informed K2-D2's Gravity Turn profile (no code was used)
 
 ## Changelog

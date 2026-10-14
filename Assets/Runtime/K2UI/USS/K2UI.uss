@@ -36,28 +36,22 @@
     --k2-color-border: rgb(76, 80, 188);
     --k2-color-border-bottom: rgb(90, 94, 211);
     --k2-color-button-text: rgb(242, 242, 242);
-    --k2-color-button-background: rgb(12, 12, 27);
-    --k2-color-button-background-hover: rgb(19, 19, 44);
     --k2-hover_frame: rgb(16, 16, 37);
     --k2-active_frame: rgb(30, 32, 77);
     --k2-background-frame: rgba(76, 79, 188, 0.1);
     --k2-color-textfield-border-focus: rgb(170, 178, 255);
     --k2-color-invalid: rgb(200, 40, 40);
 
-    /* The light pixel-bevel buttons: face, then the keyline (top/left) and the darker right and
-       bottom faces that fake the block's depth. */
-    --k2-bevel-face: rgb(225, 227, 233);
-    --k2-bevel-face-hover: rgb(238, 240, 245);
-    --k2-bevel-face-pressed: rgb(210, 212, 218);
-    --k2-bevel-text: rgb(34, 38, 46);
-    --k2-bevel-keyline: rgb(35, 35, 42);
-    --k2-bevel-right: rgb(170, 172, 180);
-    --k2-bevel-bottom: rgb(120, 122, 130);
-    --k2-bevel-on-face: rgb(46, 204, 92);
-    --k2-bevel-on-face-hover: rgb(66, 224, 112);
-    --k2-bevel-on-keyline: rgb(20, 60, 32);
-    --k2-bevel-on-right: rgb(110, 200, 140);
-    --k2-bevel-on-bottom: rgb(50, 150, 80);
+    /* Buttons, taken from the game's own (KerbalUI's .unity-button): a near-black face with a
+       faint white outline, blue when hovered or pressed. Running buttons use the game's green
+       toggle colours. */
+    --k2-button-face: rgb(15, 19, 24);
+    --k2-button-outline: rgba(255, 255, 255, 0.2);
+    --k2-button-hover: rgb(65, 84, 131);
+    --k2-button-pressed: rgb(101, 128, 199);
+    --k2-button-on-face: rgb(34, 102, 56);
+    --k2-button-on-hover: rgb(46, 130, 72);
+    --k2-button-on-outline: rgb(91, 255, 168);
 
     -unity-font-definition: var(--k2-font-body);
     font-size: var(--k2-size-label);
@@ -166,94 +160,81 @@ Label {
 
 /* ===== Buttons ===== */
 
-/* Dark default for any plain button not given a bevel class. */
+/* Plain buttons keep the game's own look (KerbalUI's .unity-button.unity-text-element); this
+   only spaces them out. */
 .unity-button {
-    height: 20px;
-    padding: 0 4px;
     margin: 2px;
-    border-radius: 3px;
-    border-width: 1px;
-    border-color: var(--k2-color-border);
-    border-bottom-color: var(--k2-color-border-bottom);
-    border-bottom-width: 2px;
-    background-color: var(--k2-color-button-background);
-    color: var(--k2-color-button-text);
-    font-size: var(--k2-size-button);
+    padding: 0 6px;
 }
 
-.unity-button:hover {
-    background-color: var(--k2-color-button-background-hover);
-}
-
-.unity-button:active {
-    background-color: var(--k2-active_frame);
-}
-
-/* The light pixel-bevel button used for every action button. UI Toolkit has no box-shadow, so
-   the depth is uneven border widths: a dark keyline, and heavier, darker right and bottom edges
-   standing in for the block's sides. Pressing nudges it instead of resizing it. Two classes so
-   it outranks the stock .unity-button rules whatever loads first. */
+/* Action buttons: the game's button look, restated so it also covers RepeatButtons (which
+   aren't .unity-button). Two classes so it outranks KerbalUI's rules whatever loads first. */
 .unity-button.k2-button,
 .k2-button {
-    height: 32px;
+    height: 30px;
     margin: 0;
     padding: 0 6px;
-    background-color: var(--k2-bevel-face);
+    border-width: 1px;
+    border-radius: 8px;
+    border-color: var(--k2-button-outline);
+    background-color: var(--k2-button-face);
     background-image: none;
-    color: var(--k2-bevel-text);
+    color: var(--k2-color-button-text);
     font-size: var(--k2-size-button);
     -unity-font-style: normal;
     -unity-text-align: middle-center;
-    border-width: 2px 3px 4px 2px;
-    border-color: var(--k2-bevel-keyline) var(--k2-bevel-right) var(--k2-bevel-bottom) var(--k2-bevel-keyline);
-    border-radius: 3px;
+    transition-property: background-color, border-color;
+    transition-duration: 0.3s;
 }
 
 .unity-button.k2-button:hover,
 .k2-button:hover {
-    background-color: var(--k2-bevel-face-hover);
+    background-color: var(--k2-button-hover);
 }
 
 .unity-button.k2-button:active,
 .k2-button:active {
-    background-color: var(--k2-bevel-face-pressed);
-    translate: 1px 1px;
+    background-color: var(--k2-button-pressed);
 }
 
 /* Secondary actions (Node's circularize buttons). */
 .unity-button.k2-button.k2-button--small {
-    height: 22px;
+    height: 24px;
+    border-radius: 6px;
     font-size: var(--k2-size-small);
-    border-width: 1px 2px 3px 1px;
 }
 
 /* Square stepper buttons (Attitude's elevation - and +). */
-.unity-button.k2-button.k2-button--square {
+.unity-button.k2-button.k2-button--square,
+.k2-button.k2-button--square {
     width: 26px;
     height: 24px;
     padding: 0;
+    border-radius: 6px;
     -unity-font-style: bold;
 }
 
-/* A row of equal-width buttons. */
+/* A row of equal-width buttons. The extra selectors outrank the buttons' own margin: 0 (here and
+   in ToggleButton.uss), which otherwise left the buttons touching. */
 .k2-button-row {
     flex-direction: row;
     margin-top: 10px;
     margin-bottom: 10px;
 }
 
-.k2-button-row > * {
+.k2-button-row > *,
+.k2-button-row > .unity-button.k2-button,
+.k2-button-row > .toggle-button.big {
     flex-grow: 1;
     flex-basis: 0;
-    margin: 0 2px;
+    margin: 0 3px;
 }
 
 /* A column of full-width buttons. */
-.k2-button-column > * {
-    margin-left: 0;
-    margin-right: 0;
-    margin-top: 4px;
-    margin-bottom: 0;
+.k2-button-column > *,
+.k2-button-column > .unity-button.k2-button,
+.k2-button-column > .toggle-button.big {
+    margin: 6px 0 0 0;
 }
 
 /* ===== Fields ===== */

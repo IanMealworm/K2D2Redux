@@ -82,10 +82,9 @@ namespace K2D2.Landing
                 }
             }
 
-            if (labels.Count == 0)
-                labels.Add(body == null ? "No body" : "No waypoints on " + body.Name);
-            else
-                labels.Insert(0, PickPrompt);
+            // Shown in the dropdown when no waypoint is selected, but not one of its choices.
+            string prompt = labels.Count > 0 ? PickPrompt
+                : body == null ? "No body" : "No waypoints on " + body.Name;
 
             // Only when the list changed: this runs every UI tick.
             if (dropdown.choices == null || !dropdown.choices.SequenceEqual(labels))
@@ -106,7 +105,7 @@ namespace K2D2.Landing
             else
             {
                 selected_id = null;
-                dropdown.SetValueWithoutNotify(labels[0]);
+                dropdown.SetValueWithoutNotify(prompt);
             }
         }
     }

@@ -32,6 +32,13 @@
     min-width: 0;
 }
 
+/* The game's notched box around the tabs and their content, like the Transfer Window mod's main
+   panel (UitkForKsp2's InvertedCornerBox draws the outline and fill). */
+.k2-main-box {
+    flex-grow: 1;
+    padding: 4px 2px 4px 4px;
+}
+
 /* ===== Footer toolbar ===== */
 
 /* Leaves room for the resize handle in the bottom-right corner. */
