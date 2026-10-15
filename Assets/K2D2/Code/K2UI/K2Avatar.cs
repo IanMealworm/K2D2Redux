@@ -12,9 +12,6 @@ namespace K2UI
     /// turns them off in reverse order. Wire to a pilot's is_running_event (BaseController.cs) to
     /// track autopilot on/off automatically.
     /// </summary>
-    // UxmlFactory/UxmlTraits -> [UxmlElement] (see Group.cs's class comment for why). K2Avatar
-    // exposes no attributes beyond VisualElement's own standard ones (including "name"), which UI
-    // Toolkit itself already handles - nothing else to convert here.
     [UxmlElement]
     public partial class K2Avatar : VisualElement
     {

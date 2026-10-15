@@ -15,12 +15,6 @@ namespace K2UI.Tabs
     ///
     /// Adds TabButton to the Element they will be finally added in the #TabBar
     /// </summary>
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment for
-    // why). SelectedTabName's own field default ("") already matches the old bag default, and
-    // K2D2_Window.uxml's only <K2UI.Tabs.TabbedPage> tag sets selected-tab-Name="controls"
-    // explicitly anyway, so no extra behavior-preserving fix is needed here. Arbitrary
-    // VisualElement children (the old uxmlChildElementsDescription override) need no equivalent -
-    // that was only ever an editor-time authoring hint, not a runtime gate.
     [UxmlElement]
     public partial class TabbedPage : VisualElement
     {
@@ -163,12 +157,28 @@ namespace K2UI.Tabs
             if (panels == null)
                 return;
 
-            foreach (var panel in panels)
-            {
-                panel.isVisible = panel.code == code;    
-            }
+            UpdatePanelsVisibility();
 
             tabsbar_el.setOpenedPage(code);
+        }
+
+        // While the window is closed no page counts as visible, so pages skip their per-frame UI
+        // refresh and pilots skip the preview maths they only run for the page on screen.
+        bool window_open;
+
+        public void SetWindowOpen(bool open)
+        {
+            window_open = open;
+            UpdatePanelsVisibility();
+        }
+
+        void UpdatePanelsVisibility()
+        {
+            if (panels == null)
+                return;
+
+            foreach (var panel in panels)
+                panel.isVisible = window_open && panel.code == current_tab;
         }
 
         public void Enable(string code, bool enable)
@@ -206,4 +216,4 @@ namespace K2UI.Tabs
 
 
     }
-}
+}

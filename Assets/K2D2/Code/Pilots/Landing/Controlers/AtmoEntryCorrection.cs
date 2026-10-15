@@ -12,10 +12,9 @@ namespace K2D2.Landing
     // see AtmoAttitudeHold.HoldBallistic). That's where the entry guidance starts from, and the
     // middle of where it can steer to: it tilts toward whichever way the landing point has to
     // move, up, down or to either side. If it's too far from the target, a burn is planned from
-    // the airless coast
-    // (LandingTargeting.BurnSensitivity) and then adjusted against Redux's Planned prediction,
-    // which includes drag, before it's flown (TargetedBurnController's refinement). Then measure
-    // again; stop once it's close enough for the entry guidance to handle.
+    // the airless coast (LandingTargeting.BurnSensitivity) and then adjusted against Redux's
+    // Planned prediction, which includes drag, before it's flown (TargetedBurnController's
+    // refinement). Then measure again; stop once it's close enough for the entry guidance to handle.
     public class AtmoEntryCorrection : TargetedBurnController
     {
         public AtmoEntryCorrection() : base("K2D2.AtmoEntryCorrection") { }

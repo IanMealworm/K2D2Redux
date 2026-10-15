@@ -13,8 +13,8 @@ namespace K2D2.Lift
     // regardless of which profile actually flew the ascent.
     public abstract class AscentControllerBase : ExecuteController
     {
-        // Current sea-level altitude, in km - refreshed by computeValues() every tick the Lift
-        // page is visible or running (see LiftPilot.Update()).
+        // Current sea-level altitude, in km - refreshed every tick the Lift page is visible or
+        // running (see LiftPilot.Update()).
         public float current_altitude_km = 0;
 
         // Current apoapsis altitude, in km.
@@ -34,6 +34,21 @@ namespace K2D2.Lift
         // this profile's throttle is actually the one commanding the engine.
         public abstract void computeValues(bool compute_delta_ap_per_second);
 
+        // While not flying (the Lift tab open on the pad, say): only what the tab shows, not the
+        // controllers' engine and heat readings.
+        public void computeIdleValues(KSPVessel current_vessel)
+        {
+            if (current_vessel.VesselComponent != null)
+                UpdateBasicTelemetry(current_vessel, false);
+        }
+
+        // Heading correction fades in with horizontal speed: rising straight off the pad, the
+        // direction of a few cm/s of sideways drift is noise and would swing the heading around.
+        protected static float HeadingCorrectionWeight(double horizontal_speed_mps)
+        {
+            return Mathf.Clamp01((float)(horizontal_speed_mps - 5) / 45f);
+        }
+
         // Common telemetry refresh both Ascent and ReactiveAscent need every tick - reads the
         // live orbit for altitude/apoapsis and smooths a climb-rate estimate from how fast
         // apoapsis is rising per second of full throttle. Each subclass's own computeValues()
@@ -41,6 +56,9 @@ namespace K2D2.Lift
         // needs on top (Ascent's wanted_elevation, ReactiveAscent's time_to_apoapsis_s).
         protected void UpdateBasicTelemetry(KSPVessel current_vessel, bool compute_delta_ap_per_second)
         {
+            // Read through IKeplerPatch, not cast to PatchedConicsOrbit: Redux hands back
+            // Redux.Ecs.Components.CurrentPatchedConicsOrbit for the actively-flown vessel, an
+            // unrelated class that also implements IKeplerPatch, so the cast would throw.
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             ap_km = (float)(orbit.Apoapsis - orbit.referenceBody.radius) / 1000;
             current_altitude_km = (float)(current_vessel.GetSeaAltitude() / 1000);

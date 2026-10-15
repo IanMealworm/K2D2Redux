@@ -24,14 +24,16 @@ namespace K2D2
 {
     internal class L
     {
+        // The logger only exists from OnPreInitialized on; anything logged earlier is dropped
+        // instead of throwing.
         public static void Log(string txt)
         {
-            K2D2_Plugin.logger.LogInfo(txt);
+            K2D2_Plugin.logger?.LogInfo(txt);
         }
 
         public static void Vector3(string label, Vector3 value)
         {
-            K2D2_Plugin.logger.LogInfo(label + " : " + StrTool.Vector3ToString(value));
+            K2D2_Plugin.logger?.LogInfo(label + " : " + StrTool.Vector3ToString(value));
         }
     }
 
@@ -90,41 +92,27 @@ namespace K2D2
         {
 
             Instance = this;
-            // SWMetadata.Folder is a System.IO.DirectoryInfo, not a string (confirmed via the current
-            // SpaceWarpPluginDescriptor's real field type) - string-concatenating it works today via
-            // DirectoryInfo's implicit ToString(), but .FullName is the correct, intended accessor.
+            // UI loads through Redux's Addressables (see AssetsLoader.LoadUxml()). The prebuilt
+            // AssetBundle line below is a fallback in case that has to be backed out.
+            // SWMetadata.Folder is a System.IO.DirectoryInfo, not a string; .FullName gives its path.
             //
             // AssetsLoader.Bundle = AssetBundle.LoadFromFile(SWMetadata.Folder.FullName + "/assets/bundles/k2d2_ui.bundle");
-            //
-            // Switched UI loading from the old prebuilt AssetBundle above to Redux's Addressables system -
-            // see AssetsLoader.LoadUxml() for the new loading call and the reasoning. The line above is
-            // commented out (not deleted) so reverting is a one-line job if Addressables doesn't pan out
-            // in testing; k2d2_ui.bundle itself is left untouched on disk either way.
 
-            // K2UIFactoryRegistration.RegisterAll() used to go here - a reflection-based workaround
-            // that manually registered every K2UI custom control's legacy UxmlFactory with Unity's
-            // internal VisualElementFactoryRegistry, needed because Unity's automatic factory scan
-            // never recognized a BepInEx-loaded mod DLL as a "user assembly". That whole class is
-            // gone now: every K2UI control moved to [UxmlElement]/[UxmlAttribute] (Unity 6.6 removes
-            // UxmlFactory entirely, so this was happening either way), and the newer attribute-based
-            // registration is handled by Redux itself for mod assemblies - no manual step needed.
+            // No UI factory registration is needed here: K2UI controls use [UxmlElement]/[UxmlAttribute],
+            // and Redux registers those for mod assemblies.
 
             var k2D2PilotsMgr = new K2D2PilotsMgr();
             SettingsFile.Init(this, SettingsPath);
 
-            // Landing's Atmo/Vacuum profile split - two independent files, loaded up front here
-            // (same as the main settings file above) so both are ready before LandingPilot's
-            // constructor builds its two LandingSettings instances.
+            // Landing's Atmo and Vacuum settings files, loaded before LandingPilot's constructor
+            // builds its two LandingSettings instances.
             SettingsFile.GetOrCreate("land_atmo", this, AtmoLandingSettingsPath);
             var landVacFile = SettingsFile.GetOrCreate("land_vac", this, VacLandingSettingsPath);
 
-            // One-time migration: before this split, Landing's settings lived in the main file
-            // (SettingsFile.Instance/k2d2_settings.json) under "land." keys - copy whatever's
-            // already tuned there into the new VACUUM file specifically (not land_atmo), since
-            // that's the profile that's actually been flown/tuned so far. CopyMissingKeys only
-            // ever fills in keys land_vac doesn't already have, so this is a no-op on every launch
-            // after the first (see its own comment in SettingsFile.cs) - never overwrites anything
-            // tuned in land_vac since the split happened, and never touches land_atmo at all.
+            // Older installs kept Landing's settings in the main file (k2d2_settings.json) under
+            // "land." keys. They're copied into the Vacuum file, the profile they were tuned for.
+            // CopyMissingKeys only fills keys land_vac doesn't have yet, so after the first launch
+            // this does nothing, and land_atmo is never touched.
             int migrated = landVacFile.CopyMissingKeys(SettingsFile.Instance, "land.");
             if (migrated > 0)
                 logger.LogInfo($"[K2D2_Plugin] Migrated {migrated} existing Landing setting(s) from the main settings file into k2d2_landing_vac.json.");
@@ -211,44 +199,54 @@ namespace K2D2
         {
         }
 
-        // AssetsLoader.LoadUxml() (a separate static class, not a KerbalMod subclass) needs to call
-        // Assets.LoadAssetAsync<T>() to load UI Toolkit assets via Addressables, but the base
-        // KerbalMonoBehaviour.Assets property is `protected` - confirmed via CS0122 build error - so it's
-        // not reachable from outside a KerbalMod subclass's own code, even through an instance reference
-        // like K2D2_Plugin.Instance.Assets. This thin public wrapper exposes just the one call
-        // AssetsLoader needs without loosening protection on anything else.
+        // AssetsLoader.LoadUxml() needs Assets.LoadAssetAsync<T>(), but KerbalMonoBehaviour.Assets
+        // is `protected`, so it can't be reached from outside a KerbalMod subclass, even through
+        // K2D2_Plugin.Instance.Assets. This wrapper exposes just that one call.
         public AsyncOperationHandle<T> LoadAddressableAsset<T>(string address)
         {
             return Assets.LoadAssetAsync<T>(address);
         }
 
 
-        private static GameState[] validScenes = { GameState.FlightView, GameState.Map3DView };
+        // Pilots keep flying in these views (photo mode included, so taking a screenshot doesn't
+        // stop a landing); the window only shows in the first two.
+        private static readonly GameState[] flight_scenes = { GameState.FlightView, GameState.Map3DView, GameState.PhotoMode };
+        private static readonly GameState[] window_scenes = { GameState.FlightView, GameState.Map3DView };
 
-        //private static GameState last_game_state ;
+        // Worked out once per frame in Update; FixedUpdate and LateUpdate use the same answer.
+        static bool in_flight, window_allowed;
 
-        private static bool ValidScene()
+        // Pilots are reset once when leaving flight, not every frame (and every physics step) after.
+        static void UpdateScene()
         {
             // Game and its state machine aren't set up yet for the first few frames after loading.
             var game_state = GeneralTools.Game?.GlobalGameState?.GetGameState();
-            if (game_state == null) return false;
-
-            // GameStateMachine has no GetState() method on Redux's current assemblies; the current
-            // GameState comes from GetGameState().GameState instead.
-            var state = game_state.GameState;
-            bool is_valid = validScenes.Contains(state);
-            if (!is_valid)
+            bool was_in_flight = in_flight;
+            if (game_state == null)
             {
-                ResetControllers();
+                in_flight = window_allowed = false;
             }
-            return is_valid;
+            else
+            {
+                // GameStateMachine has no GetState() method on Redux's current assemblies; the
+                // current GameState comes from GetGameState().GameState instead.
+                var state = game_state.GameState;
+                in_flight = flight_scenes.Contains(state);
+                window_allowed = window_scenes.Contains(state);
+            }
+            if (was_in_flight && !in_flight)
+                ResetControllers();
         }
 
         void Update()
         {
-            // main_ui?.Update();
+            // Unity starts calling Update before the loader runs OnInitialized, and if
+            // OnInitialized ever fails partway every frame would throw against a half-built mod.
+            // `loaded` is only set once it has finished.
+            if (!loaded) return;
 
-            Debug.developerConsoleVisible = false;
+            UpdateScene();
+
             // Update Models (even on non valid scenes)
             current_vessel.Update();
 
@@ -260,10 +258,9 @@ namespace K2D2
             }
             */
 
-            if (ValidScene())
+            if (in_flight)
             {
-                // Debug.developerConsoleVisible = false;
-                if (Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
+                if (window_allowed && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
                     main_window.IsWindowOpen = !main_window.IsWindowOpen;
 
                 StagingPilot.Instance.Update();
@@ -274,12 +271,24 @@ namespace K2D2
                     pilots_manager.UpdateControllers();
                 }   
             }
-            else
+            // Hidden in photo mode and outside flight, and opened again on the way back if it was
+            // open.
+            if (main_window != null)
             {
-                if (main_window != null && main_window.IsWindowOpen)
+                if (!window_allowed && main_window.IsWindowOpen)
+                {
                     main_window.IsWindowOpen = false;
+                    window_hidden_by_scene = true;
+                }
+                else if (window_allowed && window_hidden_by_scene)
+                {
+                    main_window.IsWindowOpen = true;
+                    window_hidden_by_scene = false;
+                }
             }
         }
+
+        bool window_hidden_by_scene;
 
         // call on reset on controller, each on can reset it's status
         public static void ResetControllers()
@@ -295,7 +304,7 @@ namespace K2D2
 
         void FixedUpdate()
         {
-            if (ValidScene())
+            if (in_flight)
             {
                 pilots_manager.FixedUpdateControllers();
             }
@@ -303,28 +312,16 @@ namespace K2D2
 
         private void LateUpdate()
         {
-            if (ValidScene())
+            if (in_flight)
             {
                 pilots_manager.LateUpdateControllers();
             }
         }
 
+        // Scene changes aren't subscribed to: GameStateChangedMessage doesn't reach mods on this
+        // game build (LeoMarinDev measured it), so UpdateScene() polls the game state instead.
         private void RegisterMessages()
         {
-            Game.Messages.Subscribe<GameStateChangedMessage>(msg =>
-            {
-                var message = (GameStateChangedMessage)msg;
-
-                // if (message.CurrentState == GameState.FlightView)
-                // {
-                //     ShapeDrawer.Instance.can_draw = true;
-                // }
-                // else if (message.PreviousState == GameState.FlightView)
-                // {
-                //     ShapeDrawer.Instance.can_draw = false;
-                // }
-            });
-
             Game.Messages.Subscribe<VesselChangedMessage>(msg =>
             {
                 var message = (VesselChangedMessage)msg;

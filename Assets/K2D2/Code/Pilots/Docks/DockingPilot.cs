@@ -39,6 +39,10 @@ namespace K2D2.Controller
             set
             {
                 if (_mode == value) return;
+                // Starting from Off: stop every other pilot first, so only one of them writes
+                // the throttle.
+                if (_mode == PilotMode.Off && value != PilotMode.Off)
+                    K2D2_Plugin.ResetControllers();
                 switch(value)
                 {
                     case PilotMode.MainThrustKillSpeed:
@@ -73,15 +77,24 @@ namespace K2D2.Controller
             set
             {
                 if (value == base.isRunning)  return;
-                // send call backs
                 base.isRunning = value; 
 
                 if (!value)
                 {
                     current_vessel = K2D2_Plugin.Instance.current_vessel;
-                    // stop
                     if (current_vessel != null)
+                    {
                         current_vessel.SetThrottle(0);
+                        // Final approach drives RCS translation directly.
+                        current_vessel.X = 0;
+                        current_vessel.Y = 0;
+                        current_vessel.Z = 0;
+                    }
+
+                    // Kill speed's retrograde hold would otherwise keep steering SAS whenever the
+                    // Dock tab is open. Align to Dock stays as the player left it.
+                    if (turnTo.mode == DockingTurnTo.Mode.RetroSpeed)
+                        turnTo.mode = DockingTurnTo.Mode.Off;
 
                     Mode = PilotMode.Off;
                 } 
@@ -214,4 +227,4 @@ namespace K2D2.Controller
         //     }
         // }
     }
-}
+}

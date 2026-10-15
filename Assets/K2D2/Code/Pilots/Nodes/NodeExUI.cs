@@ -18,9 +18,7 @@ namespace K2D2.Node
             code = "node";
         }
     
-        // Advanced Info is now a plain VisualElement built into label/value table rows from
-        // C# (see AddInfoRow/UpdateNodeInfos below) instead of a K2UI.Console text block.
-        public VisualElement node_infos_el;
+        InfoTable node_infos;
 
         public FullStatus status_bar;
 
@@ -33,7 +31,7 @@ namespace K2D2.Node
 
         public override bool onInit()
         {
-            node_infos_el = panel.Q<VisualElement>("node_infos");
+            node_infos = new InfoTable(panel.Q<VisualElement>("node_infos"));
 
             run_button = panel.Q<ToggleButton>("run");
             pause_button = panel.Q<ToggleButton>("pause");
@@ -50,63 +48,42 @@ namespace K2D2.Node
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Start";
+                // The pilot can refuse a start (no node, no engine) or stop again straight away,
+                // so the button follows where it ended up rather than the click.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Start";
             };
             pause_button.Bind(pilot.settings.pause_on_end);
 
             // call_fp = new FlightPlanCall(pilot);
             // call_fp.initUI(panel);
 
-            // The old "settings" page's Turn/Warp/Burn/Experimental foldouts now live inside the
-            // Advanced Info foldout on "page" instead of the separate hidden "settings"
-            // VisualElement, so setupUI needs to query the whole panel to find them.
+            // The Turn/Warp/Burn/Experimental foldouts are inside the Advanced Info foldout on
+            // "page", so setupUI queries the whole panel.
             pilot.settings.setupUI(panel);
 
-            // Reset button moved down into the ADVANCED foldout itself, now that the settings
-            // page it used to live on is on its way out (replaced by an info button to the About
-            // tab once the restyle is done).
             addResetButton(panel.Q<Foldout>("advanced_info_foldout"), "node_ex");
 
 
             return true;
         }
 
-        void AddInfoRow(string label, string value)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("advanced-info-row");
-
-            var label_el = new Label(label);
-            label_el.AddToClassList("advanced-info-row-label");
-            row.Add(label_el);
-
-            var value_el = new Label(value);
-            value_el.AddToClassList("advanced-info-row-value");
-            row.Add(value_el);
-
-            node_infos_el.Add(row);
-        }
-
         void UpdateNodeInfos()
         {
-            node_infos_el.Clear();
+            node_infos.Begin();
 
-            ManeuverNodeData node = null;
-            if (pilot.isRunning)
-                node = pilot.execute_node;
-            else
-                node = pilot.next_maneuver_node;
-
+            ManeuverNodeData node = pilot.isRunning ? pilot.execute_node : pilot.next_maneuver_node;
             if (node == null)
+                node_infos.Add("Node", "none");
+            else
             {
-                AddInfoRow("Node", "none");
-                return;
+                var dt = GeneralTools.remainingStartTime(node);
+                node_infos.Add("Node in", StrTool.DurationToString(dt) + (dt < 0 ? "  (in the past)" : ""));
+                node_infos.Add("dV", $"{node.BurnRequiredDV:n2} m/s");
+                node_infos.Add("Duration", StrTool.DurationToString(node.BurnDuration));
             }
 
-            var dt = GeneralTools.remainingStartTime(node);
-            AddInfoRow("Node in", StrTool.DurationToString(dt) + (dt < 0 ? "  (in the past)" : ""));
-            AddInfoRow("dV", $"{node.BurnRequiredDV:n2} m/s");
-            AddInfoRow("Duration", StrTool.DurationToString(node.BurnDuration));
+            node_infos.End();
         }
 
         public override bool onUpdateUI()
@@ -124,4 +101,4 @@ namespace K2D2.Node
 
 
     }
-}
+}

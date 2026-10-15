@@ -11,10 +11,11 @@ namespace K2D2.Node
 {
     class TurnToSettings
     {
-        // Need a clamp !!!! 
-        public static ClampSetting<float> max_angle_maneuver = new ("node_ex.turn.max_angle_maneuver", 0.5f, 0, 7);
+        // Both above 0: the turn only finishes once the error and the spin are under these, which
+        // never happens at exactly 0.
+        public static ClampSetting<float> max_angle_maneuver = new ("node_ex.turn.max_angle_maneuver", 0.5f, 0.1f, 7);
 
-        public static ClampSetting<float> max_angular_speed = new ("node_ex.turn.max_angular_speed", 1f, 0, 7);
+        public static ClampSetting<float> max_angular_speed = new ("node_ex.turn.max_angular_speed", 1f, 0.05f, 7);
    
     
     }
@@ -162,6 +163,8 @@ namespace K2D2.Node
             double max_angle = 5;
 
             var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return false;
             Vector retro_dir;
             if (speedMode == SpeedDisplayMode.Orbit)
                 retro_dir = telemetry.OrbitMovementRetrograde;
@@ -184,7 +187,7 @@ namespace K2D2.Node
             double max_angle = TurnToSettings.max_angle_maneuver.V;
 
             var telemetry = SASTool.getTelemetry();
-            if (!telemetry.HasManeuver)
+            if (telemetry == null || !telemetry.HasManeuver)
                 return false;
 
             Vector maneuver_dir = telemetry.ManeuverDirection;
@@ -228,7 +231,7 @@ namespace K2D2.Node
             if (K2D2Settings.debug_mode.V)
             {
                 var telemetry = SASTool.getTelemetry();
-                if (!telemetry.HasManeuver)
+                if (telemetry == null || !telemetry.HasManeuver)
                     return;
 
                 var autopilot = current_vessel.Autopilot;

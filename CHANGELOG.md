@@ -1,5 +1,41 @@
 # Changelog
 
+## K2-D2 v1.4.0 for Redux v0.2.9.0 Beta
+
+**Added:**
+- Ascent autopilot: new Gravity Turn profile (Experimental). It works out the turn for your rocket by itself.
+- Ascent autopilot: now flies its own closed-loop circularization burn instead of following a maneuver node, so the orbit comes out round even when the launch ends far from orbit.
+- Landing autopilot: boost-back landings for boosters on planets with air. It flies the booster back and lands it on target, with a choice of a powered or unpowered flip.
+- Landing autopilot: lowers the landing legs near the ground.
+- Landing autopilot: uses Redux's own landing prediction when it can.
+- Tooltips: hold the mouse over a setting to see what it does.
+
+**Changed:**
+- Ascent autopilot: Guided profile settings only show when Guided is picked, and Pause Leaving Atmosphere is now off by default.
+- Landing autopilot: more accurate precision landings on moons and planets without air.
+- Landing autopilot: each landing profile has its own waypoint list, and the target follows the waypoint if you move it.
+- Landing autopilot: precision landing from orbit on planets with air is off for now. Use boost-back instead.
+- Tweaked the UI.
+- Trimmed the info panel data. Extended data shows when Debug Mode is on.
+- Much smaller download: about 92 MB down to 6 MB (thanks to LeoMarinDev).
+- Updated for Redux 26w41a.
+
+**Fixed:**
+- Ascent autopilot: Circularize Once Ascent Complete and Pause Leaving Atmosphere now work.
+- Ascent autopilot: time warp, the roll program and changing the profile mid-launch no longer cause problems.
+- Landing autopilot: precision landings land closer to the target.
+- Landing autopilot: touchdown is always noticed, and the landing burn no longer starts much too early on planets with air.
+- Landing autopilot: the Precision toggle no longer turns itself off, a typed-in target is no longer replaced, and Stop cleans up its maneuver nodes.
+- Node autopilot: the circularize buttons no longer delete future nodes.
+- Docking autopilot: kill speed no longer always burns at full throttle, and clearing the target no longer causes errors.
+- Auto-staging no longer stages everything when an empty engine stays attached.
+- The window no longer moves when you right-drag the camera, jumps to the corner after a restart, or goes off screen (thanks to LeoMarinDev).
+- Buttons no longer touch, long labels no longer run off the panel, and typos are fixed.
+- No more errors during crashes or at game startup.
+
+**Known Issues:**
+- Gravity Turn is still experimental. Unusual rockets may need Auto Kick & Hold turned off and a gentler kick.
+
 ## 1.3.0
 
 ### Added

@@ -50,6 +50,7 @@ namespace K2D2.UI
                 // because this can in principle be set before OnUiReload has run (it shouldn't happen in
                 // practice - see OnEnable - but failing silently beats an NRE if it ever does).
                 _rootElement?.Show(value);
+                tab_page?.SetWindowOpen(value);
                 // Alternatively, you can deactivate the window game object to close the window and stop it from updating,
                 // which is useful if you perform expensive operations in the window update loop. However, this will also
                 // mean you will have to re-register any event handlers on the window elements when re-enabled in OnEnable.
@@ -115,6 +116,8 @@ namespace K2D2.UI
         /// then) and again on any later live UI reload. All the wiring that needs the real root
         /// VisualElement lives here instead of OnEnable for that reason.
         /// </summary>
+        Tooltips tooltips;
+
         private void OnUiReload(PanelRenderer panel, VisualElement root, int version)
         {
             L.Log("K2D2Window.OnUiReload running");
@@ -136,6 +139,8 @@ namespace K2D2.UI
             // otherwise swallow silently (see the OnEnable doc comment above). If the window fails to
             // wire up, whichever element name gets logged here as missing is the one to check against
             // K2D2_Window.uxml.
+
+            tooltips = new Tooltips(_rootElement.Q("MainFrame") ?? _rootElement);
 
             // Get the close button from the window
             var closeButton = _rootElement.Q<Button>("close-button");
@@ -170,10 +175,11 @@ namespace K2D2.UI
             tab_page.Init(all_panels);
             // save the current_tab to settings
             tab_page.Bind("main_page", "node");
+            tab_page.SetWindowOpen(_isWindowOpen);
 
-            // Renamed from "title-bar" when the window chrome switched from a hand-built header to
-            // UitkForKsp2.Controls.AppShell (which owns its own header - icon/title/close - and has no
-            // slot for extra buttons). The settings and staging toggles moved into this new row instead.
+            // The window chrome is UitkForKsp2.Controls.AppShell, which owns its own header
+            // (icon/title/close) and has no slot for extra buttons, so the info and staging
+            // buttons live in this row.
             var title_bar = _rootElement.Q("toolbar");
             if (title_bar == null)
             {
@@ -182,12 +188,9 @@ namespace K2D2.UI
                 return;
             }
 
-            // The settings gear/page is gone - this is now a plain "i" button that jumps straight to
-            // the About tab via TabbedPage.Select(), instead of toggling the old shared
-            // GlobalSetting.settings_visible flag. That flag itself is left in place (see
-            // GlobalSettings.cs/K2Page.cs) since every tab's generic onSettingsChanged handler is
-            // harmless as long as nothing ever sets it back to true again - not worth the extra risk
-            // of ripping out for something that wasn't actually part of this ask.
+            // The "i" button jumps to the About tab via TabbedPage.Select(). Nothing sets
+            // GlobalSetting.settings_visible to true, so every tab's onSettingsChanged handler for
+            // it stays harmless.
             var info_button = title_bar.Q<Button>("info-toggle");
             var staging_toggle = title_bar.Q<ToggleButton>("staging-toggle");
             if (info_button == null)
@@ -214,12 +217,9 @@ namespace K2D2.UI
                     tab_page.Select("about");
                 }
             });
-            // This used to write to StagingPilot.Instance.Enabled, which only gates BaseController.isActive
-            // (tab visibility/availability) - nothing in StagingPilot.Update()/CheckStaging() ever reads it,
-            // so toggling it had no effect on whether auto-staging actually ran. The setting that
-            // CheckStaging() actually checks is StagingSettings.auto_staging, which had no UI control at
-            // all - binding this already-existing title-bar toggle to it directly is both the fix and the
-            // toggle's original apparent intent.
+            // Bound to StagingSettings.auto_staging, the setting CheckStaging() reads.
+            // StagingPilot.Instance.Enabled only gates the tab's availability and doesn't stop
+            // auto-staging.
             staging_toggle?.Bind(StagingSettings.auto_staging);
 
             _rootElement.Query<IntegerField>().ForEach(field => field.DisableGameInputOnFocus());

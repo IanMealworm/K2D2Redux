@@ -1,83 +1,34 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="landing" label="Land" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Landing Autopilot" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
-
-            <!-- The one thing worth seeing at a glance without opening anything: whether the
-                 autopilot currently thinks it's on a collision course. Always visible and updated
-                 every frame (LandingUI.cs's updateCollisionStatus), independent of LANDING INFO's
-                 collapsed state below - the rest of the numeric readout (fall speed, altitude,
-                 collision timing) used to sit here as a whole table, but that front-loaded the tab
-                 with numbers before you even reach the Brake/Touch Down buttons. -->
+            <ui:Label tabindex="-1" text="Landing Autopilot" display-tooltip-when-elided="true" name="Title" class="k2-title" />
             <ui:VisualElement name="collision_status_row" class="advanced-info-row" style="border-bottom-width: 0;">
                 <ui:Label text="Collision" class="advanced-info-row-label" />
                 <ui:Label text="None detected" name="collision_value" class="advanced-info-row-value" />
             </ui:VisualElement>
 
-            <!-- Landing mode - Atmo/Vacuum profile split (see LandingSettings.cs's class comment
-                 for the full reasoning): two full sibling groups, only one shown at a time
-                 (LandingUI.UpdateProfilePanels, based on LandingProfile.IsAtmospheric, same pattern
-                 as advanced_foldout's own atmo/vac panel switch below). -->
-
-            <!-- Atmo panel. Precision landing here deorbits toward the target, corrects the entry
-                 with Redux's prediction, then steers the reentry with lift (AtmoDeorbitBurn,
-                 AtmoEntryCorrection, AtmoEntryGuidance). The gate label explains which Redux
-                 settings it needs (LandingUI.UpdateAtmoGate). -->
             <ui:VisualElement name="landing_mode_group_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px; display: none;">
                 <K2UI.K2Toggle label="Precision Landing" name="precision_landing_atmo" tooltip="Land a stage that's coming back down (a boost-back landing) on a chosen site: boost-back burn, steering with the vessel's lift on the way down, then a steered landing burn (atmospheric bodies). Needs Redux's impact prediction set to assume the current attitude (or follow SAS)." />
-                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_gate_atmo" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_gate_atmo" class="k2-note" style="display: none;" />
                 <ui:VisualElement name="target_settings_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop_atmo" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
+                    <ui:DropdownField label="Waypoint" index="-1" choices="" name="waypoint_drop_atmo" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
                     <ui:FloatField label="Target Latitude" value="0" name="target_latitude_atmo" />
                     <ui:FloatField label="Target Longitude" value="0" name="target_longitude_atmo" />
                 </ui:VisualElement>
             </ui:VisualElement>
-
-            <!-- Vacuum panel - promoted up from a buried ADVANCED setting to an obvious choice
-                 made before pressing Brake, since it's really "which of two landing behaviors do
-                 you want," not a fine-tuning knob. Off (default) = brake straight down wherever
-                 the current course
-                 naturally lands, same as always. On = shows the target picker below - a waypoint
-                 dropdown (reads whatever's placed in Redux's own Waypoints window, see
-                 ReduxWaypoints.cs) or manual lat/lon, which the powered descent then flies to
-                 (see VacuumDescentGuidance.cs). -->
             <ui:VisualElement name="landing_mode_group_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 8px;">
                 <K2UI.K2Toggle label="Precision Landing" name="precision_landing_vac" tooltip="Steer toward a chosen landing site instead of just braking straight down wherever the current course naturally lands (vacuum bodies only)" />
-                <!-- Orbit gate (see LandingUI.UpdateOrbitGate) - Precision Landing needs a starting
-                     orbit within Circularize.max_starting_altitude_m (100km), same ceiling
-                     Circularize.cs already refuses above once a run actually gets that far. This
-                     surfaces that same check up front instead of letting the player turn Precision
-                     Landing on from a high orbit and only find out it's rejected once Circularize
-                     runs. Hidden by default (style="display: none") - shown/updated every UI tick,
-                     independent of whether Precision Landing itself is on, since it's meant to
-                     explain WHY the toggle won't stay on. -->
-                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_orbit_gate_vac" style="display: none; color: rgb(224, 132, 132); font-size: 12px; white-space: normal; margin-top: 2px; margin-bottom: 4px;" />
+                <ui:Label tabindex="-1" text="" display-tooltip-when-elided="true" name="precision_landing_orbit_gate_vac" class="k2-note" style="display: none;" />
                 <ui:VisualElement name="target_settings_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                    <ui:DropdownField label="Waypoint :" index="-1" choices="" name="waypoint_drop_vac" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
+                    <ui:DropdownField label="Waypoint" index="-1" choices="" name="waypoint_drop_vac" tooltip="Waypoints placed on the current body via Redux's own Waypoints window (list refreshes automatically)" />
                     <ui:FloatField label="Target Latitude" value="0" name="target_latitude_vac" />
                     <ui:FloatField label="Target Longitude" value="0" name="target_longitude_vac" />
                 </ui:VisualElement>
             </ui:VisualElement>
-
-            <!-- Brake/Touch Down restyled to the same bevel look as the reset buttons (see
-                 #touch_down in K2D2.uss - Brake already got this via its shared "#run" id), and
-                 given equal flex-grow so the two buttons split the row evenly instead of Touch
-                 Down sizing to its own text. margin-top/bottom on the row gives both buttons some
-                 breathing room from the table above and K2 below, matching Lift's Start button. -->
-            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; margin-top: 10px; margin-bottom: 10px;">
-                <K2UI.ToggleButton name="run" label="Brake" class="big" style="flex-grow: 1;" />
-                <ui:Button text="Touch Down" display-tooltip-when-elided="true" name="touch_down" style="flex-grow: 1; margin-left: 3px; margin-right: 0; margin-top: 0; margin-bottom: 0;" />
+            <ui:VisualElement name="button_bars" class="k2-button-row">
+                <K2UI.ToggleButton name="run" label="Brake" class="big" />
+                <ui:Button text="Touch Down" display-tooltip-when-elided="true" name="touch_down" class="k2-button" tooltip="Go straight to the final Touch Down descent" />
             </ui:VisualElement>
-
-            <!-- K2 arrives on the Landing tab too: same merged "K2 is talking" element as Node/
-                 Lift (yellow status line + console read together, next to K2's animated icon)
-                 instead of the shared StatusGroup template's plain status_pilot/pilot_console
-                 pair. -->
             <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 10px; margin-bottom: 12px;">
                 <ui:VisualElement name="k2_status_row" class="k2-status-row">
                     <K2UI.K2Avatar name="k2_avatar" />
@@ -88,100 +39,68 @@
                 </ui:VisualElement>
                 <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
             </ui:VisualElement>
-
-            <!-- Same treatment as Node/Lift's own INFO dropdowns (LIFT INFO, see Lift.uxml): the
-                 numeric readout that used to sit as a table right at the top of the page - Fall
-                 Speed, Altitude, and (once a collision is predicted) Collision In/Speed, Start
-                 Burn In, Burn Duration, plus running executor telemetry - now lives one click away
-                 here instead of front-loading the tab before the Brake/Touch Down buttons. The
-                 always-visible Collision line above the buttons covers the "am I about to hit
-                 something" question at a glance; this covers the rest. Built into label/value rows
-                 from C# (LandingUI.cs's AddInfoRow/updateContext), same table styling as NODE INFO/
-                 LIFT INFO. No persisted toggle needed - the Foldout's own collapsed state (default
-                 closed, same as ADVANCED below) is enough, so the old "Show Landing Context"
-                 setting/toggle that used to gate this is gone. -->
             <ui:Foldout text="LANDING INFO" value="false" name="landing_info_foldout">
                 <ui:VisualElement name="landing_infos" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
             </ui:Foldout>
-
-            <!-- Same treatment as Node/Lift: settings collapsed into one ADVANCED dropdown with
-                 "// SECTION" header bars, replacing the old ExFoldoutGroup-of-3-foldouts (which
-                 kept Warp/Brake/Touch Down each independently collapsible, accordion-style, inside
-                 the separate hidden "settings" page). "settings" below is kept only because
-                 K2Page.Init()'s Q<VisualElement>("settings") lookup expects to find it, but it no
-                 longer carries any real controls - the Reset button now lives at the bottom of
-                 this ADVANCED foldout instead (see LandingUI.cs's addResetButton call). -->
-            <!-- Atmo/Vacuum profile split (see LandingSettings.cs's class comment): two full
-                 sibling panels below, only one shown at a time (LandingUI.UpdateProfilePanels,
-                 based on LandingProfile.IsAtmospheric) - never rebound after onInit(), since
-                 K2Page.onInit() only ever runs once per game session and a bound K2Slider/K2Toggle
-                 stays wired to whichever Setting object it was given at that moment (see
-                 LandingSettings.cs's own comment for why this ruled out one shared panel with a
-                 dynamically-swapped settings object). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
-                <!-- ATMO PANEL - Warp/Brake/Touch Down's general-purpose tunables, plus precision
-                     landing's settings while it's on. -->
                 <ui:VisualElement name="atmo_settings_panel" style="display: none;">
                     <ui:VisualElement name="PrecisionLanding_atmo">
                         <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_atmo" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit and entry correction burns may each add to move the ground track toward the target. 0 disables it." />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="30" name="entry_angle_of_attack_atmo" label="Entry Angle of Attack °" tooltip="How far the vessel is held off retrograde during reentry to make lift for steering. More gives more steering, but exposes more of the vessel to reentry heat." />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="60" name="entry_flight_path_angle_atmo" label="Entry Steepness °" tooltip="How steeply the deorbit burn brings the vessel into the atmosphere (degrees below the horizon). Steeper costs more delta-v - a lot more from a low orbit - but means less time in the air: less heat soaked up and less drift. 0 keeps the gentlest entry. If the vessel can't afford it, the deorbit flattens it to what it can." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_atmo" label="Max Plane Trim (m/s)" format="N0" tooltip="How much sideways (normal/antinormal) dV the deorbit and entry correction burns may each add to move the ground track toward the target. 0 disables it." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="30" name="entry_angle_of_attack_atmo" format="N0" label="Entry Angle of Attack (°)" tooltip="How far the vessel is held off retrograde during reentry to make lift for steering. More gives more steering, but exposes more of the vessel to reentry heat." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="10" max="60" name="entry_flight_path_angle_atmo" format="N0" label="Entry Steepness (°)" tooltip="How steeply the deorbit burn brings the vessel into the atmosphere (degrees below the horizon). Steeper costs more delta-v - a lot more from a low orbit - but means less time in the air: less heat soaked up and less drift. 0 keeps the gentlest entry. If the vessel can't afford it, the deorbit flattens it to what it can." />
                         <ui:Label text="Boost-back Flip" tooltip="How a boost-back landing turns the stage round before its burn. Powered: the engines light at once and their gimbals help it turn - quicker for big boosters without much reaction wheel or RCS. Unpowered: turn first, then burn - wastes no fuel turning if the vessel turns quickly on its own." />
                         <K2UI.InlineEnum name="boost_back_flip_atmo" labels="Powered;Unpowered" />
                     </ui:VisualElement>
                     <ui:VisualElement name="Warp_atmo">
                         <ui:Label text="// WARP" class="k2-section-header" />
-                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_atmo" tooltip="Warp time before burn" />
+                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_atmo" tooltip="Time warp until the landing burn" />
                         <ui:VisualElement name="warp_settings_atmo" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                            <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration_atmo" tooltip="During Rotation Warp, Attitude is checked" />
-                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_atmo" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
+                            <ui:IntegerField label="Rotation Warp Time (s)" value="42" name="rotation_warp_duration_atmo" tooltip="How long before the burn warp slows down and keeps checking the vessel stays pointed retrograde" />
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_atmo" label="Safe Warp Rotation (°)" format="N0" tooltip="During that last warp, stop warping if the vessel drifts this far off retrograde" />
                         </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:VisualElement name="Brake_atmo">
                         <ui:Label text="// BRAKE" class="k2-section-header" />
-                        <K2UI.K2Slider name="burn_before_atmo" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
+                        <K2UI.K2Slider name="burn_before_atmo" tooltip="Start the braking burn this many seconds earlier than worked out" label="Burn Before (s)" format="N1" max="10" print-value="true" label-on-top="true" value="0" min="0" />
                     </ui:VisualElement>
                     <ui:VisualElement name="TouchDown_atmo">
                         <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
-                        <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude_atmo" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_atmo" label="Max Angle" tooltip="Max Angle for Final touch Down" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_atmo" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_atmo" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" format="N0" min="500" value="1500" max="5000" name="start_touchdown_altitude_atmo" label="Touch Down Altitude (m)" tooltip="Height where the final Touch Down descent starts" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_atmo" label="Touch Down Max Angle (°)" format="N0" tooltip="How far the vessel may tilt off vertical during Touch Down" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_atmo" label="Altitude/Speed Ratio" format="N1" tooltip="How quickly the allowed descent speed grows with height" min-max-label="Safe-Danger" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_atmo" label="Touch Down Speed (m/s)" format="N1" tooltip="Descent speed at the moment of touchdown" />
                     </ui:VisualElement>
                 </ui:VisualElement>
-
-                <!-- VACUUM PANEL - full: PRECISION LANDING plus Warp/Brake/Touch Down. -->
                 <ui:VisualElement name="vac_settings_panel">
-                    <!-- Shown only while Precision Landing is on (LandingSettings.setupUI). -->
                     <ui:VisualElement name="PrecisionLanding_vac">
                         <ui:Label text="// PRECISION LANDING" class="k2-section-header" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_vac" label="Max Plane Trim (m/s)" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="20" max="200" name="max_plane_trim_dv_vac" label="Max Plane Trim (m/s)" format="N0" tooltip="How much sideways (normal/antinormal) dV the deorbit burn is allowed to add on top of its usual burn, to nudge the orbital plane a little closer to the target. 0 disables it - the deorbit burn only ever picks the best point on whatever plane you're already flying. Meant as a small trim, not a substitute for lining up the plane yourself." />
                     </ui:VisualElement>
                     <ui:VisualElement name="Warp_vac">
                         <ui:Label text="// WARP" class="k2-section-header" />
-                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_vac" tooltip="Warp time before burn" />
+                        <K2UI.K2Toggle label="Auto Warp" name="auto_warp_vac" tooltip="Time warp until the landing burn" />
                         <ui:VisualElement name="warp_settings_vac" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-                            <ui:IntegerField label="Rot. Warp Duration" value="42" name="rotation_warp_duration_vac" tooltip="During Rotation Warp, Attitude is checked" />
-                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_vac" label="Safe Warp Rotation °" tooltip="Max angle (stop warp when reached)" />
+                            <ui:IntegerField label="Rotation Warp Time (s)" value="42" name="rotation_warp_duration_vac" tooltip="How long before the burn warp slows down and keeps checking the vessel stays pointed retrograde" />
+                            <K2UI.K2Slider label-on-top="true" print-value="true" min="0" value="30" max="90" name="max_rotation_vac" label="Safe Warp Rotation (°)" format="N0" tooltip="During that last warp, stop warping if the vessel drifts this far off retrograde" />
                         </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:VisualElement name="Brake_vac">
                         <ui:Label text="// BRAKE" class="k2-section-header" />
-                        <K2UI.K2Slider name="burn_before_vac" label="Burn Before (s)" max="10" print-value="true" label-on-top="true" value="0" min="0" />
+                        <K2UI.K2Slider name="burn_before_vac" tooltip="Start the braking burn this many seconds earlier than worked out" label="Burn Before (s)" format="N1" max="10" print-value="true" label-on-top="true" value="0" min="0" />
                     </ui:VisualElement>
                     <ui:VisualElement name="TouchDown_vac">
                         <ui:Label text="// TOUCH DOWN" class="k2-section-header" />
-                        <K2UI.K2Slider label-on-top="true" print-value="false" min="0.001" value="0.08" max="0.1" name="start_touchdown_altitude_vac" label="Start TouchDown Altitude" tooltip="Altitude for starting Touch-Down Phase" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_vac" label="Max Angle" tooltip="Max Angle for Final touch Down" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_vac" label="Altitude/speed ratio" tooltip="Speed is based on altitude" min-max-label="Safe-Danger" />
-                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_vac" label="Touch-Down speed (m/s)" tooltip="Speed is based on altitude" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" format="N0" min="500" value="1500" max="5000" name="start_touchdown_altitude_vac" label="Touch Down Altitude (m)" tooltip="Height where the final Touch Down descent starts" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="5" value="30" max="45" name="touch_down_max_angle_vac" label="Touch Down Max Angle (°)" format="N0" tooltip="How far the vessel may tilt off vertical during Touch Down" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.5" value="0.5" max="3" name="touch_down_ratio_vac" label="Altitude/Speed Ratio" format="N1" tooltip="How quickly the allowed descent speed grows with height" min-max-label="Safe-Danger" />
+                        <K2UI.K2Slider label-on-top="true" print-value="true" min="0.1" value="0.2" max="10" name="touch_down_speed_vac" label="Touch Down Speed (m/s)" format="N1" tooltip="Descent speed at the moment of touchdown" />
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>
         <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
-            <ui:Label tabindex="-1" text="Landing Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Landing Settings" display-tooltip-when-elided="true" name="Title" class="k2-title" />
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
 </ui:UXML>

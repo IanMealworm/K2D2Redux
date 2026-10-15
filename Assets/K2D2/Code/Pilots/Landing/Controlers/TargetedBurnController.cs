@@ -75,10 +75,9 @@ namespace K2D2.Landing
         // before they're flown.
         protected virtual bool refine_with_redux => false;
         // What the refinement changes to move the landing point along the ground track: the burn's
-        // prograde part; its timing (the same burn earlier or later lands the same way, just
-        // further along); or its size, keeping its direction (for burns aimed in a direction
-        // other than prograde, like the boost-back). Across the track it changes the normal part.
-        protected enum RefineAlong { Prograde, Timing, Size }
+        // prograde part, or its timing (the same burn earlier or later lands the same way, just
+        // further along). Across the track it changes the normal part.
+        protected enum RefineAlong { Prograde, Timing }
 
         // Burns that return true are flown closed-loop (AimedBurn) once the node has turned the
         // vessel and the warp has brought it to the burn, rather than by following the node.
@@ -88,10 +87,8 @@ namespace K2D2.Landing
         bool have_redux_landing;
         double redux_a, redux_b;
         protected virtual RefineAlong refine_along => RefineAlong.Prograde;
-        // Whether the normal part is held to the Max Plane Trim setting.
-        protected virtual bool cap_normal_to_plane_trim => true;
         // The burn has to stay at least this far ahead for the refinement to keep moving it.
-        protected virtual double min_refine_lead_s => 30;
+        const double min_refine_lead_s = 30;
 
         bool waiting_to_plan;
 
@@ -128,7 +125,7 @@ namespace K2D2.Landing
             // The sideways part is computed along Cross(r, v); the game's own "normal" direction may
             // point either way relative to that, so it's checked against what SAS calls normal.
             normal_sign = GameNormalSign(model, orbit);
-            max_normal = normal_sign == 0 ? 0 : cap_normal_to_plane_trim ? settings.max_plane_trim_dv.V : double.MaxValue;
+            max_normal = normal_sign == 0 ? 0 : settings.max_plane_trim_dv.V;
 
             if (!Plan(model, orbit, site, max_normal, out var planned))
             {
@@ -324,19 +321,13 @@ namespace K2D2.Landing
                 case RefineAlong.Prograde:
                     prograde += d_along;
                     break;
-                case RefineAlong.Size:
-                    double size = Math.Sqrt(prograde * prograde + radial * radial);
-                    double scale = size > 1e-6 ? (size + d_along) / size : 1;
-                    prograde *= scale;
-                    radial *= scale;
-                    break;
             }
         }
 
         bool AirlessSensitivity(ImpactModel model_now, IKeplerPatch orbit)
         {
             const double dn = 1;
-            double step = refine_along == RefineAlong.Timing ? 10 : refine_along == RefineAlong.Size ? 2 : 0.5;
+            double step = refine_along == RefineAlong.Timing ? 10 : 0.5;
             double n = current_plan.normal;
             model_now.StateAt(orbit, current_plan.UT, out Vector3d r, out Vector3d v);
             if (!LandingTargeting.Miss(model_now, site, r, v, current_plan.UT, current_plan.prograde, n,

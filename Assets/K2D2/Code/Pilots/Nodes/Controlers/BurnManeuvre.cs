@@ -17,16 +17,11 @@ namespace K2D2.Node
     {
         public static Setting<float> burn_adjust = new ("node_ex.burn.burn_adjust", 1.5f);
         public static Setting<float> max_dv_error = new ("node_ex.burn.max_dv_error", 0.1f);
-        // Default flipped to true (was false): keeping SAS locked onto the live maneuver vector
-        // for the whole burn, instead of dropping to plain stability-hold the moment burning
-        // starts, is what Node/Lift/Landing's burns should all do out of the box - see the
-        // Mode.Waiting -> Mode.Burning transition below. This is a single global static shared by
-        // every BurnManeuver in the mod (Node's own burns, Lift's final circularize, and Landing's
-        // Circularize/DeorbitBurn/MidCourseCorrection all construct their burns through this same
-        // class), so this one flip changes all of them at once - intentionally, since more
-        // accurate burns are wanted everywhere, not just here. The toggle itself (Node tab's
-        // Experimental section) is left in place for anyone who wants the old fixed-orientation
-        // behavior back.
+        // On by default: keeping SAS locked onto the live maneuver vector for the whole burn,
+        // rather than holding a fixed orientation once burning starts, gives more accurate burns
+        // (see the Mode.Waiting -> Mode.Burning transition below). This one static setting covers
+        // every BurnManeuver in the mod: Node's burns, Lift's final circularize and Landing's
+        // burns. The Node tab's Experimental section can turn it off.
         public static Setting<bool> rotate_during_burn = new ("node_ex.burn.rotate_during_burn", true);
     }
 
@@ -58,6 +53,7 @@ namespace K2D2.Node
 
         public float needed_throttle = 0;
         public float remaining_full_burn_time = 0;
+        bool no_thrust;
 
         ManeuverNodeData maneuver;
 
@@ -198,7 +194,17 @@ namespace K2D2.Node
                 return;
             }
 
-            remaining_full_burn_time = (float)(remaining_dv / burn_dV.full_dv);
+            // No thrust: no engine active, or all of them out of fuel. Full throttle, so the burn
+            // goes ahead as soon as one is staged or switched on.
+            no_thrust = !burn_dV.has_active_engine;
+            if (no_thrust)
+            {
+                remaining_full_burn_time = 0;
+                needed_throttle = 1;
+                return;
+            }
+
+            remaining_full_burn_time = (float)(remaining_dv / burn_dV.active_full_dv);
             if (remaining_full_burn_time >= 1)
             {
                 needed_throttle = 1;
@@ -217,13 +223,16 @@ namespace K2D2.Node
                     st.Console(status_line);
                     break;
                 case Mode.Burning:
-                    st.Warning("Burning!");
+                    st.Warning(no_thrust ? "No active engine - stage or switch one on" : "Burning!");
                     if (maneuver.BurnRequiredDV >= 0)
                         st.Progress(remaining_dv / maneuver.BurnRequiredDV, $"{remaining_dv:n1} m/s");
 
                     // dV remaining and time remaining on one line so they read side by side
                     // instead of stacked as two separate console lines.
-                    st.Console($"{status_line}    |    {StrTool.DurationToString(remaining_full_burn_time)}");
+                    if (no_thrust)
+                        st.Console(status_line);
+                    else
+                        st.Console($"{status_line}    |    {StrTool.DurationToString(remaining_full_burn_time)}");
                     break;
             }
 

@@ -141,9 +141,23 @@ namespace K2D2.Landing
 
         static ReduxImpact Get(VesselComponent vessel, PropertyInfo kind)
         {
-            var impact = new ReduxImpact { state = ReduxImpactState.Unavailable };
             if (!available)
-                return impact;
+                return new ReduxImpact { state = ReduxImpactState.Unavailable };
+            // While a vessel breaks up (a crash), Redux's prediction can still point at it and its
+            // parts are already gone; reading it then throws. There's nothing to predict anyway.
+            try
+            {
+                return Read(vessel, kind);
+            }
+            catch (NullReferenceException)
+            {
+                return new ReduxImpact { state = ReduxImpactState.Unavailable };
+            }
+        }
+
+        static ReduxImpact Read(VesselComponent vessel, PropertyInfo kind)
+        {
+            var impact = new ReduxImpact { state = ReduxImpactState.Unavailable };
 
             object system = running_system.GetValue(null);
             object predictor = system == null ? null : kind.GetValue(system);

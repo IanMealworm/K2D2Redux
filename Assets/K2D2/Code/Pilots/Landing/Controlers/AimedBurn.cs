@@ -178,7 +178,8 @@ namespace K2D2.Landing
         public override void UpdateInfoRows(Action<string, string> addRow)
         {
             addRow("Burn Left", $"{burn.magnitude:n1} m/s");
-            addRow("Attitude Error", $"{hold.attitude_error_deg:n1}°");
+            if (K2D2Settings.debug_mode.V)
+                addRow("Attitude Error", $"{hold.attitude_error_deg:n1}°");
         }
     }
 }

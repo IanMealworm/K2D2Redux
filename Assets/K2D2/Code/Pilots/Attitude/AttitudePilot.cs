@@ -7,8 +7,8 @@ namespace K2D2.Controller
 {
     class AttitudeSettings
     {
-        public static ClampSetting<float> elevation = new("warp.elevation", 0, -90, 90);
-        public static ClampSetting<float> heading = new("warp.heading", 0, 0, 360);
+        public static ClampSetting<float> elevation = new("attitude.elevation", 0, -90, 90);
+        public static ClampSetting<float> heading = new("attitude.heading", 0, 0, 360);
     }
 
     public class AttitudePilot : Pilot
@@ -45,7 +45,6 @@ namespace K2D2.Controller
 
                 if (!value)
                 {
-                    // stop
                     // var current_vessel = K2D2_Plugin.Instance.current_vessel;
                     // if (current_vessel != null)
                     //     current_vessel.SetThrottle(0);
@@ -60,7 +59,6 @@ namespace K2D2.Controller
 
                     var autopilot = current_vessel.Autopilot;
 
-                    // force autopilot
                     autopilot.Enabled = true;
                     autopilot.SetMode(AutopilotMode.StabilityAssist);
                 }
@@ -78,10 +76,11 @@ namespace K2D2.Controller
             if (current_vessel == null) return;
             var autopilot = current_vessel.Autopilot;
 
-            // force autopilot
             autopilot.Enabled = true;
 
             var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return;
 
             var up = telemetry.HorizonUp;
 

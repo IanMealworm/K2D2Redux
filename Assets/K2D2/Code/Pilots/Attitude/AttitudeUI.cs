@@ -37,7 +37,7 @@ namespace K2D2.Controller
             panel.Q<K2Slider>("elevation_slider").Bind(AttitudeSettings.elevation);
             var heading_label = panel.Q<Label>("heading_label");
             panel.Q<K2Compass>("heading").Bind(AttitudeSettings.heading);
-            AttitudeSettings.heading.listen(v => heading_label.text = $"Heading : {v:n1}");
+            AttitudeSettings.heading.listen(v => heading_label.text = $"{v:n1}°");
 
             run_button = panel.Q<ToggleButton>("run");
 
@@ -50,7 +50,9 @@ namespace K2D2.Controller
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Start";
+                // Follows where the pilot ended up, in case it refused or stopped straight away.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Start";
             };
 
             return true;
@@ -72,4 +74,4 @@ namespace K2D2.Controller
             return true;
         }
     }
-}
+}

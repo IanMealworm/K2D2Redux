@@ -7,7 +7,6 @@ namespace K2D2.Node
 {
     public class NodeExSettings
     {
-        public Setting<bool> show_node_infos = new Setting<bool>("node_ex.show_node_infos", true);
         public Setting<bool> auto_warp = new Setting<bool>("node_ex.auto_warp", true);
 
         public Setting<bool> pause_on_end = new Setting<bool>("node_ex.pause_on_end", false);
@@ -28,7 +27,7 @@ namespace K2D2.Node
             // Warp
             root.Q<K2Toggle>("auto_warp").Bind(auto_warp);
             var warp_settings = root.Q<VisualElement>("warp_settings");    
-            auto_warp.listeners += v => warp_settings.Show(v); 
+            auto_warp.listen(v => warp_settings.Show(v));
 
             warp_settings.Q<K2Slider>("warp_speed").Bind(WarpToSettings.warp_speed);
             warp_settings.Q<IntegerField>("warp_safe_duration").Bind(WarpToSettings.warp_safe_duration);

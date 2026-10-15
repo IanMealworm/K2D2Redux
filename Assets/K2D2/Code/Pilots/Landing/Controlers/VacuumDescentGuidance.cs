@@ -624,17 +624,17 @@ namespace K2D2.Landing
         public override void UpdateInfoRows(Action<string, string> addRow)
         {
             if (ignited)
-            {
                 addRow("Time To Go", $"{time_to_go:n1} s");
-                addRow("Throttle", $"{throttle:p0}");
-            }
-            else if (has_plan)
-            {
-                addRow("Planned Burn", $"{planned_burn_s:n0} s, {planned_dv:n0} m/s");
-            }
-
             if (body != null)
                 addRow("Distance To Target", StrTool.DistanceToString(GroundDistanceToTarget(position)));
+
+            // The rest is for tuning and bug reports.
+            if (!K2D2Settings.debug_mode.V)
+                return;
+            if (ignited)
+                addRow("Throttle", $"{throttle:p0}");
+            else if (has_plan)
+                addRow("Planned Burn", $"{planned_burn_s:n0} s, {planned_dv:n0} m/s");
         }
     }
 }

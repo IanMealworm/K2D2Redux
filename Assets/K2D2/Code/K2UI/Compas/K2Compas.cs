@@ -7,16 +7,10 @@ using K2UI.Compas;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute] (see Group.cs's class comment in
-    // this same folder for the full reasoning). The old UxmlTraits.Init() always applied all three
-    // attributes from the bag, falling back to its own defaultValue for any one a tag omitted -
-    // the new attribute system only calls a setter for attributes actually present. This mattered
-    // for real here: both attitude.uxml's and Lift.uxml's <K2UI.K2Compass name="heading" /> tags
-    // are completely bare (no value/angle-range/interactive at all), and _angleRange's own field
-    // initializer below was `0`, NOT the old bag default of `90` - a naive conversion would have
-    // left both compasses with a zero angle range (pixel_per_deg = width/AngleRange, so this would
-    // have divided by zero). Fixed by correcting the field default and setting all three
-    // explicitly in the constructor, matching the old bag defaults exactly.
+    // UXML only applies attributes present in the tag (see K2UI/Group.cs), and both attitude.uxml's
+    // and Lift.uxml's <K2UI.K2Compass name="heading" /> tags are bare. So the constructor sets all
+    // three attributes explicitly, and AngleRange must never default to 0: pixel_per_deg =
+    // width/AngleRange.
     [UxmlElement]
     public partial class K2Compass : VisualElement
     {
@@ -55,9 +49,7 @@ namespace K2UI
             }
         }
 
-        // Was `= 0` - the old bag default was 90 (see class comment). Init() always overwrote
-        // this from the bag regardless of whether a tag specified angle-range, so the wrong field
-        // default never mattered before.
+        // Not 0 - see class comment.
         float _angleRange = 90;
 
         [CreateProperty]
@@ -123,8 +115,7 @@ namespace K2UI
             RegisterCallback<CustomStyleResolvedEvent>(evt => CustomStylesResolved(evt));
             RegisterCallback<GeometryChangedEvent>(onGeometryChanged);
 
-            // Reproduces the old UxmlTraits.Init()'s unconditional trailing UpdateContent() call -
-            // see class comment above.
+            // So a bare tag still gets its content built - see class comment.
             UpdateContent();
         }
 
@@ -362,4 +353,4 @@ namespace K2UI
             return this;
         }
     }
-}
+}

@@ -1,61 +1,45 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
-    <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <K2UI.Tabs.TabPage name="dock" label="Dock" style="display: flex;">
         <ui:VisualElement name="page" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: flex;">
-            <ui:Label tabindex="-1" text="Docking Assistant" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex; width: 100%; -unity-text-align: upper-center;" />
+            <ui:Label tabindex="-1" text="Docking Assistant" display-tooltip-when-elided="true" name="Title" class="k2-title" />
             <ui:VisualElement name="select_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
-                <ui:DropdownField label="Control From :" index="-1" choices="a,b,c" name="control_from_drop" />
-                <ui:DropdownField label="Target :" index="-1" choices="Duna,Mun,Kerbal,Too" name="target_drop" class="fixed" />
-                <ui:DropdownField label="Dock :" index="-1" choices="Duna,Mun,Kerbal,Too" name="dock_drop" class="fixed" />
+                <ui:DropdownField label="Control From" index="-1" choices="a,b,c" name="control_from_drop" />
+                <ui:DropdownField label="Target" index="-1" choices="Duna,Mun,Kerbal,Too" name="target_drop" />
+                <ui:DropdownField label="Dock" index="-1" choices="Duna,Mun,Kerbal,Too" name="dock_drop" />
             </ui:VisualElement>
-            <!-- Same table treatment as Land's landing_infos - Control/Target readout built into
-                 label/value rows from C# (see DockingUI.cs's AddInfoRow/updateContext) instead of
-                 a free-text console block. -->
             <ui:VisualElement name="context" class="advanced-info-table" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);" />
-            <!-- Main Thrust Brake/RCS Final Approach restyled to the shared light-gray pixel-bevel
-                 (see #main_brake, #rcs_final_approach in K2D2.uss) - Align Dock (a K2Toggle switch)
-                 and Stop/Start (already themed via the shared "#run" id) needed no changes. Cheat
-                 is a debug-only utility button (only shown when Debug Mode is on), left as the
-                 stock look rather than restyled along with the other two. -->
-            <ui:VisualElement name="button_bars" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: column;">
-                <K2UI.K2Toggle label="Align Dock" name="align_dock" />
-                <K2UI.ToggleButton label="Stop" name="run" class="big" style="display: flex;" />
-                <ui:Button text="Main Thrust Brake" display-tooltip-when-elided="true" name="main_brake" class="big" />
-                <ui:Button text="RCS Final Approach" display-tooltip-when-elided="true" name="rcs_final_approach" class="big" />
-                <ui:Button text="Cheat" display-tooltip-when-elided="true" name="cheat" class="big" style="display: flex;" />
+            <ui:VisualElement name="button_bars" class="k2-button-column" style="margin-bottom: 10px;">
+                <K2UI.K2Toggle label="Align Dock" name="align_dock" tooltip="Turn to face the targeted docking port" />
+                <K2UI.ToggleButton label="Stop" name="run" class="big" />
+                <ui:Button text="Main Thrust Brake" display-tooltip-when-elided="true" name="main_brake" class="k2-button" tooltip="Turn retrograde to the target and kill the relative speed with the main engines" />
+                <ui:Button text="RCS Final Approach" display-tooltip-when-elided="true" name="rcs_final_approach" class="k2-button" tooltip="Fly the last metres to the docking port with RCS" />
+                <ui:Button text="Cheat" display-tooltip-when-elided="true" name="cheat" class="k2-button" />
             </ui:VisualElement>
             <ui:VisualElement name="final_approach_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
                 <K2UI.InlineEnum name="final_mode" labels="Manual;Auto" />
-                <K2UI.Group name="manual_group" text="Manual Mode">
-                    <ui:Label tabindex="-1" text="RCS - Kill Speed" display-tooltip-when-elided="true" />
+                <ui:VisualElement name="manual_group">
+                    <ui:Label text="// MANUAL MODE" class="k2-section-header" />
+                    <ui:Label tabindex="-1" text="Kill speed with RCS" display-tooltip-when-elided="true" />
                     <ui:VisualElement name="rcs_kill_speed" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
                         <K2UI.ToggleButton label="Hor." name="horizontal_bt" style="flex-grow: 1;" />
                         <K2UI.ToggleButton label="Vert." name="vertical_bt" style="flex-grow: 1;" />
                         <K2UI.ToggleButton label="Depth" name="depth_bt" style="flex-grow: 1;" />
                         <K2UI.ToggleButton label="All" name="all_bt" style="flex-grow: 1;" />
                     </ui:VisualElement>
-                </K2UI.Group>
-                <K2UI.Group name="auto_group" text="Automatic Mode&#10;">
-                    <ui:Label tabindex="-1" text="Axis :" display-tooltip-when-elided="true" />
-                    <K2UI.K2Toggle label="Center axis" name="center_axis" />
-                    <K2UI.K2Slider name="center_power" label="Pilot - speed adapt" print-value="true" max="5" value="1" label-on-top="true" min-max-label="x" />
-                    <ui:Label tabindex="-1" text="Forward :" display-tooltip-when-elided="true" />
+                </ui:VisualElement>
+                <ui:VisualElement name="auto_group">
+                    <ui:Label text="// AUTOMATIC MODE" class="k2-section-header" />
+                    <ui:Label tabindex="-1" text="Axis" display-tooltip-when-elided="true" />
+                    <K2UI.K2Toggle label="Center Axis" name="center_axis" />
+                    <K2UI.K2Slider name="center_power" tooltip="How hard RCS pushes to line up with the docking port" label="Centering Strength" format="N1" print-value="true" max="5" value="1" label-on-top="true" min-max-label="x" />
+                    <ui:Label tabindex="-1" text="Forward" display-tooltip-when-elided="true" />
                     <K2UI.K2Toggle label="Auto Approach" name="auto_forward" />
                     <ui:VisualElement style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row;">
-                        <K2UI.K2Slider name="forward_speed" label="Forward Speed" print-value="true" max="10" value="0" label-on-top="true" min-max-label="x" min="-10" style="flex-grow: 1; margin-bottom: 7px;" />
+                        <K2UI.K2Slider name="forward_speed" tooltip="Approach speed toward the docking port" label="Forward Speed (m/s)" format="N1" print-value="true" max="10" value="0" label-on-top="true" min-max-label="x" min="-10" style="flex-grow: 1; margin-bottom: 7px;" />
                         <ui:Button text="R." display-tooltip-when-elided="true" name="reset_fspeed" style="height: 40%; top: 27px;" />
                     </ui:VisualElement>
-                </K2UI.Group>
+                </ui:VisualElement>
             </ui:VisualElement>
-
-            <!-- K2 arrives on the Dock tab too: same merged "K2 is talking" element as Node/Lift/
-                 Landing (yellow status line + console read together, next to K2's animated icon)
-                 instead of the shared StatusGroup template's plain status_pilot/pilot_console
-                 pair. -->
             <ui:VisualElement name="status_progress_group" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); margin-top: 10px; margin-bottom: 12px;">
                 <ui:VisualElement name="k2_status_row" class="k2-status-row">
                     <K2UI.K2Avatar name="k2_avatar" />
@@ -66,26 +50,16 @@
                 </ui:VisualElement>
                 <K2UI.K2ProgressBar name="progress" set-label-to-value="false" value="70.27" max="100" label=" " postfix=" %" style="height: 25px;" />
             </ui:VisualElement>
-
-            <!-- Same treatment as the other tabs: the old separate "settings" page is redundant
-                 now that its one real control (RCS Power, plus its explanatory note) fits in an
-                 inline ADVANCED dropdown here on "page" instead - collapsed by default. Only one
-                 section for now ("// RCS") since RCS Power is the only tunable Dock actually has;
-                 more sections can join it here later the same way Node/Lift/Land grew theirs.
-                 "settings" below is kept only because K2Page.Init()'s Q<VisualElement>("settings")
-                 lookup expects to find it, but it no longer carries any real controls - the Reset
-                 button now lives at the bottom of this ADVANCED foldout instead (see
-                 DockingUI.cs's addResetButton call). -->
             <ui:Foldout text="ADVANCED" value="false" name="advanced_foldout">
                 <ui:VisualElement name="RCS">
                     <ui:Label text="// RCS" class="k2-section-header" />
-                    <K2UI.K2Slider name="rcs_power" label="RCS Power" print-value="true" label-on-top="true" min-max-label="x" />
-                    <ui:Label tabindex="-1" text="For the moment, the real vessel rcs power is not computed.&#10;It should be computed for each direction depending on the RCS thust are localized&#10;Use This slider to adapt to your vessel." display-tooltip-when-elided="true" style="white-space: normal;" />
+                    <K2UI.K2Slider name="rcs_power" tooltip="How strongly the RCS corrections are applied" label="RCS Power" format="N1" print-value="true" label-on-top="true" min-max-label="x" />
+                    <ui:Label tabindex="-1" text="K2D2 doesn't measure your vessel's RCS thrust yet (it depends on where the thrusters sit). Use this slider to match your vessel." class="k2-help" />
                 </ui:VisualElement>
             </ui:Foldout>
         </ui:VisualElement>
         <ui:VisualElement name="settings" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;">
-            <ui:Label tabindex="-1" text="Docking Settings" display-tooltip-when-elided="true" name="Title" class="unselectedContent" style="display: flex;" />
+            <ui:Label tabindex="-1" text="Docking Settings" display-tooltip-when-elided="true" name="Title" class="k2-title" />
         </ui:VisualElement>
     </K2UI.Tabs.TabPage>
 </ui:UXML>

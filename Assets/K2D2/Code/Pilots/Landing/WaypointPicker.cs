@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using KSP.Sim.impl;
 using UnityEngine.UIElements;
 
@@ -51,6 +52,18 @@ namespace K2D2.Landing
         static string Label(ReduxWaypoint waypoint) =>
             $"{waypoint.name} ({waypoint.latitude:n2}, {waypoint.longitude:n2})";
 
+        const string PickPrompt = "Pick a waypoint";
+
+        // The target still holds what was taken from the waypoint, so nobody has typed over it.
+        bool TargetFrom(ReduxWaypoint waypoint) =>
+            settings.target_latitude.V == (float)waypoint.latitude && settings.target_longitude.V == (float)waypoint.longitude;
+
+        bool MovedFrom(ReduxWaypoint waypoint) =>
+            waypoint.latitude != selected_latitude || waypoint.longitude != selected_longitude;
+
+        bool TargetAtSelection() =>
+            settings.target_latitude.V == (float)selected_latitude && settings.target_longitude.V == (float)selected_longitude;
+
         public void Rebuild(CelestialBodyComponent body)
         {
             choices.Clear();
@@ -69,34 +82,30 @@ namespace K2D2.Landing
                 }
             }
 
-            if (labels.Count == 0)
-                labels.Add(body == null ? "No body" : "No waypoints on " + body.Name);
+            // Shown in the dropdown when no waypoint is selected, but not one of its choices.
+            string prompt = labels.Count > 0 ? PickPrompt
+                : body == null ? "No body" : "No waypoints on " + body.Name;
 
-            dropdown.choices = labels;
+            // Only when the list changed: this runs every UI tick.
+            if (dropdown.choices == null || !dropdown.choices.SequenceEqual(labels))
+                dropdown.choices = labels;
 
-            // This also keeps the target in step with the waypoint list: the selected waypoint
-            // moved, a first waypoint appeared on this body, or the selection belongs to another
-            // body. The target is written here directly rather than through the dropdown's
-            // ChangeEvent - that event isn't sent while the tab isn't shown, which used to leave
-            // the dropdown showing a new waypoint while the target still held the previous one.
-            if (selected is ReduxWaypoint still_there)
+            // The target only changes when the player picks a waypoint, or the picked one moves.
+            // A target typed in, or saved from an earlier session, stays: the dropdown then shows
+            // the prompt rather than a waypoint the target isn't at. The target is written here
+            // directly rather than through the dropdown's ChangeEvent, which isn't sent while the
+            // tab isn't shown.
+            if (selected is ReduxWaypoint still_there
+                && (TargetFrom(still_there) || (MovedFrom(still_there) && TargetAtSelection())))
             {
-                // Only when the waypoint itself moved, so a lat/lon typed in by hand stays.
-                if (still_there.latitude != selected_latitude || still_there.longitude != selected_longitude)
+                if (!TargetFrom(still_there))
                     Select(still_there);
                 dropdown.SetValueWithoutNotify(Label(still_there));
             }
-            else if (choices.Count > 0)
-            {
-                // Nothing selected on this body yet - take its first waypoint.
-                Select(choices[labels[0]]);
-                dropdown.SetValueWithoutNotify(labels[0]);
-            }
             else
             {
-                // No waypoints on this body. The target keeps whatever was typed in (or picked on
-                // another body), but the dropdown stops showing a waypoint that isn't here.
-                dropdown.SetValueWithoutNotify(labels[0]);
+                selected_id = null;
+                dropdown.SetValueWithoutNotify(prompt);
             }
         }
     }

@@ -3,7 +3,6 @@ using K2D2.KSPService;
 using KSP.Sim;
 using KSP.Sim.impl;
 using KTools;
-// using KTools.UI;
 using K2D2.Controller;
 using K2D2.Node;
 using ILogger = ReduxLib.Logging.ILogger;
@@ -14,11 +13,9 @@ namespace K2D2.Landing
     {
         public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.LandingController");
 
-        // Atmo/Vacuum profile split - see LandingSettings.cs's class comment. Two independent
-        // instances, each backed by its own settings file (k2d2_landing_atmo.json /
-        // k2d2_landing_vac.json). `settings` is a pass-through property, not a field, so every
-        // read of settings.xxx.V throughout this file and the Landing controllers follows
-        // whichever profile LandingProfile.IsAtmospheric currently says is active.
+        // One settings instance per profile (see LandingSettings.cs), each with its own file.
+        // `settings` is a property, not a field, so every settings.xxx.V read here and in the
+        // Landing controllers follows whichever profile LandingProfile.IsAtmospheric says is active.
         internal LandingSettings settings_atmo;
         internal LandingSettings settings_vac;
         internal LandingSettings settings => LandingProfile.IsAtmospheric ? settings_atmo : settings_vac;
@@ -53,8 +50,9 @@ namespace K2D2.Landing
         // MidCourseCorrection.cs.
         public MidCourseCorrection mid_course_correction = new MidCourseCorrection();
 
-        // Atmospheric precision landing: deorbit toward the target, correct the entry with Redux's
-        // prediction, then steer the reentry with lift, before the regular powered landing.
+        // Atmospheric precision landing from orbit (off for now, see atmo_landing_from_orbit):
+        // deorbit toward the target, correct the entry with Redux's prediction, then steer the
+        // reentry with lift, before the regular powered landing.
         public AtmoDeorbitBurn atmo_deorbit = new AtmoDeorbitBurn();
         public AtmoEntryCorrection atmo_correction = new AtmoEntryCorrection();
         // Boost-back landing: started on a vessel that's already coming down (a recovered stage),
@@ -65,6 +63,8 @@ namespace K2D2.Landing
         // Atmospheric precision landing's landing burn, from the entry guidance's handover to
         // touchdown (Brake mode). Also needs 'this'.
         public AtmoLandingBurn atmo_landing_burn;
+        // When the regular landing's burn starts on a body with an atmosphere.
+        public AtmoLandingTiming atmo_timing;
 
         public SingleExecuteController current_executor = new SingleExecuteController();
 
@@ -79,6 +79,7 @@ namespace K2D2.Landing
             guidance = new VacuumDescentGuidance(this);
             atmo_guidance = new AtmoEntryGuidance(this);
             atmo_landing_burn = new AtmoLandingBurn(this);
+            atmo_timing = new AtmoLandingTiming(atmo_guidance.planner);
             _page = new LandingUI(this);
 
             Instance = this;
@@ -192,7 +193,7 @@ namespace K2D2.Landing
                     else
                     {
                         current_executor.setController(warp_to);
-                        warp_to.Start_Retrograde(startBurn_UT, true);
+                        warp_to.Start_Retrograde(startBurn_UT, true, settings.max_rotation.V);
                         warp_to.max_warp_index = 2;
                     }
                     break;
@@ -213,10 +214,10 @@ namespace K2D2.Landing
                         current_executor.setController(guidance);
                         guidance.Ignite();
                     }
-                    else if (atmo_precision)
+                    else if (atmo_precision || atmo_regular)
                     {
                         current_executor.setController(atmo_landing_burn);
-                        atmo_landing_burn.Start();
+                        atmo_landing_burn.Start(steer_to_target: atmo_precision);
                     }
                     else
                         current_executor.setController(brake);
@@ -231,7 +232,6 @@ namespace K2D2.Landing
 
         public void nextMode()
         {
-            // start
             if (mode == Mode.Off)
             {
                 isRunning = true;
@@ -265,18 +265,21 @@ namespace K2D2.Landing
 
                 if (!value)
                 {
-                    // stop
                     if (current_vessel != null)
                         current_vessel.SetThrottle(0);
                     if (mode == Mode.AtmoReentry || mode == Mode.AtmoCorrection || mode == Mode.AtmoDeorbit || mode == Mode.BoostBack
-                        || (mode == Mode.Brake && atmo_precision))
+                        || (mode == Mode.Brake && (atmo_precision || atmo_regular)))
+                        ReleaseAtmo();
+
+                    // These phases each put their own node on the plan.
+                    if (mode == Mode.Circularize || mode == Mode.DeorbitBurn || mode == Mode.MidCourseCorrection
+                        || mode == Mode.AtmoDeorbit || mode == Mode.AtmoCorrection)
                     {
-                        atmo_guidance.Release();
-                        atmo_correction.Release();
-                        atmo_deorbit.Release();
-                        boost_back.Release();
-                        atmo_landing_burn.Release();
+                        var maneuver_creator = new ManeuverCreator();
+                        maneuver_creator.Update();
+                        maneuver_creator.RemoveAllNodes();
                     }
+                    ReleaseSasTarget();
 
                     setMode(Mode.Off);
                     _active = false;
@@ -284,22 +287,30 @@ namespace K2D2.Landing
                 else
                 {
                     stop_reason = null;
+                    run_precision = !touch_down_start && settings.precision_landing.V;
+                    adjusted_collision_UT = 0;
+                    last_k2d2_collision = false;
+                    still_since_UT = double.NaN;
+                    legs_deployed = false;
+                    atmo_timing.Reset();
 
-                    // Start total burn counter
                     burn_dV.reset();
 
-                    // reset controller to desactivate other controllers.
+                    // Turns the other pilots off.
                     K2D2_Plugin.ResetControllers();
 
                     _active = true;
 
-                    // Vacuum precision landing starts with Circularize (a no-op if the orbit's
-                    // already close enough to circular, or a refusal if it's too high - see
-                    // Circularize.cs), then plans and flies a real, visible deorbit node, before
-                    // falling into the normal Pause->QuickWarp->...->TouchDown sequence.
-                    // Atmospheric precision landing does the same with its own burns and entry
-                    // guidance, as long as Redux's prediction is set up the way it needs.
-                    if (vacuum_precision)
+                    // Vacuum precision landing starts with Circularize (nothing to do if the orbit
+                    // is already close to circular, refused if it's too high - see Circularize.cs),
+                    // then flies a visible deorbit node before the normal
+                    // Pause->QuickWarp->...->TouchDown sequence. Atmospheric precision landing
+                    // needs Redux's impact prediction settings right, and for now only starts on a
+                    // vessel already coming down inside the atmosphere (a boost-back - see
+                    // atmo_landing_from_orbit).
+                    if (touch_down_start)
+                        setMode(Mode.TouchDown);
+                    else if (vacuum_precision)
                         setMode(Mode.Circularize);
                     else if (atmo_precision)
                     {
@@ -312,7 +323,7 @@ namespace K2D2.Landing
                         }
                         // Already coming down (a recovered stage just after separation, say): a
                         // boost-back burn instead of circularizing and deorbiting.
-                        bool from_orbit = !IsSuborbital();
+                        bool from_orbit = LandsFromOrbit();
                         if (from_orbit && !atmo_landing_from_orbit)
                         {
                             stop_reason = from_orbit_unavailable;
@@ -325,13 +336,56 @@ namespace K2D2.Landing
                         setMode(Mode.QuickWarp);
                 }
 
-                // send call backs
                 base.isRunning = value;
             }
         }
 
         // Why the last precision landing stopped by itself, for the UI; null when it didn't.
         internal string stop_reason;
+
+        bool touch_down_start;
+
+        // The Touch Down button: straight to the final descent, skipping the precision setup.
+        // While already running, the phase it interrupts lets go of the controls first.
+        public void StartTouchDown()
+        {
+            if (isRunning)
+            {
+                ReleaseAtmo();
+                setMode(Mode.TouchDown);
+                return;
+            }
+            touch_down_start = true;
+            isRunning = true;
+            touch_down_start = false;
+        }
+
+        // The burns and the guided descent leave SAS turning toward their last target; after a
+        // stop it holds wherever the vessel points instead. Other SAS modes the landing set
+        // (retrograde for the final descent) are left as they are.
+        void ReleaseSasTarget()
+        {
+            var autopilot = current_vessel?.Autopilot;
+            if (autopilot?.SAS == null || autopilot.AutopilotMode != AutopilotMode.StabilityAssist)
+                return;
+
+            var telemetry = SASTool.getTelemetry();
+            if (telemetry == null)
+                return;
+            var frame = telemetry.HorizonUp.coordinateSystem;
+            Rotation facing = Rotation.Reframed(current_vessel.GetRotation(), frame);
+            autopilot.SAS.lockedMode = false;
+            autopilot.SAS.SetTargetOrientation(new Vector(frame, facing.localRotation * UnityEngine.Vector3.up), false);
+        }
+
+        void ReleaseAtmo()
+        {
+            atmo_guidance.Release();
+            atmo_correction.Release();
+            atmo_deorbit.Release();
+            boost_back.Release();
+            atmo_landing_burn.Release();
+        }
 
         public override void onReset()
         {
@@ -348,21 +402,37 @@ namespace K2D2.Landing
         internal double speed_collision;
         internal double burn_duration;
 
-        // Precision landing on an airless body - the guided powered descent. The atmospheric
-        // profile gets its own precision landing later; until then it always lands the regular way.
-        internal bool vacuum_precision => settings.precision_landing.V && !LandingProfile.IsAtmospheric;
-        internal bool atmo_precision => settings.precision_landing.V && LandingProfile.IsAtmospheric;
+        // Whether this run is a precision landing, fixed when it starts: flipping the toggle
+        // mid-run would otherwise switch the phase sequence underneath it.
+        bool run_precision;
+        bool precision => isRunning ? run_precision : settings.precision_landing.V;
+
+        // Precision landing on an airless body (the guided powered descent) or an atmospheric one.
+        internal bool vacuum_precision => precision && !LandingProfile.IsAtmospheric;
+        internal bool atmo_precision => precision && LandingProfile.IsAtmospheric;
+        // The regular landing on a body with an atmosphere: its burn is timed and flown with drag
+        // (AtmoLandingTiming, AtmoLandingBurn) rather than from the airless fall.
+        internal bool atmo_regular => !precision && LandingProfile.IsAtmospheric;
 
         // Unpowered phases, where nothing but gravity changes the trajectory.
         bool coasting => mode == Mode.Pause || mode == Mode.QuickWarp
             || mode == Mode.RotationWarp || mode == Mode.Waiting;
 
-        // Logging throttle for compute_real_collision() below - it runs every Update() frame, so
-        // logging its result unconditionally is far too much log volume. Logs immediately
+        // Logging throttle for compute_real_collision() below - it runs several times a second,
+        // so logging its result unconditionally is far too much log volume. Logs immediately
         // whenever converged flips true<->false, plus a periodic heartbeat regardless.
         bool collision_search_last_converged = true;
+        // compute_real_collision's last trusted answer, given again on frames it can't resolve.
+        bool last_k2d2_collision;
         int collision_search_log_counter = 0;
         const int CollisionSearchHeartbeatFrames = 60;
+
+        const float collision_search_interval_s = 0.25f;
+        float next_collision_search, next_guidance_plan;
+
+        // The prediction logs are for checking flights: only while a pilot is flying, or in
+        // Debug Mode.
+        bool log_predictions => isRunning || K2D2Settings.debug_mode.V;
 
         // Predicted landing point, from Redux's impact prediction when it has a usable one for
         // this vessel, otherwise from compute_real_collision (see computeValues).
@@ -377,8 +447,13 @@ namespace K2D2.Landing
             collision_detected = false;
             var current_vessel = K2D2_Plugin.Instance.current_vessel;
             if (current_vessel == null)
+                return;
+
+            // Standing on the ground (the pad, say): nothing is falling, whatever the orbit
+            // through the planet's centre would say.
+            if (current_vessel.VesselComponent.Landed || current_vessel.VesselComponent.Splashed)
             {
-                // UI_Tools.Console("no vessel");
+                using_redux_prediction = false;
                 return;
             }
 
@@ -392,8 +467,16 @@ namespace K2D2.Landing
             // K2D2's own prediction always runs: it's the fallback whenever Redux has nothing
             // usable (its impact prediction settings off, the map focused on another vessel, a
             // calculation restarting, or the gaps it leaves late in a descent), and the
-            // comparison log below needs it either way.
-            collision_detected = compute_real_collision();
+            // comparison log below needs it either way. Its search makes up to 300 terrain
+            // queries, so it runs a few times a second; the impact time it finds is a UT, so it
+            // stays right in between.
+            if (UnityEngine.Time.unscaledTime >= next_collision_search)
+            {
+                next_collision_search = UnityEngine.Time.unscaledTime + collision_search_interval_s;
+                collision_detected = compute_real_collision();
+            }
+            else
+                collision_detected = last_k2d2_collision;
 
             // Redux's prediction accounts for drag, and it accounts for the body's rotation more
             // accurately than compute_real_collision's correction. It's an unpowered prediction,
@@ -420,7 +503,7 @@ namespace K2D2.Landing
                 if (LandingTargeting.CoastMiss(model, orbit, site, GeneralTools.Current_UT, out double miss_m))
                     target_error_m = miss_m;
             }
-            else if (settings.precision_landing.V)
+            else if (precision)
             {
                 target_error_m = HaversineDistanceMeters(predicted_landing_lat, predicted_landing_lon,
                     settings.target_latitude.V, settings.target_longitude.V, body.radius);
@@ -431,10 +514,21 @@ namespace K2D2.Landing
 
             // The guidance plans ignition from the coast ahead; once the burn has started (or
             // before the coast toward the surface has begun) there's nothing to plan.
+            // A few times a second is enough: nothing but gravity acts while coasting.
             if (vacuum_precision && coasting && collision_detected)
-                guidance.Plan(adjusted_collision_UT);
+            {
+                if (UnityEngine.Time.unscaledTime >= next_guidance_plan || !guidance.has_plan)
+                {
+                    next_guidance_plan = UnityEngine.Time.unscaledTime + collision_search_interval_s;
+                    guidance.Plan(adjusted_collision_UT);
+                }
+            }
             else
                 guidance.ClearPlan();
+
+            if (atmo_regular && collision_detected && (coasting || !isRunning))
+                atmo_timing.Update(current_vessel.VesselComponent, altitude, burn_dV.full_dv,
+                    AtmoLandingBurn.FinalSpeed(settings), current_vessel.GetThrottle() == 0);
 
             compute_startBurn();
         }
@@ -451,7 +545,7 @@ namespace K2D2.Landing
             bool state_changed = redux.state != redux_compare_last_state;
             redux_compare_last_state = redux.state;
             redux_compare_log_counter++;
-            if (!state_changed && redux_compare_log_counter % CollisionSearchHeartbeatFrames != 0)
+            if (!log_predictions || (!state_changed && redux_compare_log_counter % CollisionSearchHeartbeatFrames != 0))
                 return;
 
             double now = GeneralTools.Current_UT;
@@ -483,6 +577,12 @@ namespace K2D2.Landing
                 startBurn_UT = guidance.ignition_UT;
                 burn_duration = guidance.planned_burn_s;
             }
+            else if (atmo_regular && atmo_timing.has_plan)
+            {
+                // Until drag has been measured (above the air, or just into it) the airless timing
+                // below stands in: it's always earlier, never too late.
+                startBurn_UT = atmo_timing.start_UT;
+            }
             else
             {
                 startBurn_UT = adjusted_collision_UT - burn_duration - settings.burn_before.V;
@@ -500,7 +600,6 @@ namespace K2D2.Landing
 
         public bool compute_real_collision()
         {
-            // start in 2 minutes
             double start_time = GeneralTools.Game.UniverseModel.UniverseTime + 2 * 60;
             bool collide = false;
 
@@ -516,28 +615,20 @@ namespace K2D2.Landing
             IKeplerPatch orbit = current_vessel.VesselComponent.Orbit;
             var body = orbit.referenceBody;
             double current_time_ut = GeneralTools.Game.UniverseModel.UniverseTime;
-            // Coarse step for the initial forward walk below, and the starting half-step size for
-            // the flip-and-refine bisection once a below-terrain sample is hit. Narrow enough
-            // (with max_occurrences sized to match) that the search can't alias between two
-            // different valid terrain crossings roughly one orbital period apart: right after a
-            // deorbit burn, the still-coasting orbit can dip below terrain both on the current
-            // pass (near) and again a full period later (far), and a too-wide forward step can
-            // walk clean over a narrow near dip without ever sampling inside it. Since this search
-            // restarts fresh from current_ut+120s every frame, aliasing onto the far crossing
-            // instead of the near one would send the auto-warp target jumping between "burn very
-            // soon" and "burn a full orbit later" from frame to frame.
+            // Forward step of the search, and the first half-step of the bisection. Kept narrow
+            // (with max_occurrences sized to match) so the walk can't step over a short dip below
+            // terrain on this pass and find the crossing a full orbit later instead: right after a
+            // deorbit burn the orbit can dip below terrain on both. The search restarts every
+            // frame, so that would make the warp target jump between "burn soon" and "burn an
+            // orbit later".
             double deltaTime = 20;
             int max_occurrences = 300;
             double time = start_time;
             double terrainAltitude = 0;
-            // True only once a sample actually lands within 1m of the terrain (the loop's own
-            // break condition below) - false if the loop runs out of iterations without narrowing
-            // that far (no below-terrain sample found within the search's ~6,000s reach, or one
-            // found but the bisection didn't finish). Guards against overwriting
-            // adjusted_collision_UT/target_error_m with a half-finished result - see below.
+            // True once a sample lands within 1 m of the terrain. False if the loop runs out first
+            // (no crossing within the search's ~6,000 s reach, or an unfinished bisection); the
+            // previous prediction is then kept rather than a half-finished one.
             bool converged = false;
-
-            float radius = current_vessel.VesselComponent.SimulationObject.objVesselBehavior.BoundingSphere.radius;
 
             for (int i = 0; i < max_occurrences; i++)
             {
@@ -548,7 +639,6 @@ namespace K2D2.Landing
                 double sceneryOffset;
 
                 body.GetAltitudeFromTerrain(ps, out terrainAltitude, out sceneryOffset);
-                // terrainAltitude -= radius;
 
                 if (terrainAltitude < 0)
                 {
@@ -577,42 +667,31 @@ namespace K2D2.Landing
                 }
             }
 
-            // See collision_search_last_converged's own comment for why this is throttled instead
-            // of unconditional.
+            // Throttled, see collision_search_last_converged.
             bool convergence_changed = converged != collision_search_last_converged;
             collision_search_last_converged = converged;
             collision_search_log_counter++;
-            if (convergence_changed || collision_search_log_counter % CollisionSearchHeartbeatFrames == 0)
+            if (log_predictions && (convergence_changed || collision_search_log_counter % CollisionSearchHeartbeatFrames == 0))
             {
                 logger.LogInfo($"compute_real_collision: collide={collide} converged={converged} final terrainAltitude={terrainAltitude:n1} adjusted_collision_UT+{time - current_time_ut:n0}s");
             }
 
             if (!converged)
             {
-                // The loop above ran out of iterations without landing within 1m of the terrain -
-                // either no below-terrain sample was found at all, or one was found but the
-                // bisection didn't finish. Either way this frame's result isn't trustworthy enough
-                // to drive the warp schedule, so keep the last good prediction instead of
-                // overwriting it. Only log the FIRST frame of a new not-converged streak - logging
-                // every frame of a whole streak is exactly the spam this throttling avoids.
-                if (convergence_changed)
+                // This frame's result can't be trusted to drive the warp schedule, so the last
+                // good prediction stays. Logged only on the first frame of a streak.
+                if (convergence_changed && log_predictions)
                 {
                     logger.LogInfo($"compute_real_collision: search did not converge this frame - keeping previous prediction " +
                         $"(adjusted_collision_UT+{adjusted_collision_UT - current_time_ut:n0}s, target_error_m={target_error_m:n1}) instead of an unreliable one.");
                 }
-                return collision_detected;
+                return last_k2d2_collision;
             }
 
-            // Belt-and-suspenders on top of the narrower search step above, only while genuinely
-            // coasting unpowered toward the deorbit impact point (Pause/QuickWarp/RotationWarp/
-            // Waiting) - NOT during Circularize/DeorbitBurn/Brake/TouchDown, where the vessel's own
-            // thrust deliberately changes the orbit and a jump in predicted impact time (a braking
-            // burn pushing it later, say) is expected, not a bug. While coasting, nothing changes
-            // the orbit, so the same physical crossing should only ever get SOONER as
-            // current_time_ut advances - a jump forward by more than half an orbital period
-            // almost certainly means this frame's search skipped past the real near crossing and
-            // landed on a later one. Only meaningful when the orbit is actually bound (a
-            // hyperbolic capture trajectory has no "next orbit" to alias onto).
+            // While coasting unpowered nothing changes the orbit, so the same crossing can only
+            // get sooner. A jump later by more than half an orbit means the search skipped the
+            // near crossing and found a later one. Not checked during burns, which move the impact
+            // time on purpose, or on a hyperbolic orbit, which has no later orbit to alias onto.
             if (coasting && adjusted_collision_UT > 0)
             {
                 Vector3d r_now = orbit.GetRelativePositionAtUTZup(current_time_ut);
@@ -621,10 +700,11 @@ namespace K2D2.Landing
 
                 if (!double.IsNaN(period) && period > 0 && time > adjusted_collision_UT + 0.5 * period)
                 {
-                    logger.LogInfo($"compute_real_collision: new prediction (adjusted_collision_UT+{time - current_time_ut:n0}s) jumped more than " +
-                        $"half an orbit ({period:n0}s) later than the last one (adjusted_collision_UT+{adjusted_collision_UT - current_time_ut:n0}s) - " +
-                        "looks like the search locked onto a later orbit's crossing instead of the nearer one, keeping the previous prediction.");
-                    return collision_detected;
+                    if (log_predictions)
+                        logger.LogInfo($"compute_real_collision: new prediction (adjusted_collision_UT+{time - current_time_ut:n0}s) jumped more than " +
+                            $"half an orbit ({period:n0}s) later than the last one (adjusted_collision_UT+{adjusted_collision_UT - current_time_ut:n0}s) - " +
+                            "looks like the search locked onto a later orbit's crossing instead of the nearer one, keeping the previous prediction.");
+                    return last_k2d2_collision;
                 }
             }
 
@@ -643,12 +723,10 @@ namespace K2D2.Landing
             double rotation_deg = (time - current_time_ut) * 360.0 / body.rotationPeriod;
             predicted_landing_lon = LandingTargeting.WrapDegrees180(predicted_landing_lon - rotation_deg);
 
+            last_k2d2_collision = collide;
             return collide;
         }
 
-        // Great-circle distance between two lat/lon points on a sphere of the given radius. Used
-        // for target_error_m instead of a 3D position diff. internal (not private) so
-        // LandingTargeting.cs's deorbit search can score candidates on the same distance metric.
         // Logs Redux's stage recovery state whenever it changes, and while a recovered stage is
         // being flown, where that stage is and what it has left - the numbers the boost-back
         // landing has to work with. Every second for the first 20 s of flying the stage, then
@@ -714,7 +792,18 @@ namespace K2D2.Landing
         internal const bool atmo_landing_from_orbit = false;
         internal const string from_orbit_unavailable =
             "Atmospheric precision landing from orbit isn't available yet - for now it lands stages that are already " +
-            "coming back down (boost-back landings).";
+            "coming back down inside the atmosphere (boost-back landings).";
+
+        // A landing from orbit, as opposed to a boost-back: still in orbit, or above the
+        // atmosphere. A hand-made deorbit is suborbital, but until it's in the air it needs the
+        // from-orbit entry, not a boost-back.
+        internal bool LandsFromOrbit()
+        {
+            var vessel = current_vessel?.VesselComponent;
+            if (vessel == null)
+                return false;
+            return !IsSuborbital() || vessel.AltitudeFromSeaLevel > vessel.mainBody.atmosphereDepth;
+        }
 
         internal bool IsSuborbital()
         {
@@ -733,6 +822,7 @@ namespace K2D2.Landing
                 settings.target_latitude.V, settings.target_longitude.V, vessel.mainBody.radius);
         }
 
+        // Great-circle distance between two lat/lon points on a sphere of the given radius.
         internal static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2, double radius)
         {
             double toRad = Math.PI / 180.0;
@@ -746,13 +836,15 @@ namespace K2D2.Landing
         Vector SurfaceVelocity;
         public override void Update()
         {
-            LogStageRecovery();
+            // Reads Redux's stage recovery through reflection, so only when it's wanted.
+            if (log_predictions)
+                LogStageRecovery();
             if (!page.isVisible && !isRunning) return;
             if (current_vessel == null || current_vessel.VesselVehicle == null)
                 return;
 
-            // Keep the Atmo/Vacuum profile switch current - single source of truth every
-            // settings/TouchDown pass-through property reads. Cheap no-op most frames.
+            // Keeps the Atmo/Vacuum profile current for every settings/TouchDown pass-through
+            // property. A cheap no-op most frames.
             LandingProfile.Update(current_vessel.currentBody());
 
             altitude = (float)current_vessel.GetApproxAltitude();
@@ -766,27 +858,18 @@ namespace K2D2.Landing
 
             if (!collision_detected)
             {
-                // Once close enough to the ground, "no predicted collision" usually just means
-                // the patched-conics bisection search in compute_real_collision() can't resolve
-                // one this close anymore, not that the danger is gone - falling back straight to
-                // Touch Down is correct there. But collision_detected can also blip false for a
-                // single frame much higher up in the descent (the search is fragile, and an
-                // active Brake burn keeps changing the coasting orbit it extrapolates from every
-                // frame), so gating the fallback behind the touchdown-altitude threshold means a
-                // transient false negative higher up just gets re-checked next frame, while the
-                // legitimate close-to-the-ground case still falls back as intended.
-                //
-                // This also naturally covers the DeorbitBurn phase: while still safely in orbit
-                // waiting on/flying the phasing node, altitude is far above
-                // start_touchdown_altitude, so this branch does nothing until we're actually on a
-                // collision course.
+                // Close to the ground, "no collision" usually means compute_real_collision's
+                // search can't resolve one this close, so falling back to Touch Down is right.
+                // Higher up it can blip false for a frame (an active Brake burn keeps changing the
+                // orbit it extrapolates), so the fallback waits for the touchdown altitude and a
+                // blip is just re-checked next frame.
                 if (isRunning)
                 {
-                    // The guided descent deliberately flattens its path toward the target, which
-                    // can make an unpowered prediction stop seeing an impact - it hands over to
-                    // TouchDown itself at the gate.
-                    bool guided_burn = (vacuum_precision || atmo_precision) && mode == Mode.Brake;
-                    if (altitude < settings.start_touchdown_altitude.V && !guided_burn)
+                    // Only the regular landing's own phases fall back to Touch Down. The precision
+                    // phases steer or burn on purpose (an unpowered prediction can stop seeing an
+                    // impact while they do) and hand over themselves.
+                    bool regular_phase = coasting || (mode == Mode.Brake && !vacuum_precision && !atmo_precision && !atmo_regular);
+                    if (altitude < settings.start_touchdown_altitude.V && regular_phase)
                         setMode(Mode.TouchDown);
                 }
                 else
@@ -799,19 +882,18 @@ namespace K2D2.Landing
             if (!isRunning)
                 return;
 
-            // Landing detection. The game's own landed flag as well: the altitude here is the
-            // vessel's centre less its bounding radius, which on a tall booster standing on its
-            // legs still read about 100 m - so the run never ended, and kept steering and throttling
-            // on the ground until the booster tipped.
-            if ((altitude < 5 && current_falling_speed < 1) || (current_vessel.Landed() && SurfaceVelocity.vector.magnitude < 3)
-                || (mode == Mode.Brake && atmo_precision && atmo_landing_burn.on_ground))
+            // Landing detection: the game's landed flag, or standing still on the ground (see
+            // UpdateStanding). Not the height reading, which can be tens of metres off near the
+            // ground on a tall vessel or where the game's terrain height is wrong.
+            if ((current_vessel.Landed() && SurfaceVelocity.vector.magnitude < 3) || UpdateStanding())
             {
-                //current_vessel.SetThrottle(0);
-                if (settings.precision_landing.V)
+                if (run_precision)
                     logger.LogInfo($"[Landing] landed {DistanceToTarget():n0}m from the target");
                 isRunning = false;
                 return;
             }
+            DeployLegs();
+
             if (mode == Mode.Pause)
             {
                 if (GeneralTools.Current_UT > end_pause_Ut)
@@ -838,7 +920,7 @@ namespace K2D2.Landing
                     return;
                 }
             }
-            else if (mode == Mode.Brake && !vacuum_precision && !atmo_precision)
+            else if (mode == Mode.Brake && !vacuum_precision && !atmo_precision && !atmo_regular)
             {
                 // The guided descents run their own Brake phase (see setMode).
                 brake.gravity_compensation = true;
@@ -853,7 +935,7 @@ namespace K2D2.Landing
                     }
                     else
                     {
-                        // too high altitude retry.... very worng burn time ......
+                        // Still too high: the burn timing was off, so coast and try again.
                         setMode(Mode.Pause);
                     }
                     return;
@@ -889,6 +971,62 @@ namespace K2D2.Landing
         }
 
         public float altitude;
+
+        // Landing legs (the game's Gear action group, the G key) go down once per landing: in
+        // Touch Down, or once the braking burn is this low.
+        const float legs_down_below_m = 1000;
+        bool legs_deployed;
+
+        void DeployLegs()
+        {
+            if (legs_deployed)
+                return;
+            bool low = mode == Mode.TouchDown || (mode == Mode.Brake && altitude < legs_down_below_m);
+            if (!low)
+                return;
+            legs_deployed = true;
+
+            var vessel = current_vessel.VesselComponent;
+            if (vessel.GetActionGroupPartCount(KSPActionGroup.Gear) == 0)
+                return;
+            vessel.SetActionGroup(KSPActionGroup.Gear, true);
+            logger.LogInfo($"[Landing] landing legs down at {altitude:n0}m");
+        }
+
+        // Standing on the ground while the height reading may still say tens of metres up:
+        // barely moving with the engines throttled well below hovering, for long enough that in
+        // the air the vessel would have fallen faster than that. The first landing from orbit came
+        // down on ground the height reading put 70 m below it, the game didn't flag it as landed
+        // either, and the final descent kept steering on the ground until the booster tipped.
+        // Only while the engines are landing it; on very low gravity the wait gets too long to
+        // tell, and the game's landed flag has to do.
+        const double standing_speed_mps = 1.5, standing_thrust_g = 0.5;
+        const double min_standing_s = 1.5, max_standing_s = 5;
+        double still_since_UT = double.NaN;
+
+        bool UpdateStanding()
+        {
+            var vessel = current_vessel.VesselComponent;
+            double g = vessel.graviticAcceleration.magnitude;
+            // Long enough for the unbalanced part of gravity to add twice the speed limit.
+            double standing_s = Math.Max(min_standing_s, 2 * standing_speed_mps / Math.Max(1e-6, (1 - standing_thrust_g) * g));
+            double thrust = current_vessel.GetThrottle() * burn_dV.full_dv;
+            bool powered = mode == Mode.Brake || mode == Mode.TouchDown;
+            bool still = powered && standing_s <= max_standing_s
+                && SurfaceVelocity.vector.magnitude < standing_speed_mps && thrust <= standing_thrust_g * g;
+            if (!still)
+            {
+                still_since_UT = double.NaN;
+                return false;
+            }
+            double now = GeneralTools.Current_UT;
+            if (double.IsNaN(still_since_UT))
+                still_since_UT = now;
+            if (now - still_since_UT < standing_s)
+                return false;
+            logger.LogInfo($"[Landing] standing still with the engines throttled down - on the ground (the height reading said {altitude:n0}m)");
+            return true;
+        }
 
 
     }

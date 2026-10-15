@@ -20,10 +20,7 @@ namespace K2D2.Lift
 
         Label heading_label;
 
-        VisualElement final_grp;
-
-        // Live LIFT INFO readout, same table pattern as NodeExUI's node_infos_el.
-        VisualElement lift_infos_el;
+        InfoTable lift_infos;
 
         public override bool onInit()
         {
@@ -35,9 +32,7 @@ namespace K2D2.Lift
             end_rotate_ratio = panel.Q<K2Slider>("end_rotate_ratio").Bind(settings.end_rotate_ratio);
             panel.Q<IntegerField>("destination_Ap_km").Bind(settings.destination_Ap_km);
 
-            lift_infos_el = panel.Q<VisualElement>("lift_infos");
-
-            final_grp = panel.Q<VisualElement>("final_grp");
+            lift_infos = new InfoTable(panel.Q<VisualElement>("lift_infos"));
 
             settings.mid_rotate_ratio.listeners += v =>
             {
@@ -68,49 +63,28 @@ namespace K2D2.Lift
             run_button.listeners +=  v =>
             {
                 pilot.isRunning = v;
-                run_button.label = v ? "Stop" : "Start";
+                // Follows where the pilot ended up, in case it refused or stopped straight away.
+                run_button.Value = pilot.isRunning;
+                run_button.label = run_button.Value ? "Stop" : "Start";
             };
 
-            // The old "settings" page's controls now live inside the ADVANCED foldout on "page"
-            // instead of the separate hidden "settings" VisualElement, so setupUI needs to query
-            // the whole panel to find them (same move as NodeExUI.cs).
+            // The settings controls are inside the ADVANCED foldout on "page", so setupUI queries
+            // the whole panel.
             settings.setupUI(panel);
 
-            // Reset button moved down into the ADVANCED foldout itself, now that the settings
-            // page it used to live on is on its way out (replaced by an info button to the About
-            // tab once the restyle is done).
             addResetButton(panel.Q<Foldout>("advanced_foldout"), "lift");
 
             return true;
         }
 
-        void AddInfoRow(string label, string value)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("advanced-info-row");
-
-            var label_el = new Label(label);
-            label_el.AddToClassList("advanced-info-row-label");
-            row.Add(label_el);
-
-            var value_el = new Label(value);
-            value_el.AddToClassList("advanced-info-row-value");
-            row.Add(value_el);
-
-            lift_infos_el.Add(row);
-        }
-
         void UpdateLiftInfos()
         {
-            lift_infos_el.Clear();
-
+            lift_infos.Begin();
             if (pilot.current_subpilot == null)
-            {
-                AddInfoRow("Status", "Not running");
-                return;
-            }
-
-            pilot.current_subpilot.UpdateInfoRows(AddInfoRow);
+                lift_infos.Add("Status", "Not running");
+            else
+                pilot.current_subpilot.UpdateInfoRows(lift_infos.Add);
+            lift_infos.End();
         }
 
         public override bool onUpdateUI()
@@ -120,13 +94,13 @@ namespace K2D2.Lift
 
             LiftSettings settings = pilot.settings;
 
-            pilot.ascent_path.updateProfile(pilot.ascent.current_altitude_km);
+            // The graph only shows for Guided (see LiftSettings.ShowProfileSettings).
+            if (settings.ascent_profile.V == AscentProfile.Guided)
+                pilot.ascent_path.updateProfile(pilot.ascent.current_altitude_km);
 
             end_rotate_ratio.ValueText = $"{settings.end_rotate_altitude_km:n0} km";
             mid_rotate_ratio.ValueText = $"{settings.mid_rotate_altitude_km:n0} km";
             heading_label.text = $"{settings.heading.V:n1} °";
-
-            final_grp.Show(false);
 
             UpdateLiftInfos();
 
@@ -156,4 +130,4 @@ namespace K2D2.Lift
 
 
     }
-}
+}

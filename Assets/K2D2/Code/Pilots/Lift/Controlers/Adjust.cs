@@ -16,11 +16,7 @@ namespace K2D2.Lift
     public class Adjust : ExecuteController
     {
         LiftSettings lift_settings = null;
-        // Reads lift.ascent (whichever Ascent-phase controller matches the player's current
-        // profile choice - see AscentProfile.cs) live on every call, rather than capturing a
-        // fixed Ascent reference at construction time: LiftPilot is built once, so a captured
-        // reference would keep reading whichever profile was active back then even after the
-        // player later switches the ascent_profile dropdown.
+        // Telemetry comes from lift.ascent, the ascent controller chosen for this run.
         LiftPilot lift = null;
 
         TurnTo turn_to = null;
@@ -53,9 +49,10 @@ namespace K2D2.Lift
 
         public override void UpdateInfoRows(System.Action<string, string> addRow)
         {
-            addRow("Altitude", $"{lift.ascent.current_altitude_km:n2} km");
             addRow("Apoapsis Alt.", $"{lift.ascent.ap_km:n2} km");
             addRow("Throttle", $"{wanted_throttle:n2}");
+            if (K2D2Settings.debug_mode.V)
+                addRow("Altitude", $"{lift.ascent.current_altitude_km:n2} km");
         }
 
         public override void Update()

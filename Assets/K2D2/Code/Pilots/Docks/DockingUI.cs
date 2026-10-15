@@ -22,7 +22,7 @@ namespace K2D2.Controller.Docks
 
         private VisualElement select_group, button_bars;
 
-        public VisualElement context;
+        InfoTable context;
         private ToggleButton run_button;
         private Button main_brake, rcs_final_approach, cheat;
         private K2Toggle align_dock;
@@ -34,11 +34,8 @@ namespace K2D2.Controller.Docks
             select_group = panel.Q<VisualElement>("select_group");
             select_group.Show(false);
 
-            // TODO Selection target
-            // select_target_ui = SelectTargetUI(this.pilot, panel)
-            // select_target_ui.onInitUI();
 
-            context = panel.Q<VisualElement>("context");
+            context = new InfoTable(panel.Q<VisualElement>("context"));
     
             button_bars = panel.Q<VisualElement>("button_bars");
             run_button = button_bars.Q<ToggleButton>("run");
@@ -90,9 +87,8 @@ namespace K2D2.Controller.Docks
                 pilot.Mode = DockingPilot.PilotMode.RCSFinalApproach;
             });
 
-            // RCS Power now lives inside the ADVANCED foldout on "page" instead of the separate
-            // "settings" VisualElement (same move as Node/Lift/Land) - panel.Q<>() searches the
-            // whole TabPage regardless, so passing it in place of settings_page is enough.
+            // RCS Power is inside the ADVANCED foldout on "page"; panel.Q<>() searches the whole
+            // tab, so panel stands in for settings_page.
             pilot.final_approach_pilot.onInitUI(panel, panel);
 
             addResetButton(panel.Q<Foldout>("advanced_foldout"), "dock");
@@ -100,27 +96,12 @@ namespace K2D2.Controller.Docks
             return true;
         }
 
-        void AddInfoRow(string label, string value)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("advanced-info-row");
-
-            var label_el = new Label(label);
-            label_el.AddToClassList("advanced-info-row-label");
-            row.Add(label_el);
-
-            var value_el = new Label(value);
-            value_el.AddToClassList("advanced-info-row-value");
-            row.Add(value_el);
-
-            context.Add(row);
-        }
-
         void updateContext()
         {
-            context.Clear();
-            AddInfoRow("Control", ListPart.formatComponent( pilot.current_vessel.VesselComponent, pilot.control_component ));
-            AddInfoRow("Target", ListPart.formatComponent( pilot.target_vessel, pilot.target_part ));
+            context.Begin();
+            context.Add("Control", ListPart.formatComponent( pilot.current_vessel.VesselComponent, pilot.control_component ));
+            context.Add("Target", ListPart.formatComponent( pilot.target_vessel, pilot.target_part ));
+            context.End();
         }
 
         public override bool onUpdateUI()
@@ -197,4 +178,4 @@ namespace K2D2.Controller.Docks
         // }
 
     }
-}
+}

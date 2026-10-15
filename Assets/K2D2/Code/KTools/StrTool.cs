@@ -33,7 +33,7 @@ namespace KTools
                 t.Hours,
                 t.Minutes,
                 t.Seconds,
-                t.Milliseconds);
+                t.Milliseconds / 100);
                 return result;
             }
             catch (System.Exception)
@@ -84,4 +84,4 @@ namespace KTools
         }
 
     }
-}
+}

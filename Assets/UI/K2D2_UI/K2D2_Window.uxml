@@ -5,53 +5,37 @@
     <ui:Template name="Dock" src="project://database/Assets/UI/K2D2_UI/Dock.uxml?fileID=9197481963319205126&amp;guid=9dde88f98d182054bb92a217fa7bd7f1&amp;type=3#Dock" />
     <ui:Template name="attitude" src="project://database/Assets/UI/K2D2_UI/attitude.uxml?fileID=9197481963319205126&amp;guid=99e7f8b6d0f77db45bc9d6146e3e6ada&amp;type=3#attitude" />
     <ui:Template name="About" src="project://database/Assets/UI/K2D2_UI/about.uxml?fileID=9197481963319205126&amp;guid=16d4c53a22570084499af3b95b5a9aa6&amp;type=3#about" />
-    <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
+    <!-- The only place stylesheets load: the game theme, the shared K2UI controls, then K2D2's own
+         last, so later rules win ties the same way on every tab. -->
     <Style src="project://database/Packages/uitkforksp2.controls/Assets/Theme/KerbalUI.uss?fileID=7433441132597879392&amp;guid=48c501354e05fdc41b817de07ca2a1b8&amp;type=3#KerbalUI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2UI.uss?fileID=7433441132597879392&amp;guid=d70a8288b6b3eee4a900aa2727eb7499&amp;type=3#K2UI" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/ToggleButton.uss?fileID=7433441132597879392&amp;guid=1b6a73cd9e0a617469e5d501d696c7be&amp;type=3#ToggleButton" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Toggle.uss?fileID=7433441132597879392&amp;guid=a6dc5024ba8ad204e9099eca78c0703f&amp;type=3#K2Toggle" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Slider.uss?fileID=7433441132597879392&amp;guid=3d8e4d9f1386ac94c97e6381ad01c59b&amp;type=3#K2Slider" />
     <Style src="project://database/Assets/Runtime/K2UI/USS/K2Tabs.uss?fileID=7433441132597879392&amp;guid=51945eb7b64f1ab4986c6d98dc37254e&amp;type=3#K2Tabs" />
-    <!-- width/height are now an explicit starting size instead of width-only/auto-height - a
-         fixed height is what lets the ScrollView below actually have a bounded viewport to
-         scroll within instead of just growing forever with its content. min-width/min-height
-         keep the window from being crushed smaller than its own header/toolbar can fit;
-         ResizeManipulator (see resize-handle below and K2D2Window.cs) additionally clamps against
-         its own Max/MinWidth/MaxHeight and the screen edges at drag time. -->
+    <Style src="project://database/Assets/Runtime/K2UI/USS/compas.uss?fileID=7433441132597879392&amp;guid=e2bd53ecacfb99a4f9c9d2b73a0b1303&amp;type=3#compas" />
+    <Style src="project://database/Assets/Runtime/K2UI/USS/Graph.uss?fileID=7433441132597879392&amp;guid=4652cfda17384d74abea95b5b7b4570c&amp;type=3#Graph" />
+    <Style src="project://database/Assets/Runtime/K2UI/USS/Ids.uss?fileID=7433441132597879392&amp;guid=05eca1a4a31465746b0e8b392ee7cb7a&amp;type=3#Ids" />
+    <Style src="project://database/Assets/UI/K2D2_UI/K2D2.uss?fileID=7433441132597879392&amp;guid=f49119c0dc6aec7469a0374f7f606ceb&amp;type=3#K2D2" />
     <UitkForKsp2.Controls.AppShell name="MainFrame" title="K2-D2" close-button-name="close-button" icon-texture="project://database/Assets/Images/cropped_40px.png?fileID=2800000&amp;guid=6a5fd6f51e722db49a3b2c207a7e7a73&amp;type=3#cropped_40px" style="position: absolute; left: 11px; top: 36px; width: 350px; height: 500px; min-width: 300px; min-height: 250px;">
-        <!-- Wraps only the tab content, not the toolbar below - so the Start/Auto-staging/gear
-             footer row stays pinned in place and only the tab body scrolls, matching how stock
-             KSP2 panels keep their own footer controls fixed while the list above scrolls. -->
-        <ui:ScrollView name="tab-scroll-view" style="flex-grow: 1;">
-            <K2UI.Tabs.TabbedPage selected-tab-Name="controls">
-                <ui:Instance template="NodeEx" name="node" style="display: none;" />
-                <ui:Instance template="Lift" name="lift" style="display: none;" />
-                <ui:Instance template="Landing" name="landing" style="display: none;" />
-                <ui:Instance template="Dock" name="dock" style="display: none;" />
-                <ui:Instance template="attitude" name="attitude" style="display: none;" />
-                <ui:Instance template="About" name="about" />
-            </K2UI.Tabs.TabbedPage>
-        </ui:ScrollView>
-        <!-- Settings/auto-staging controls, moved from the top toolbar to a footer row below the
-             tab content. Auto-staging is now a labeled checkbox (a small LED-style square that
-             tints green when checked, from the same "white square + CSS tint" pattern as the tab
-             underline) instead of an icon-only button - see K2D2.uss for #staging-toggle's
-             row-reverse layout note (ToggleButton.cs always adds its Label first in the C#
-             constructor, so row-reverse is what puts this icon on the left of the label instead
-             of after it). -->
+        <UitkForKsp2.Controls.InvertedCornerBox name="main-box" class="k2-main-box">
+            <ui:ScrollView name="tab-scroll-view" style="flex-grow: 1;">
+                <K2UI.Tabs.TabbedPage selected-tab-Name="controls">
+                    <ui:Instance template="NodeEx" name="node" style="display: none;" />
+                    <ui:Instance template="Lift" name="lift" style="display: none;" />
+                    <ui:Instance template="Landing" name="landing" style="display: none;" />
+                    <ui:Instance template="Dock" name="dock" style="display: none;" />
+                    <ui:Instance template="attitude" name="attitude" style="display: none;" />
+                    <ui:Instance template="About" name="about" />
+                </K2UI.Tabs.TabbedPage>
+            </ui:ScrollView>
+        </UitkForKsp2.Controls.InvertedCornerBox>
         <ui:VisualElement name="toolbar" style="flex-direction: row; align-items: center; justify-content: space-between; margin-top: 6px;">
             <K2UI.ToggleButton label="Auto-staging" name="staging-toggle" value="false" class="auto-staging-toggle">
                 <ui:VisualElement name="icon" />
             </K2UI.ToggleButton>
             <ui:Button text="i" name="info-toggle" tooltip="About K2-D2" style="width: 25px; height: 25px;" />
         </ui:VisualElement>
-        <!-- Stock drag-to-resize handle: reuses Redux's own ".window-resize-handle"/
-             ".window-resize-handle-icon" CSS and resize-handle.png (KerbalUI.uss) rather than
-             inventing new art - see ResizeManipulator.cs, wired to this element by name in
-             K2D2Window.cs, for the actual drag behavior (Redux ships the styling but no working
-             C# for it anywhere in the package). picking-mode="Position" on the outer element so
-             it actually receives pointer events; the icon graphic itself is picking-mode="Ignore"
-             so it doesn't steal the pointer-down from its parent. -->
         <ui:VisualElement name="resize-handle" class="window-resize-handle" picking-mode="Position">
             <ui:VisualElement name="resize-handle-icon" class="window-resize-handle-icon" picking-mode="Ignore" />
         </ui:VisualElement>

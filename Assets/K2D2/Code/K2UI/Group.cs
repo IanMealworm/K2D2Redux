@@ -4,16 +4,10 @@ using UnityEngine.UIElements;
 
 namespace K2UI
 {
-    // UxmlFactory/UxmlTraits -> [UxmlElement]/[UxmlAttribute]: Unity 6.6 removes UxmlFactory
-    // entirely, so every K2UI custom control is moving to the newer source-generated attribute
-    // system ahead of that (see NOTICE.md's UxmlElement migration entry for the full story). The
-    // old UxmlTraits.Init() always applied "text" from the bag - using its defaultValue of
-    // "Group Name" whenever a <K2UI.Group> tag didn't specify text="..." - so `text = "Group
-    // Name";` below in the constructor reproduces that same guarantee; the new attribute system
-    // only calls a property's setter for attributes actually present in the tag, so without this
-    // a bare Group would silently show no label at all instead of the old placeholder default.
-    // Arbitrary VisualElement children (the old uxmlChildElementsDescription override) need no
-    // equivalent here - that was only ever an editor-time authoring hint, not a runtime gate.
+    // Unity 6.6 removes UxmlFactory/UxmlTraits, so K2UI controls use the source-generated
+    // [UxmlElement]/[UxmlAttribute] system (see NOTICE.md). It only calls a property's setter for
+    // attributes present in the tag, so defaults that matter are set in the constructor: here
+    // `text = "Group Name"`, without which a bare <K2UI.Group> would show no label at all.
     [UxmlElement]
     public partial class Group : VisualElement
     {
@@ -43,4 +37,4 @@ namespace K2UI
             text = "Group Name";
         }
     }
-}
+}

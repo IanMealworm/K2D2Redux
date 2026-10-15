@@ -63,20 +63,25 @@ namespace K2D2.Lift
         // a good kick speed at very different times.
         public ClampSetting<float> gravity_turn_kick_speed_mps = new("lift.gravity_turn_kick_speed_mps", 100f, 10f, 300f);
 
-        public ClampSetting<float> gravity_turn_pitch_kick_deg = new("lift.gravity_turn_pitch_kick_deg", 7.5f, 1f, 15f);
-        public ClampSetting<float> gravity_turn_hold_time_s = new("lift.gravity_turn_hold_time_s", 45f, 10f, 120f);
-        public ClampSetting<float> gravity_turn_min_throttle = new("lift.gravity_turn_min_throttle", 0.05f, 0f, 0.5f);
+        public ClampSetting<float> gravity_turn_pitch_kick_deg = new("lift.gravity_turn_pitch_kick_deg", 7.5f, 1f, 25f);
+        // Below about 25 s the climb flattens out in thick air: the air pressure soars, and the
+        // max-Q limit cutting the throttle can leave it falling.
+        public ClampSetting<float> gravity_turn_hold_time_s = new("lift.gravity_turn_hold_time_s", 45f, 25f, 120f);
 
-        // Pitch-down bias "second actuator" (see ReactiveAscent.cs's pitch_down_bias_deg) - leans
-        // the nose below true prograde when throttle alone can't hold the turn's target apoapsis
-        // time. Both were fixed constants at first; made player-tunable since how much lean is
-        // appropriate, and how early it should start sharing the work with throttle, both depend
-        // heavily on the specific vehicle (a lightly-overpowered rocket needs much less of either
-        // than a heavily SRB-boosted one).
-        public ClampSetting<float> gravity_turn_pitch_bias_max_deg = new("lift.gravity_turn_pitch_bias_max_deg", 25f, 0f, 45f);
-        public ClampSetting<float> gravity_turn_pitch_bias_engage_margin = new("lift.gravity_turn_pitch_bias_engage_margin", 0.6f, 0f, 1f);
+        // On: the kick angle and hold time are worked out just before the kick (see AscentPredictor),
+        // and their two sliders are hidden. The slider values are still the fallback if it can't
+        // make a plan.
+        public Setting<bool> gravity_turn_auto = new("lift.gravity_turn_auto", true);
+        // High enough that near the end the rocket keeps raising its apoapsis instead of levelling off
+        // in the air (see GravityTurnControl).
+        public ClampSetting<float> gravity_turn_min_throttle = new("lift.gravity_turn_min_throttle", 0.25f, 0f, 0.5f);
 
-        public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0, 1);
+        // Throttle limits during the turn (see ReactiveAscent.ThrottleCap).
+        public ClampSetting<float> gravity_turn_max_twr = new("lift.gravity_turn_max_twr", 2.5f, 1.2f, 5f);
+        public ClampSetting<float> gravity_turn_max_q_kpa = new("lift.gravity_turn_max_q_kpa", 40f, 10f, 100f);
+
+        // Above 0: at 0 Adjust never raises apoapsis, so the run never finishes.
+        public ClampSetting<float> max_throttle = new ("lift.max_throttle", 1, 0.05f, 1);
         public ClampSetting<float> end_ascent_pc = new ("lift.end_ascent_pc", 0.1f, 0, 1);
 
         public float end_ascent_error
@@ -93,14 +98,12 @@ namespace K2D2.Lift
             get => destination_Ap_km.V * end_adjust_pc.V/100;
         }
 
-        // Default on: run straight through ascent -> atmosphere clear -> circularize with no
-        // pause, since FinalCircularize (Controlers/Final.cs) now creates and flies the
-        // circularize burn itself instead of waiting on a manually- or FlightPlan-created node.
-        // Turning this off falls back to the old flow - Coasting.cs only actually pauses on
-        // pause_on_final below when this is off.
+        // On: the run ends with a circularization burn at apoapsis (FinalCircularize). Off: it
+        // ends once apoapsis is final, optionally pausing (pause_on_final) so the player can plan
+        // their own.
         public Setting<bool> auto_circularize = new ("lift.auto_circularize", true);
 
-        public Setting<bool> pause_on_final = new ("lift.pause_on_final", true);
+        public Setting<bool> pause_on_final = new ("lift.pause_on_final", false);
 
         public Setting<bool> heading_correction = new ("lift.heading_correction", true);
 
@@ -123,19 +126,22 @@ namespace K2D2.Lift
         Label end_ascent_alt;
         Label end_adjust_alt;
 
-        Group adjust_group;
+        VisualElement adjust_group;
 
         void setLabels()
         {
-            end_ascent_alt.text = $"End Ascent Alt. : {destination_Ap_km.V - end_ascent_error:n2} km";
-            end_adjust_alt.text = $"Final Adjust Alt : {destination_Ap_km.V - end_adjust_error:n2} km";
+            end_ascent_alt.text = $"Ascent ends at {destination_Ap_km.V - end_ascent_error:n2} km";
+            end_adjust_alt.text = $"Fine tuning ends at {destination_Ap_km.V - end_adjust_error:n2} km";
         }
+
+        // Must match the choice in Lift.uxml's ascent_profile_drop.
+        const string GravityTurnChoice = "Gravity Turn (Experimental)";
 
         public void setupUI(VisualElement root)
         {
             end_ascent_alt =  root.Q<Label>("end_ascent_alt");
             end_adjust_alt = root.Q<Label>("end_adjust_alt");
-            adjust_group = root.Q<K2UI.Group>("adjust_group");
+            adjust_group = root.Q<VisualElement>("adjust_group");
 
             // ASCENT PROFILE - a real DropdownField. The oversized height seen in-game was a
             // K2UI.uss bug (.unity-popup-field__input's height: 100% resolving against this
@@ -163,28 +169,38 @@ namespace K2D2.Lift
                 graph.Show(profile == AscentProfile.Guided);
             }
 
-            ascent_profile_drop.SetValueWithoutNotify(ascent_profile.V == AscentProfile.GravityTurn ? "Gravity Turn" : "Guided");
+            ascent_profile_drop.SetValueWithoutNotify(ascent_profile.V == AscentProfile.GravityTurn ? GravityTurnChoice : "Guided");
             ShowProfileSettings(ascent_profile.V);
 
             ascent_profile_drop.RegisterCallback<ChangeEvent<string>>(evt =>
+                ascent_profile.V = evt.newValue == GravityTurnChoice ? AscentProfile.GravityTurn : AscentProfile.Guided);
+            // Also follows Reset.
+            ascent_profile.listeners += profile =>
             {
-                var profile = evt.newValue == "Gravity Turn" ? AscentProfile.GravityTurn : AscentProfile.Guided;
-                ascent_profile.V = profile;
+                ascent_profile_drop.SetValueWithoutNotify(profile == AscentProfile.GravityTurn ? GravityTurnChoice : "Guided");
                 ShowProfileSettings(profile);
-            });
+            };
 
             gravity_turn_settings.Q<K2Slider>("gravity_turn_kick_speed_mps").Bind(gravity_turn_kick_speed_mps);
-            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_kick_deg").Bind(gravity_turn_pitch_kick_deg);
-            gravity_turn_settings.Q<K2Slider>("gravity_turn_hold_time_s").Bind(gravity_turn_hold_time_s);
+            var pitch_kick_slider = gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_kick_deg").Bind(gravity_turn_pitch_kick_deg);
+            var hold_time_slider = gravity_turn_settings.Q<K2Slider>("gravity_turn_hold_time_s").Bind(gravity_turn_hold_time_s);
+            // Auto picks these two itself, so the sliders only show when it's off.
+            gravity_turn_auto.listen(v =>
+            {
+                pitch_kick_slider.Show(!v);
+                hold_time_slider.Show(!v);
+            });
             gravity_turn_settings.Q<K2Slider>("gravity_turn_min_throttle").Bind(gravity_turn_min_throttle);
-            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_max_deg").Bind(gravity_turn_pitch_bias_max_deg);
-            gravity_turn_settings.Q<K2Slider>("gravity_turn_pitch_bias_engage_margin").Bind(gravity_turn_pitch_bias_engage_margin);
+            gravity_turn_settings.Q<K2Toggle>("gravity_turn_auto").Bind(gravity_turn_auto);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_max_twr").Bind(gravity_turn_max_twr);
+            gravity_turn_settings.Q<K2Slider>("gravity_turn_max_q_kpa").Bind(gravity_turn_max_q_kpa);
 
             root.Q<K2Toggle>("heading_correction").Bind(heading_correction);
 
             // bind to settings and add listener on the same line !
             root.Q<K2Slider>("end_ascent_pc").Bind(end_ascent_pc);
             end_ascent_pc.listen(v => setLabels());
+            destination_Ap_km.listeners += v => setLabels();
 
             root.Q<K2Toggle>("coasting_warp").Bind(coasting_warp);
 
@@ -197,7 +213,8 @@ namespace K2D2.Lift
 
             root.Q<K2Toggle>("auto_circularize").Bind(auto_circularize);
 
-            root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
+            var pause_toggle = root.Q<K2Toggle>("pause_on_final").Bind(pause_on_final);
+            auto_circularize.listen(v => pause_toggle.SetEnabled(!v));
 
             // ROLL PROGRAM - .listen(), not .listeners += (see LandingSettings.setupUI's comment on
             // precision_landing for why that distinction matters): this defaults to off, so a plain
