@@ -17,7 +17,7 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 **Confirmed working (tested in-game):**
 - Full UI - all tabs, styling, custom controls
 - Node autopilot
-- Lift/ascent autopilot - Guided profile (with optional roll program) and Gravity Turn profile to orbit, then creates and flies its own circularization node
+- Lift/ascent autopilot - Guided profile (with optional roll program) and Gravity Turn profile to orbit, then flies its own closed-loop circularization burn
 - Landing autopilot - descent, braking, and touchdown on bodies with and without an atmosphere, including collision detection, precision landing on bodies with no atmosphere, and boost-back precision landing for boosters
 - Docking autopilot - final approach and main-thrust kill-speed/brake
 - Attitude hold
@@ -26,7 +26,6 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 **Known limitations:**
 - The Gravity Turn ascent profile is Experimental: it flies most rockets well, but unusual designs may need Auto Kick & Hold turned off and a gentler kick.
 - Atmospheric precision landing from orbit isn't available yet - on bodies with an atmosphere, precision landing currently lands stages that are already coming back down (boost-back landings).
-- When an ascent ends far from orbit, the final circularization can be a long burn that doesn't come out circular. Gravity Turn ascents end close to orbit and aren't affected.
 
 ## Installation
 

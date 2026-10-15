@@ -475,11 +475,17 @@ Label {
 }
 
 .advanced-info-row-label {
+    flex-shrink: 0;
     color: var(--k2-color-text-dim);
     font-size: var(--k2-size-info);
 }
 
+/* A value too long for the row wraps onto more lines rather than running off the edge. */
 .advanced-info-row-value {
+    flex-shrink: 1;
+    margin-left: 8px;
+    white-space: normal;
+    -unity-text-align: middle-right;
     color: var(--k2-color-text-bright);
     -unity-font-style: bold;
     font-size: var(--k2-size-info);

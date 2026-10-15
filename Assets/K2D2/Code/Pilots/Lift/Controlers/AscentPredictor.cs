@@ -200,9 +200,14 @@ namespace K2D2.Lift
             // can be 0 for a stage whose engines were lit earlier (a core that keeps going after its
             // boosters drop), and skipping it made a 1,365 t booster rocket look like 334 t after
             // separation (TWR 1.9 instead of the real 1.0).
+            //
+            // A stage also has to be able to use fuel: a burn time, or a lit engine with an Isp.
+            // While the game is still recalculating its readout it can list a stage with thrust but
+            // neither (seen: "42.9->0.0t, burn 0s, 600 kN, no engines"), which used to stop the auto
+            // plan with "no fuel use"; a moment later that stage reads 0 kN and is skipped anyway.
             var burning = new List<DeltaVStageInfo>();
             foreach (var s in info)
-                if (s != null && s.StartMass > s.EndMass && (ActiveThrustVac(s) > 0 || s.ThrustVac > 0))
+                if (s != null && s.StartMass > s.EndMass && (ActiveThrustVac(s) > 0 || s.ThrustVac > 0) && CanUseFuel(s))
                     burning.Add(s);
             burning.Sort((a, b) => b.Stage.CompareTo(a.Stage));
             if (burning.Count == 0)
@@ -264,6 +269,17 @@ namespace K2D2.Lift
                 stages.Add(stage);
             }
             return true;
+        }
+
+        static bool CanUseFuel(DeltaVStageInfo s)
+        {
+            if (s.StageBurnTime > 0)
+                return true;
+            if (s.EnginesActiveInStage != null)
+                foreach (var e in s.EnginesActiveInStage)
+                    if (e?.Engine != null && e.IspVac > 0)
+                        return true;
+            return false;
         }
 
         // Runs up to `budget` test flights; done (and found, if anything worked) after the last one.

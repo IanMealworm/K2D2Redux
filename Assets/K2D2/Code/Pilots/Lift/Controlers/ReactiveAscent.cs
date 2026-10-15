@@ -50,6 +50,8 @@ namespace K2D2.Lift
         enum Plan { Waiting, Planning, Auto, Sliders }
         Plan plan = Plan.Sliders;
         string plan_note = "";
+        // Why the auto plan wasn't used, shown on its own info row (it's too long to share one).
+        string sliders_reason = "";
         AscentPredictor predictor;
         float auto_kick_deg, auto_hold_s;
 
@@ -96,6 +98,7 @@ namespace K2D2.Lift
             control.Reset();
             plan = settings.gravity_turn_auto.V ? Plan.Waiting : Plan.Sliders;
             plan_note = plan == Plan.Sliders ? "sliders" : "";
+            sliders_reason = "";
             predictor = null;
             time_to_apoapsis_known = false;
             taper_rate = 0;
@@ -438,7 +441,8 @@ namespace K2D2.Lift
         void UseSliders(string why)
         {
             plan = Plan.Sliders;
-            plan_note = "sliders: " + why;
+            plan_note = "sliders";
+            sliders_reason = why;
             logger.LogInfo($"[GravityTurn] Auto plan not used ({why}); flying the sliders: kick " +
                 $"{settings.gravity_turn_pitch_kick_deg.V:n1}°, hold {settings.gravity_turn_hold_time_s.V:n0} s");
             var vessel = current_vessel.VesselComponent;
@@ -466,6 +470,8 @@ namespace K2D2.Lift
         {
             addRow("Phase", control.phase.ToString());
             addRow("Kick / Hold", $"{control.kick_deg:n1} ° / {control.hold_time_s:n0} s" + (plan_note != "" ? $" ({plan_note})" : ""));
+            if (sliders_reason != "")
+                addRow("Auto Not Used", sliders_reason);
             addRow("Apoapsis Alt.", $"{ap_km:n2} km");
             addRow("Time to Apoapsis", $"{time_to_apoapsis_s:n1} s");
             addRow("Throttle", $"{control.throttle:n2} ({control.throttle_limit})");
