@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using K2D2.UI;
 using K2D2.Controller;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 namespace K2D2.Lift
 {
     /// <summary>
@@ -15,7 +15,7 @@ namespace K2D2.Lift
     /// </summary>
     public class Ascent : AscentControllerBase
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Ascent");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.Ascent");
 
         LiftSettings settings = null;
         LiftAscentPath ascent_path = null;

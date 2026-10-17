@@ -86,27 +86,9 @@
     background-size: 8px 8px;
 }
 
-/* The info button that opens the About tab: a round blue badge with a lighter top-left edge. */
+/* The info button that opens the About tab: one of K2D2's own square buttons (k2-button
+   k2-button--square in K2UI.uss), the same height as the auto-staging toggle beside it. */
 #info-toggle {
-    width: 25px;
-    height: 25px;
-    padding: 0;
-    margin: 0;
-    border-radius: 50%;
-    background-color: rgb(96, 170, 235);
-    border-width: 2px;
-    border-color: rgb(150, 205, 250) rgb(15, 30, 70) rgb(15, 30, 70) rgb(150, 205, 250);
-    color: rgb(15, 30, 70);
-    font-size: var(--k2-size-button);
-    -unity-font-style: bold;
-    -unity-text-align: middle-center;
-}
-
-#info-toggle:hover {
-    background-color: rgb(120, 190, 250);
-}
-
-#info-toggle:active {
-    background-color: rgb(75, 145, 205);
-    border-color: rgb(15, 30, 70) rgb(150, 205, 250) rgb(150, 205, 250) rgb(15, 30, 70);
+    width: 24px;
+    height: 22px;
 }

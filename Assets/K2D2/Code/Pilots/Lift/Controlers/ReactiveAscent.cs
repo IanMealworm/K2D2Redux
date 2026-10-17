@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using K2D2.UI;
 using K2D2.Controller;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Lift
 {
@@ -29,7 +29,7 @@ namespace K2D2.Lift
     // so Coasting/Adjust/FinalCircularize don't need to know which profile flew the ascent.
     public class ReactiveAscent : AscentControllerBase
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.ReactiveAscent");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.ReactiveAscent");
 
         LiftSettings settings = null;
         KSPVessel current_vessel;

@@ -4,7 +4,7 @@ using System.Reflection;
 namespace K2D2.Landing
 {
     // What Redux's stage recovery is doing (Redux.StageRecovery.StageRecoveryManager in
-    // Assembly-CSharp, all internal - so read through reflection, like ReduxWaypoints).
+    // Ksp2Redux, all internal - so read through reflection, like ReduxWaypoints).
     //
     // When stages separate, Redux saves a snapshot of the dropped stage if it has a probe core and
     // can be controlled. Replaying one saves the mission, loads that snapshot at the moment of
@@ -34,7 +34,7 @@ namespace K2D2.Landing
         {
             try
             {
-                var manager = Type.GetType("Redux.StageRecovery.StageRecoveryManager, Assembly-CSharp");
+                var manager = Type.GetType("Redux.StageRecovery.StageRecoveryManager, Ksp2Redux");
                 instance = manager?.GetProperty("Instance", Any | BindingFlags.Static);
                 session_phase = manager?.GetProperty("SessionPhase", Any | BindingFlags.Instance);
                 active_record = manager?.GetProperty("ActiveRecord", Any | BindingFlags.Instance);

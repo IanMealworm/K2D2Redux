@@ -1,5 +1,17 @@
 # Changelog
 
+## K2-D2 v1.4.1 for Redux v0.2.9.0 Beta
+
+**Changed:**
+- Updated for Redux 26w42a. This version needs 26w42a or newer.
+- K2-D2 only runs in campaigns that have it turned on.
+- The window scales with the game's UI Scale setting.
+- The window uses Redux's resize handle, and can now be made wider as well as taller.
+- The info button matches K2-D2's other buttons.
+
+**Fixed:**
+- The game no longer hangs while loading on Redux 26w42a.
+
 ## K2-D2 v1.4.0 for Redux v0.2.9.0 Beta
 
 **Added:**

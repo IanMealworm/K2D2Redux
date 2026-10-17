@@ -6,7 +6,7 @@ using KTools;
 using K2D2.Controller;
 using K2D2.KSPService;
 using K2D2.Node;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -43,7 +43,7 @@ namespace K2D2.Landing
 
         protected TargetedBurnController(string logger_name)
         {
-            logger = ReduxLib.ReduxLib.GetLogger(logger_name);
+            logger = SpaceWarp2.API.Logging.LogManager.GetLogger(logger_name);
             sub_contollers.Add(current_executor);
         }
 

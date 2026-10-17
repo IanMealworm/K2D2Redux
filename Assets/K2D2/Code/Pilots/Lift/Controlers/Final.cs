@@ -9,7 +9,7 @@ using K2D2.Controller;
 using K2D2.Node;
 using K2D2.KSPService;
 using K2D2.Landing;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Lift
 {
@@ -28,7 +28,7 @@ namespace K2D2.Lift
     // No node is made: one wouldn't match the burn actually flown, and nothing would read it.
     public class FinalCircularize : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Lift.FinalCircularize");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.Lift.FinalCircularize");
 
         LiftSettings lift_settings = null;
         KSPVessel current_vessel;

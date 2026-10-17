@@ -79,8 +79,7 @@ crashlytics-build.properties
 /ThunderKit/Staging
 /ThunderKit/Libraries
 
-# Rider/IntelliJ project files, wherever they get created
-.idea/
+/.idea
 
 Assets/DoNotDistribute
 Redux/
@@ -100,23 +99,17 @@ ksp2.catalog
 
 
 # --- added in this project ---
+# Rider/IntelliJ project files, wherever they get created
+.idea/
 # Stray unused mirror folder from an earlier Claude session mistake (files were pushed here by
 # accident instead of Assets/K2D2/Code - the folder is dead, Unity never reads it, safe to ignore
 # or delete manually). See NOTICE.md's Fifteenth follow-up.
 /Source/
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/Adjust.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/Ascent.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/AscentControllerBase.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/AscentPredictor.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/Coasting.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/Final.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/GravityTurnControl.cs.meta
-
 Assets/K2D2/Code/Pilots/Lift/Controlers/ReactiveAscent.cs.meta

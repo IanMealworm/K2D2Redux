@@ -5,13 +5,13 @@ using KSP.Sim.impl;
 using KTools;
 using K2D2.Controller;
 using K2D2.Node;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
     public class LandingPilot : Pilot
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.LandingController");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.LandingController");
 
         // One settings instance per profile (see LandingSettings.cs), each with its own file.
         // `settings` is a property, not a field, so every settings.xxx.V read here and in the

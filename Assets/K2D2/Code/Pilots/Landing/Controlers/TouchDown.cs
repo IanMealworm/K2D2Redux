@@ -8,7 +8,7 @@ using K2D2.UI;
 using K2D2.Controller;
 
 using KTools;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -16,7 +16,7 @@ namespace K2D2.Landing
     // optional gravity compensation.
     public class TouchDown : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.TouchDown");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.TouchDown");
 
         public bool gravity_compensation;
         public float max_speed = 0;

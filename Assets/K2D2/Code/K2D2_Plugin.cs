@@ -18,7 +18,7 @@ using K2D2.Landing;
 using K2D2.Node;
 using Redux.ExtraModTypes;
 using UnityEngine.ResourceManagement.AsyncOperations;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2
 {
@@ -137,41 +137,14 @@ namespace K2D2
             // controllerManager.AddController(new WarpController());
             // pilots_manager.AddPilot(new DockingAssist());
 
-            // Load the UI from the asset bundle
-            var myFirstWindowUxml = AssetsLoader.LoadUxml("K2D2_Window.uxml");
-
-            // Create the window options object
-            var windowOptions = new WindowOptions
-            {
-                // The ID of the window. It should be unique to your mod.
-                WindowId = "K2D2",
-                // The transform of parent game object of the window.
-                // If null, it will be created under the main canvas.
-                Parent = null,
-                // Whether or not the window can be hidden with F2.
-                IsHidingEnabled = true,
-                // Whether to disable game input when typing into text fields.
-                DisableGameInputForTextFields = true,
-                MoveOptions = new MoveOptions
-                {
-                    // Whether or not the window can be moved by dragging.
-                    IsMovingEnabled = false,
-                    // Whether or not the window can only be moved within the screen bounds.
-                    CheckScreenBounds = true
-                }
-            };
-
-            // Create the window
-            var k2d2_window = Window.Create(windowOptions, myFirstWindowUxml);
-            // Add a controller for the UI to the window's game object
-            main_window = k2d2_window.gameObject.AddComponent<K2D2Window>();
+            // The window itself is created in OnCampaignLoaded (see there).
 
             // Register Flight AppBar button
             Appbar.RegisterAppButton(
                 SWMetadata.Name,
                 ToolbarFlightButtonID,
                 AssetsLoader.LoadIcon("icon.png"),
-                isOpen => main_window.IsWindowOpen = isOpen
+                isOpen => { if (main_window != null) main_window.IsWindowOpen = isOpen; }
             );
 
             // Register OAB AppBar Button
@@ -197,6 +170,55 @@ namespace K2D2
 
         public override void OnPostInitialized()
         {
+        }
+
+        // Since Redux 26w42a a mod's addressable assets only load while the current campaign has
+        // the mod turned on, so the window's UXML can't be loaded at startup (no campaign yet).
+        // Redux only calls this for campaigns that use K2-D2. The window is kept for later
+        // campaigns; the null check also catches it having been destroyed.
+        public override void OnCampaignLoaded()
+        {
+            if (main_window == null)
+                CreateWindow();
+        }
+
+        public override void OnCampaignUnloading()
+        {
+            if (main_window != null)
+                main_window.IsWindowOpen = false;
+        }
+
+        void CreateWindow()
+        {
+            var window_uxml = AssetsLoader.LoadUxml("K2D2_Window.uxml");
+            if (window_uxml == null)
+                return;
+
+            var windowOptions = new WindowOptions
+            {
+                // The ID of the window. It should be unique to your mod.
+                WindowId = "K2D2",
+                // The transform of parent game object of the window.
+                // If null, it will be created under the main canvas.
+                Parent = null,
+                // Whether or not the window can be hidden with F2.
+                IsHidingEnabled = true,
+                // Follow the game's UI Scale setting like Redux's own windows. Off, the window
+                // stays the same size whatever the player sets.
+                UseStockScale = true,
+                // Whether to disable game input when typing into text fields.
+                DisableGameInputForTextFields = true,
+                MoveOptions = new MoveOptions
+                {
+                    // Whether or not the window can be moved by dragging.
+                    IsMovingEnabled = false,
+                    // Whether or not the window can only be moved within the screen bounds.
+                    CheckScreenBounds = true
+                }
+            };
+
+            var k2d2_window = Window.Create(windowOptions, window_uxml);
+            main_window = k2d2_window.gameObject.AddComponent<K2D2Window>();
         }
 
         // AssetsLoader.LoadUxml() needs Assets.LoadAssetAsync<T>(), but KerbalMonoBehaviour.Assets
@@ -245,6 +267,14 @@ namespace K2D2
             // `loaded` is only set once it has finished.
             if (!loaded) return;
 
+            // Campaigns can leave K2-D2 turned off (Redux 26w42a). Settings like auto-staging are
+            // shared by all campaigns, so nothing runs in one that doesn't use it.
+            if (!Enabled)
+            {
+                in_flight = window_allowed = false;
+                return;
+            }
+
             UpdateScene();
 
             // Update Models (even on non valid scenes)
@@ -260,7 +290,7 @@ namespace K2D2
 
             if (in_flight)
             {
-                if (window_allowed && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
+                if (main_window != null && window_allowed && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.O))
                     main_window.IsWindowOpen = !main_window.IsWindowOpen;
 
                 StagingPilot.Instance.Update();

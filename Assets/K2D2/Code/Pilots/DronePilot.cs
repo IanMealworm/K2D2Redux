@@ -5,7 +5,7 @@ using K2D2.KSPService;
 using KSP.Sim;
 // using KTools.UI;
 using KTools;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 // using KSP.Tools;
 // using KSP.UI.Binding;
@@ -44,7 +44,7 @@ namespace K2D2.Controller
 
         DroneSettings settings = new DroneSettings();
 
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.DroneController");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.DroneController");
 
         public SASMode sas_mode = SASMode.SurfaceUp;
         public enum SASMode { Locked, SurfaceUp, KillHSpeed }

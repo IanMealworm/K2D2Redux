@@ -5,7 +5,7 @@ using KSP.Sim;
 using KSP.Sim.impl;
 using KTools;
 using UnityEngine;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -26,7 +26,7 @@ namespace K2D2.Landing
     // math correct anywhere.
     public class VacuumDescentGuidance : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.VacuumDescentGuidance");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.VacuumDescentGuidance");
 
         // Height above the target terrain the burn delivers the vessel to, falling straight down at
         // the speed TouchDown wants at that height, so TouchDown continues the descent without a jump.

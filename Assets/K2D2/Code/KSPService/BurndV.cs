@@ -3,13 +3,13 @@ using K2D2.Controller;
 using KSP.Sim.DeltaV;
 // using KTools.UI;
 using UnityEngine;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.KSPService
 {
     public class BurndV : BaseController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.BurndV");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.BurndV");
 
         KSPVessel current_vessel;
 

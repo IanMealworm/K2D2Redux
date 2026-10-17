@@ -34,10 +34,8 @@
             <K2UI.ToggleButton label="Auto-staging" name="staging-toggle" value="false" class="auto-staging-toggle">
                 <ui:VisualElement name="icon" />
             </K2UI.ToggleButton>
-            <ui:Button text="i" name="info-toggle" tooltip="About K2-D2" style="width: 25px; height: 25px;" />
+            <ui:Button text="i" name="info-toggle" tooltip="About K2-D2" class="k2-button k2-button--square" />
         </ui:VisualElement>
-        <ui:VisualElement name="resize-handle" class="window-resize-handle" picking-mode="Position">
-            <ui:VisualElement name="resize-handle-icon" class="window-resize-handle-icon" picking-mode="Ignore" />
-        </ui:VisualElement>
+        <UitkForKsp2.Controls.WindowResizeHandle target-name="MainFrame" min-width="300" min-height="250" />
     </UitkForKsp2.Controls.AppShell>
 </ui:UXML>

@@ -4,14 +4,14 @@ using KSP.Sim.impl;
 using K2D2.Controller.Docks;
 using static K2D2.Controller.Docks.DockTools;
 using K2D2.Controller.Docks.Pilots;
-using ReduxLib.Logging;
+using SpaceWarp2.API.Logging;
 
 namespace K2D2.Controller
 {
     public class DockingPilot : SingleExecuteController
     {
         public static DockingPilot Instance { get; set; }
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.DockingTool");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.DockingTool");
 
         public KSPVessel current_vessel;
         public NamedComponent control_component = null;
