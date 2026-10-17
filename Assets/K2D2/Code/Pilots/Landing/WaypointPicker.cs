@@ -10,7 +10,7 @@ namespace K2D2.Landing
     // its own LandingSettings, the same way the rest of the two panels are kept apart.
     //
     // Lists whatever the player has placed on the current body in Redux's own Waypoints window
-    // (ReduxWaypoints, reflection-based since that system is internal to Assembly-CSharp). Rebuilt
+    // (ReduxWaypoints, reflection-based since that system is internal to Ksp2Redux). Rebuilt
     // every UI tick rather than via a click listener, since DropdownField opens its own native list
     // on pointer-down instead of dispatching a bubbling ClickEvent - the per-tick rebuild also keeps
     // the list current if a waypoint's added while the tab is open.

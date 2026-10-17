@@ -234,8 +234,7 @@ namespace K2D2.UI
             if (checkTargetType<TextField>(target)) return;
             if (checkTargetType<K2Toggle>(target)) return;
             if (checkTargetType<K2Compass>(target)) return;
-            // ResizeManipulator already stops its events from reaching this window-level handler;
-            // this is a second check in case the game's event handling lets one through.
+            // Redux's resize handle: dragging it resizes the window, so it mustn't move it too.
             if (checkTargetClass(target, "window-resize-handle")) return;
 
             // Placing the window by hand replaces any saved position still waiting to be applied.

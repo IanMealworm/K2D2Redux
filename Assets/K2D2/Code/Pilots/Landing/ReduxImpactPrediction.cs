@@ -39,7 +39,7 @@ namespace K2D2.Landing
     }
 
     // Reads the impact predictions Redux draws on the map (Redux.Simulation.ImpactPrediction in
-    // Assembly-CSharp): "Flown" for the vessel's current trajectory and "Planned" for the
+    // Ksp2Redux): "Flown" for the vessel's current trajectory and "Planned" for the
     // trajectory after its maneuver nodes (the same one the map draws, ManeuverPlanSolver's). Nearly all of it is
     // `internal`, so like ReduxWaypoints it's reached through reflection. Every member is looked up by
     // name - the public ImpactPredictionSystem type included - so a Redux build that renames or removes
@@ -74,7 +74,7 @@ namespace K2D2.Landing
 
         static bool ResolveMembers()
         {
-            var system_type = Type.GetType("Redux.Simulation.ImpactPrediction.ImpactPredictionSystem, Assembly-CSharp");
+            var system_type = Type.GetType("Redux.Simulation.ImpactPrediction.ImpactPredictionSystem, Ksp2Redux");
             running_system = system_type?.GetField("_running", BindingFlags.NonPublic | BindingFlags.Static);
             flown = system_type?.GetProperty("Flown", Instance);
             planned = system_type?.GetProperty("Planned", Instance);

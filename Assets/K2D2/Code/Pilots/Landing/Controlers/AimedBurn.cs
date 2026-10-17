@@ -3,7 +3,7 @@ using K2D2.Controller;
 using K2D2.KSPService;
 using KSP.Sim.impl;
 using KTools;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -20,7 +20,7 @@ namespace K2D2.Landing
     // plane trim limit.
     public class AimedBurn : ExecuteController
     {
-        readonly ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.AimedBurn");
+        readonly ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.AimedBurn");
 
         const double solve_interval_s = 0.2;
         // Below this much left, the burn is solved directly (see BoostBackBurn.SolveDirect).

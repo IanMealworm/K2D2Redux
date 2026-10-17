@@ -5,7 +5,7 @@ using KSP.Sim;
 using KSP.Sim.impl;
 using KTools;
 using UnityEngine;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -43,7 +43,7 @@ namespace K2D2.Landing
     // game says the vessel has landed (LandingPilot).
     public class AtmoLandingBurn : ExecuteController
     {
-        readonly ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.AtmoLandingBurn");
+        readonly ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.AtmoLandingBurn");
 
         // The braking ends this high above the ground, at the Touch Down speed for this height;
         // the final descent takes it from there.

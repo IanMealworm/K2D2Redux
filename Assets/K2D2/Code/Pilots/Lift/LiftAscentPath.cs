@@ -8,7 +8,7 @@ using KSP.Sim.impl;
 using UnityEngine.UIElements;
 using K2UI.Graph;
 using K2UI;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Lift
 {
@@ -59,7 +59,7 @@ namespace K2D2.Lift
             this.lift_settings = lift_settings;
         }
 
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.LiftAscentPath");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.LiftAscentPath");
 
         public float compute_elevation(float altitude_km)
         {

@@ -30,7 +30,7 @@ This is a from-scratch port of the original code onto Redux's APIs, not a compat
 ## Installation
 
 1. Install [Redux](https://ksp2redux.org) for Kerbal Space Program 2.
-2. Make sure you're on KSP2 beta snapshot 26w41a or newer (Redux Launcher: Settings [gear icon to the right of the "Mods" tab] > Release Channel > Beta, then update to the latest beta).
+2. Make sure you're on KSP2 beta snapshot 26w42a or newer (Redux Launcher: Settings [gear icon to the right of the "Mods" tab] > Release Channel > Beta, then update to the latest beta).
 3. Download the latest K2-D2 release and drop the contents into your KSP2 `mods` folder (merge folders if prompted).
 
 ## Credits

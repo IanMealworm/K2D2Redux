@@ -6,7 +6,7 @@ using K2D2.UI;
 using K2D2.Controller;
 using K2D2.KSPService;
 using K2D2.Node;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -22,7 +22,7 @@ namespace K2D2.Landing
     // vectors (see LandingTargeting.OrbitalElementsFromStateVectors).
     public class Circularize : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Circularize");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.Circularize");
 
         public enum Mode { Turn, Warp, Burn }
         public Mode mode = Mode.Turn;

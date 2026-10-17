@@ -6,7 +6,7 @@ using System.Reflection;
 namespace K2D2.Landing
 {
     // Redux's player-waypoint system (Redux.UI.Waypoints.PlayerWaypointManager and friends, in
-    // Assembly-CSharp) is declared `internal`, so it's invisible to K2D2.dll through a normal
+    // Ksp2Redux) is declared `internal`, so it's invisible to K2D2.dll through a normal
     // reference and is read through reflection instead.
     //
     // Only reads the player's saved waypoints (PlayerWaypointManager.Instance.Records). Redux's
@@ -23,7 +23,7 @@ namespace K2D2.Landing
 
     public static class ReduxWaypoints
     {
-        const string manager_type_name = "Redux.UI.Waypoints.PlayerWaypointManager, Assembly-CSharp";
+        const string manager_type_name = "Redux.UI.Waypoints.PlayerWaypointManager, Ksp2Redux";
 
         static Type _manager_type;
         static bool _type_lookup_failed;

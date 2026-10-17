@@ -7,7 +7,7 @@ using KSP.Modules;
 using KSP.Sim;
 using KSP.Sim.impl;
 using KTools;
-using ILogger = ReduxLib.Logging.ILogger;
+using ILogger = SpaceWarp2.API.Logging.ILogger;
 
 namespace K2D2.Landing
 {
@@ -41,7 +41,7 @@ namespace K2D2.Landing
     // the target so the burn ends on it.
     public class AtmoEntryGuidance : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.AtmoEntryGuidance");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.AtmoEntryGuidance");
 
         // Steering goes on until it's time for the landing burn, as planned with drag by
         // AtmoBurnPlanner - low down the air is thick and cooler, so a big angle of attack makes

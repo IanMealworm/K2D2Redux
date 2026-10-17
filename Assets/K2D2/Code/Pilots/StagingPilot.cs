@@ -5,7 +5,7 @@ using KTools;
 
 using KSP.Sim.impl;
 using KSP.Sim.ResourceSystem;
-using ReduxLib.Logging;
+using SpaceWarp2.API.Logging;
 
 namespace K2D2.Controller
 {
@@ -44,7 +44,7 @@ namespace K2D2.Controller
             K2D2PilotsMgr.Instance.RegisterPilot("Staging", this);
         } 
     
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.StagingController");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.StagingController");
 
         public bool is_staging = false;
 

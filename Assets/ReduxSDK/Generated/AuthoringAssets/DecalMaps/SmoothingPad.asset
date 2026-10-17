@@ -9,7 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 130047357, guid: 06dd3d5416bf43ea368cc39ff96e6d5a, type: 3}
+  m_Script: {fileID: 130047357, guid: c6399416bda1595f93b461944aeb7aeb, type: 3}
   m_Name: SmoothingPad
   m_EditorClassIdentifier: Assembly-CSharp::PQSDecal
   DecalID: d3bfa50a-df12-4d18-89e0-07fb888f7271

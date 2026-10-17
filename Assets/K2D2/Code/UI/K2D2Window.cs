@@ -29,10 +29,6 @@ namespace K2D2.UI
         // (e.g. a live UI reload during development) - re-binding would stack duplicate event handlers.
         private bool _bound;
 
-        // Kept so Update() can call its watchdog Tick() every frame - see ResizeManipulator.cs and
-        // the comment where this is created below for why that's necessary.
-        private ResizeManipulator _resizeManipulator;
-
         // The backing field for the IsWindowOpen property
         private bool _isWindowOpen;
 
@@ -228,21 +224,7 @@ namespace K2D2.UI
 
             _rootElement.AddManipulator(new DragManipulator(false, "main_window_pos"));
 
-            // Drag-to-resize via the handle added to K2D2_Window.uxml's AppShell (bottom-right
-            // corner, stock resize-handle.png). ResizeManipulator resizes _rootElement itself
-            // (the AppShell) by attaching its pointer callbacks to the small handle element
-            // instead of the whole window - see ResizeManipulator.cs.
-            var resize_handle = _rootElement.Q<VisualElement>("resize-handle");
-            if (resize_handle == null)
-            {
-                L.Log("K2D2Window.OnUiReload: Q<VisualElement>(\"resize-handle\") returned null - " +
-                      "the window will still open and drag normally, it just won't be resizable.");
-            }
-            else
-            {
-                _resizeManipulator = new ResizeManipulator(_rootElement, "main_window_size");
-                resize_handle.AddManipulator(_resizeManipulator);
-            }
+            // Resizing is Redux's own WindowResizeHandle, set up from K2D2_Window.uxml.
 
             L.Log("K2D2Window.OnUiReload finished wiring successfully");
         }
@@ -251,13 +233,6 @@ namespace K2D2.UI
         {
             // tab_page isn't wired up until OnUiReload has run - guard rather than NRE on an early frame.
             tab_page?.Update();
-
-            // PointerUpEvent/PointerCaptureOutEvent can fail to reach the resize handle in this
-            // game's UI Toolkit embedding, which would leave ResizeManipulator with no event to end
-            // the drag and treating every later mouse move as more resizing. Tick() sidesteps the
-            // event pipeline: it reads the real OS mouse button state every frame and force-ends
-            // the gesture the moment it's no longer held, regardless of what UI Toolkit delivers.
-            _resizeManipulator?.Tick();
         }
     }
 }

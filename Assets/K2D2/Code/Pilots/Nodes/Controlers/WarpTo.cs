@@ -4,7 +4,7 @@ using KTools;
 using UnityEngine.UIElements;
 using K2D2.UI;
 using K2D2.Controller;
-using ReduxLib.Logging;
+using SpaceWarp2.API.Logging;
 
 
 namespace K2D2.Node
@@ -30,7 +30,7 @@ namespace K2D2.Node
 
     public class WarpTo : ExecuteController
     {
-        public ILogger logger = ReduxLib.ReduxLib.GetLogger("K2D2.Controller.WarpTo");
+        public ILogger logger = SpaceWarp2.API.Logging.LogManager.GetLogger("K2D2.Controller.WarpTo");
 
         int wanted_warp_index = 0;
         ManeuverNodeData maneuver = null;
